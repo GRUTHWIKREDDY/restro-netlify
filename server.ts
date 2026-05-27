@@ -26,7 +26,10 @@ const INITIAL_RESTAURANTS = [
     logoUrl: "https://images.unsplash.com/photo-1634141422683-0941a313d52c?w=200&auto=format&fit=crop&q=80",
     status: "active" as const,
     lockedBySuperAdmin: false,
-    totalTables: 8
+    totalTables: 8,
+    latitude: 28.5672,
+    longitude: 77.2025,
+    geofenceRadiusMeters: 150
   },
   {
     id: "rest-2",
@@ -34,7 +37,10 @@ const INITIAL_RESTAURANTS = [
     logoUrl: "https://images.unsplash.com/photo-1668236543090-82eba5ee5976?w=200&auto=format&fit=crop&q=80",
     status: "active" as const,
     lockedBySuperAdmin: false,
-    totalTables: 10
+    totalTables: 10,
+    latitude: 12.9716,
+    longitude: 77.5946,
+    geofenceRadiusMeters: 150
   },
   {
     id: "rest-3",
@@ -42,7 +48,10 @@ const INITIAL_RESTAURANTS = [
     logoUrl: "https://images.unsplash.com/photo-1601050690597-df056fb4ce78?w=200&auto=format&fit=crop&q=80",
     status: "active" as const,
     lockedBySuperAdmin: false,
-    totalTables: 6
+    totalTables: 6,
+    latitude: 19.0760,
+    longitude: 72.8777,
+    geofenceRadiusMeters: 150
   }
 ];
 

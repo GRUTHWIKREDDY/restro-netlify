@@ -21,6 +21,7 @@ interface AdminProps {
   onTableUpdate: (count: number) => void;
   triggerAppAlert: (title: string, message: string, type?: 'success' | 'error' | 'info') => void;
   buzzers: Buzzer[];
+  ticker?: number;
 }
 
 export default function RestaurantAdminPanel({
@@ -34,7 +35,8 @@ export default function RestaurantAdminPanel({
   onUpdateOrderStatus,
   onTableUpdate,
   triggerAppAlert,
-  buzzers
+  buzzers,
+  ticker
 }: AdminProps) {
   const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'tables' | 'floor' | 'buzzers'>('orders');
 
@@ -436,16 +438,34 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
     return Array.from({ length: total }, (_, idx) => {
       const tableNum = idx + 1;
       const tableOrders = tenantOrders.filter(o => o.tableNumber === tableNum);
-      const openPendingCount = tableOrders.filter(o => o.status === 'pending').length;
-      const openPreparingCount = tableOrders.filter(o => o.status === 'accepted').length;
+      const activeOrders = tableOrders.filter(o => o.status !== 'completed' && o.status !== 'rejected');
+      const isOccupied = activeOrders.length > 0;
+
+      const openPendingCount = activeOrders.filter(o => o.status === 'pending').length;
+      const openPreparingCount = activeOrders.filter(o => o.status === 'accepted').length;
 
       let floorState: 'empty' | 'pending' | 'preparing' | 'served' = 'empty';
-      if (openPendingCount > 0) {
-        floorState = 'pending';
-      } else if (openPreparingCount > 0) {
-        floorState = 'preparing';
+      if (isOccupied) {
+        if (openPendingCount > 0) {
+          floorState = 'pending';
+        } else if (openPreparingCount > 0) {
+          floorState = 'preparing';
+        } else {
+          floorState = 'served';
+        }
       } else if (tableOrders.some(o => o.status === 'completed')) {
         floorState = 'served';
+      }
+
+      let occupantName = "";
+      let occupantPhone = "";
+      let earliestCreatedAt = "";
+
+      if (isOccupied) {
+        const sortedActive = [...activeOrders].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        occupantName = sortedActive[0].userName;
+        occupantPhone = sortedActive[0].userPhone;
+        earliestCreatedAt = sortedActive[0].createdAt;
       }
 
       const billTotal = tableOrders
@@ -454,12 +474,34 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
 
       return {
         tableNum,
-        floorState,
+        floorState: isOccupied ? floorState : 'empty' as const,
         ordersCount: tableOrders.length,
-        billTotal
+        billTotal,
+        isOccupied,
+        occupantName,
+        occupantPhone,
+        earliestCreatedAt,
+        activeOrders
       };
     });
   }, [tenantOrders, restaurant]);
+
+  const handleReleaseTable = async (tableNum: number) => {
+    const tableData = floorTableData.find(t => t.tableNum === tableNum);
+    if (!tableData || !tableData.isOccupied) return;
+
+    const confirmRelease = window.confirm(`Release Table #${tableNum}? This will settle and mark all active tickets as Completed.`);
+    if (!confirmRelease) return;
+
+    try {
+      for (const order of tableData.activeOrders) {
+        await onUpdateOrderStatus(order.id, 'completed');
+      }
+      triggerAppAlert("Table Released", `Table #${tableNum} has been released successfully and is now unoccupied.`, "success");
+    } catch (err) {
+      triggerAppAlert("Release Error", "Could not update orders status.", "error");
+    }
+  };
 
   return (
     <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6 text-slate-800">
@@ -692,6 +734,42 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                             <span>₹{o.totalAmount.toFixed(2)}</span>
                           </div>
                         </div>
+
+                        {/* GEOFENCING ANTI-FRAUD DISPATCH INDICATOR */}
+                        {o.requiresHandshake && !o.handshakeApproved ? (
+                          <div id={`handshake-warning-${o.id}`} className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-2.5 space-y-1.5 text-left text-[10.5px]">
+                            <div className="flex justify-between items-center">
+                              <span className="font-extrabold flex items-center gap-1 text-amber-800 text-[9px] uppercase">
+                                ⚠️ REMOTE HANDSHAKE HOLD
+                              </span>
+                              <span className="text-[8.5px] bg-amber-200 text-amber-900 font-bold px-1 py-0.2 rounded font-mono">CODE: {o.handshakeCode}</span>
+                            </div>
+                            <p className="text-[9.5px] text-slate-550 leading-tight">
+                              This guest placed the order away from the restaurant. Handshake validation is required to unlock kitchen preparation.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const confirmRelease = window.confirm(`Release remote hold and accept order for Table #${o.tableNumber}?`);
+                                if (confirmRelease) {
+                                  onUpdateOrderStatus(o.id, 'accepted');
+                                }
+                              }}
+                              className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 text-center py-1 rounded font-black text-[9px] uppercase tracking-wider transition cursor-pointer"
+                            >
+                              Bypass & release hold
+                            </button>
+                          </div>
+                        ) : o.requiresHandshake && o.handshakeApproved ? (
+                          <div className="text-[9.5px] text-emerald-700 bg-emerald-50 border border-emerald-150 rounded-xl p-2 flex items-center gap-1 font-extrabold">
+                            ✔ Remote Hold Released via Floor Staff PIN
+                          </div>
+                        ) : (
+                          <div className="bg-slate-100 text-slate-500 rounded-lg p-1.5 text-[8.5px] font-mono flex items-center justify-between">
+                            <span>GPS Verify Status: Verified</span>
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                          </div>
+                        )}
 
                         {/* Administrative override buttons */}
                         <div className="flex gap-1">
@@ -982,45 +1060,73 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
-            {floorTableData.map(t => (
-              <div
-                key={t.tableNum}
-                className={`p-4 rounded-3xl border flex flex-col justify-between min-h-28 transition-all duration-300 relative ${
-                  t.floorState === 'empty' ? 'bg-slate-50 border-slate-200 opacity-60' :
-                  t.floorState === 'pending' ? 'bg-yellow-50 border-yellow-300 shadow-sm shadow-yellow-100' :
-                  t.floorState === 'preparing' ? 'bg-blue-50 border-blue-300 shadow-sm shadow-blue-105' :
-                  'bg-emerald-50 border-emerald-305 shadow-sm shadow-emerald-100'
-                }`}
-              >
-                <div>
-                  <div className="flex justify-between items-center text-[9px] text-slate-400">
-                    <span className="font-mono">TABLE NODE</span>
-                    <span className={`w-2.5 h-2.5 rounded-full ${
-                      t.floorState === 'empty' ? 'bg-slate-300' :
-                      t.floorState === 'pending' ? 'bg-yellow-500 animate-pulse' :
-                      t.floorState === 'preparing' ? 'bg-blue-500 animate-pulse' :
-                      'bg-emerald-500'
-                    }`}></span>
-                  </div>
-                  <h4 className="text-xl font-bold text-slate-900 mt-1">Seat #{t.tableNum}</h4>
-                </div>
+            {floorTableData.map(t => {
+              let liveDurationStr = "";
+              if (t.isOccupied && t.earliestCreatedAt) {
+                const diffMs = Date.now() - new Date(t.earliestCreatedAt).getTime();
+                const totalSec = Math.floor(Math.max(0, diffMs) / 1000);
+                const min = Math.floor(totalSec / 60);
+                const sec = totalSec % 60;
+                liveDurationStr = `${min}m ${sec}s`;
+              }
 
-                <div className="mt-4">
-                  {t.floorState === 'empty' ? (
-                    <span className="text-[9px] uppercase tracking-wider font-extrabold text-slate-400">UNSEATED</span>
-                  ) : (
-                    <div>
-                      <p className="text-[9px] text-slate-505 font-bold">{t.ordersCount} tickets list</p>
-                      <p className="text-sm font-black text-slate-950">₹{t.billTotal.toFixed(2)}</p>
+              return (
+                <div
+                  key={t.tableNum}
+                  className={`p-4 rounded-3xl border flex flex-col justify-between min-h-36 transition-all duration-300 relative ${
+                    t.floorState === 'empty' ? 'bg-slate-50 border-slate-200 opacity-60' :
+                    t.floorState === 'pending' ? 'bg-yellow-50 border-yellow-300 shadow-sm shadow-yellow-100' :
+                    t.floorState === 'preparing' ? 'bg-blue-50 border-blue-300 shadow-sm shadow-blue-105' :
+                    'bg-emerald-50 border-emerald-305 shadow-sm shadow-emerald-100'
+                  }`}
+                >
+                  <div>
+                    <div className="flex justify-between items-center text-[9px] text-slate-400">
+                      <span className="font-mono">TABLE NODE</span>
+                      <span className={`w-2.5 h-2.5 rounded-full ${
+                        t.floorState === 'empty' ? 'bg-slate-300' :
+                        t.floorState === 'pending' ? 'bg-yellow-500 animate-pulse' :
+                        t.floorState === 'preparing' ? 'bg-blue-500 animate-pulse' :
+                        'bg-emerald-500'
+                      }`}></span>
                     </div>
-                  )}
-                </div>
+                    <h4 className="text-xl font-bold text-slate-900 mt-1">Seat #{t.tableNum}</h4>
+                  </div>
 
-                <div className="absolute bottom-1 right-2 text-6xl font-black text-slate-950/5 select-none pointer-events-none">
-                  {t.tableNum}
+                  <div className="mt-2 space-y-1 z-10">
+                    {t.isOccupied ? (
+                      <div className="space-y-1">
+                        <div className="text-[10px] leading-tight">
+                          <p className="font-extrabold text-slate-800 uppercase truncate">👤 {t.occupantName}</p>
+                          <p className="text-[8.5px] text-slate-400 font-mono">{t.occupantPhone}</p>
+                        </div>
+                        <div className="text-[9.5px] bg-white/70 border border-slate-200 rounded px-1.5 py-0.5 w-max font-mono flex items-center gap-1 mt-1">
+                          <span className="text-slate-400">⏱</span>
+                          <span className="font-bold text-indigo-600 animate-pulse">{liveDurationStr || "0m 0s"}</span>
+                        </div>
+                        <div className="pt-1.5 border-t border-slate-250 mt-1.5">
+                          <p className="text-[9px] text-slate-505 font-bold">{t.ordersCount} tickets</p>
+                          <p className="text-xs font-black text-slate-955">₹{t.billTotal.toFixed(2)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleReleaseTable(t.tableNum)}
+                          className="mt-2.5 w-full bg-slate-900 hover:bg-rose-600 hover:text-white text-white font-extrabold py-1 px-1.5 rounded-xl text-[8.5px] uppercase tracking-wider transition cursor-pointer block text-center shadow-xs"
+                        >
+                          Settle & Release
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[9px] uppercase tracking-wider font-extrabold text-slate-400">VACANT</span>
+                    )}
+                  </div>
+
+                  <div className="absolute bottom-1 right-2 text-6xl font-black text-slate-950/5 select-none pointer-events-none">
+                    {t.tableNum}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 flex flex-wrap gap-4 text-[10px] font-bold text-slate-500">

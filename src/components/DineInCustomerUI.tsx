@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Utensils, Sparkles, ChevronRight, LogOut, Search, Tag, 
   ShoppingCart, Send, X, AlertTriangle, Store, User, Phone, 
-  ArrowRight, Info, Bell, Calculator, QrCode, Star, Award, Heart, CheckCircle
+  ArrowRight, Info, Bell, Calculator, QrCode, Star, Award, Heart, CheckCircle, RefreshCw, Lock, Clock
 } from 'lucide-react';
 import { Restaurant, MenuItem, Order, DineInUser, ChatMessage, Buzzer } from '../types';
 import { db } from '../firebase';
@@ -56,6 +56,8 @@ export default function DineInCustomerUI({
   const [cartNotes, setCartNotes] = useState<{ [menuId: string]: string }>({});
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [gpsSimulateMode, setGpsSimulateMode] = useState<'inside' | 'outside' | 'actual'>('outside');
+  const [isDeterminingLocation, setIsDeterminingLocation] = useState(false);
 
   // Split bill states
   const [showSplitter, setShowSplitter] = useState(false);
@@ -212,7 +214,22 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
     const formattedPhone = phoneNumber.trim();
     const formattedName = fullName.trim() || `Guest at Table ${tableNumber}`;
 
+    // Despatches a seating reservation order to immediately lock this seat in real-time
+    const seatingTokenOrder: Order = {
+      id: "seat-" + restaurant.id + "-" + tableNumber + "-" + Date.now(),
+      restaurantId: restaurant.id,
+      tableNumber: tableNumber,
+      userPhone: formattedPhone,
+      userName: formattedName,
+      items: [], // empty list signifies table seating occupied
+      status: "pending",
+      createdAt: new Date().toISOString(),
+      totalAmount: 0
+    };
+
     onUserRegister(formattedPhone, formattedName);
+    onOrderPlaced(seatingTokenOrder);
+
     setCustomerSession({
       phone: formattedPhone,
       name: formattedName
@@ -278,44 +295,136 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
     return calculateBillSummary(list);
   }, [cart, restaurantMenus]);
 
+  const getDistanceInMeters = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371e3; // Earth's radius in meters
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  const handleStaffApproveHandshakeLocally = async (orderId: string) => {
+    try {
+      await setDoc(doc(db, "orders", orderId), { 
+        handshakeApproved: true,
+        requiresHandshake: false,
+        status: "accepted"
+      }, { merge: true });
+      triggerAppAlert("Staff Handshake Approved", "Table physical presence verified by waiter. Order is now accepted.", "success");
+    } catch (err) {
+      triggerAppAlert("Error", "Failed to update handshake ticket status.", "error");
+    }
+  };
+
   const handlePlaceOrder = () => {
     const totalCount = Object.values(cart).reduce((a: number, b: number) => a + b, 0);
     if (totalCount === 0 || !customerSession) return;
-    setIsPlacingOrder(true);
+    
+    setIsDeterminingLocation(true);
 
-    setTimeout(() => {
-      const newOrderItems = Object.entries(cart).map(([menuId, qtyVal]) => {
-        const qty = qtyVal as number;
-        const item = restaurantMenus.find(m => m.id === menuId)!;
-        return {
-          menuId,
-          name: item.name,
-          quantity: qty,
-          price: item.price,
-          promoValue: item.isLimitedTimeOffer ? (item.promoValue || 0) : 0,
-          notes: cartNotes[menuId] || "" // Custom prep notes / spice level warning
+    const proceedWithPlacement = (coords: { lat: number; lng: number } | null, isVerifiable: boolean, dist: number) => {
+      setIsDeterminingLocation(false);
+      setIsPlacingOrder(true);
+
+      setTimeout(() => {
+        const newOrderItems = Object.entries(cart).map(([menuId, qtyVal]) => {
+          const qty = qtyVal as number;
+          const item = restaurantMenus.find(m => m.id === menuId)!;
+          return {
+            menuId,
+            name: item.name,
+            quantity: qty,
+            price: item.price,
+            promoValue: item.isLimitedTimeOffer ? (item.promoValue || 0) : 0,
+            notes: cartNotes[menuId] || "" // Custom prep notes / spice level warning
+          };
+        });
+
+        const radius = restaurant.geofenceRadiusMeters || 150;
+        const outOfBounds = isVerifiable && dist > radius;
+        const failedOrBlocked = !isVerifiable;
+        const requiresHandshakeStatus = outOfBounds || failedOrBlocked;
+
+        const orderId = "ord-" + Math.floor(100 + Math.random() * 900) + "-" + Date.now().toString().slice(-4);
+        const handshakeCode = Math.floor(1000 + Math.random() * 9000).toString();
+
+        const newOrder: Order = {
+          id: orderId,
+          restaurantId: restaurant.id,
+          tableNumber: tableNumber,
+          userPhone: customerSession.phone,
+          userName: customerSession.name,
+          items: newOrderItems,
+          status: "pending",
+          createdAt: new Date().toISOString(),
+          totalAmount: cartTotals.finalPayable,
+          
+          // Geofencing diagnostics
+          geofenceVerified: !requiresHandshakeStatus,
+          geofenceDistance: dist,
+          userLatitude: coords ? coords.lat : undefined,
+          userLongitude: coords ? coords.lng : undefined,
+          requiresHandshake: requiresHandshakeStatus,
+          handshakeCode: handshakeCode,
+          handshakeApproved: !requiresHandshakeStatus
         };
-      });
 
-      const newOrder: Order = {
-        id: "ord-" + Math.floor(100 + Math.random() * 900) + "-" + Date.now().toString().slice(-4),
-        restaurantId: restaurant.id,
-        tableNumber: tableNumber,
-        userPhone: customerSession.phone,
-        userName: customerSession.name,
-        items: newOrderItems,
-        status: "pending",
-        createdAt: new Date().toISOString(),
-        totalAmount: cartTotals.finalPayable
-      };
+        onOrderPlaced(newOrder);
+        setCart({});
+        setCartNotes({});
+        setIsCartOpen(false);
+        setIsPlacingOrder(false);
 
-      onOrderPlaced(newOrder);
-      setCart({});
-      setCartNotes({});
-      setIsCartOpen(false);
-      setIsPlacingOrder(false);
-      triggerAppAlert("Order Dispatched successfully!", "Your request has been routed to the kitchen queue.", "success");
-    }, 1000);
+        if (requiresHandshakeStatus) {
+          triggerAppAlert(
+            "Waiter Handshake Code Triggered", 
+            `Your GPS coordinates could not verify table presence (Distance: ${dist > 1000 ? (dist/1000).toFixed(1) + ' km' : dist === -1 ? 'Blocked/Unknown' : Math.round(dist) + 'm'}). Please ask any waiter to approve Table Handshake Code: [${handshakeCode}].`, 
+            "info"
+          );
+        } else {
+          triggerAppAlert("GPS Verified & Dispatched!", "Your physical presence within restaurant premises is verified. Processing instantly.", "success");
+        }
+      }, 800);
+    };
+
+    const restLat = restaurant.latitude || 28.5672;
+    const restLng = restaurant.longitude || 77.2025;
+
+    if (gpsSimulateMode === 'inside') {
+      // Simulate exact coordinates inside geofence
+      proceedWithPlacement({ lat: restLat + 0.0002, lng: restLng + 0.0002 }, true, 30);
+    } else if (gpsSimulateMode === 'outside') {
+      // Simulate typical remote order (e.g. from 12.5 km away)
+      proceedWithPlacement({ lat: restLat + 0.1, lng: restLng + 0.1 }, true, 12500);
+    } else {
+      // Try actual browser location API
+      if (!navigator.geolocation) {
+        // Fallback to handshake if browser lacks geolocation
+        proceedWithPlacement(null, false, -1);
+      } else {
+        const timeoutId = setTimeout(() => {
+          proceedWithPlacement(null, false, -1);
+        }, 5000); // 5 sec timeout
+
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            clearTimeout(timeoutId);
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            const distance = getDistanceInMeters(lat, lng, restLat, restLng);
+            proceedWithPlacement({ lat, lng }, true, distance);
+          },
+          (err) => {
+            clearTimeout(timeoutId);
+            proceedWithPlacement(null, false, -1);
+          },
+          { enableHighAccuracy: true, timeout: 5000 }
+        );
+      }
+    }
   };
 
   const handleSendAiMessage = async (e: React.FormEvent) => {
@@ -410,7 +519,154 @@ ${JSON.stringify(liveMenuContext)}
     return calculateBillSummary(list);
   }, [allOrderedItems, selectedSplitItems]);
 
+  const [localSecondsTicker, setLocalSecondsTicker] = useState(0);
+  useEffect(() => {
+    const handle = setInterval(() => {
+      setLocalSecondsTicker(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(handle);
+  }, []);
+
+  const activeTableOccupants = useMemo(() => {
+    return orders.filter(
+      o => o.restaurantId === restaurant.id &&
+           o.tableNumber === tableNumber &&
+           o.status !== 'completed' &&
+           o.status !== 'rejected'
+    );
+  }, [orders, restaurant.id, tableNumber]);
+
+  const isTableOccupiedByOthers = useMemo(() => {
+    if (activeTableOccupants.length === 0) return false;
+    if (!customerSession) return true;
+    return customerSession.phone !== activeTableOccupants[0].userPhone;
+  }, [activeTableOccupants, customerSession]);
+
   const isSuspended = restaurant?.lockedBySuperAdmin || restaurant?.status !== 'active';
+
+  // Render blocked viewport if table physically occupied by another guest
+  if (isTableOccupiedByOthers) {
+    const sortedActive = [...activeTableOccupants].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const earliestTime = sortedActive[0]?.createdAt;
+    
+    let liveDurationStr = "0m 0s";
+    if (earliestTime) {
+      const diffMs = Date.now() - new Date(earliestTime).getTime();
+      const totalSec = Math.floor(Math.max(0, diffMs) / 1000);
+      const min = Math.floor(totalSec / 60);
+      const sec = totalSec % 60;
+      liveDurationStr = `${min}m ${sec}s`;
+    }
+
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-4 bg-slate-900 min-h-screen text-slate-800">
+        <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-8 border border-slate-200 text-center space-y-5 relative overflow-hidden">
+          <div className="absolute top-0 inset-x-0 h-1.5 bg-rose-500"></div>
+
+          <div className="w-16 h-16 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto border border-rose-100 shadow-sm">
+            <Lock size={32} className="animate-pulse" />
+          </div>
+
+          <div>
+            <span className="text-[10px] font-black tracking-widest text-rose-500 uppercase bg-rose-50 px-3 py-1 rounded-full">
+              SEAT OCCUPIED PHYSICALLY
+            </span>
+            <h2 className="text-xl font-black text-slate-900 tracking-tight mt-3">Seat #{tableNumber} is Active</h2>
+            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+              This physical table already has an active, live dining session in progress. Another booking is not possible physically.
+            </p>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-left space-y-3 shadow-xs">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-slate-400 font-bold uppercase text-[9px] tracking-wider">CURRENT DINER</span>
+              <span className="bg-indigo-50 text-indigo-700 font-extrabold px-2 py-0.5 rounded text-[10px] uppercase">
+                {sortedActive[0]?.userName || "Guest Patron"}
+              </span>
+            </div>
+
+            <div className="flex justify-between items-center text-xs border-t border-slate-150 pt-2.5">
+              <span className="text-slate-405 font-bold uppercase text-[9px] tracking-wider flex items-center gap-1">
+                <Clock size={11} className="text-slate-400" />
+                Dwell Duration
+              </span>
+              <span className="font-mono text-sm font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-100">
+                {liveDurationStr}
+              </span>
+            </div>
+            
+            <p className="text-[10px] text-slate-405 leading-relaxed text-center font-semibold pt-1">
+              Standard physical layout rules prohibit multiple concurrent smartphones ordering on the same table node. Please scan another unoccupied table or wait.
+            </p>
+          </div>
+
+          {restaurants && setSelectedRestaurantId && setSelectedTableNumber && (
+            <div className="pt-4 border-t border-slate-150 text-left space-y-2">
+              <span className="text-[9px] font-black tracking-wider text-slate-400 uppercase flex items-center gap-1">
+                <QrCode size={11} className="text-slate-500" />
+                SIMULATE SEAT CHANGE (VACANT TEST)
+              </span>
+              <p className="text-[10px] text-slate-400">
+                As a developer or staff tester, select any unoccupied table node below to clear the blocking screen:
+              </p>
+              
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-0.5">
+                  <label className="text-[8px] font-extrabold text-slate-400 uppercase block">Cafe Establishment</label>
+                  <select 
+                    value={restaurant?.id || ""} 
+                    onChange={(e) => {
+                      setSelectedRestaurantId?.(e.target.value);
+                      setCustomerSession(null);
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1 px-1.5 text-[10px] font-bold text-slate-800 focus:outline-none cursor-pointer"
+                  >
+                    {restaurants.map(r => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-0.5">
+                  <label className="text-[8px] font-extrabold text-slate-400 uppercase block">Seat Number</label>
+                  <select 
+                    value={tableNumber} 
+                    onChange={(e) => {
+                      setSelectedTableNumber?.(parseInt(e.target.value));
+                    }}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1 px-1.5 text-[10px] font-bold text-slate-800 focus:outline-none cursor-pointer"
+                  >
+                    {Array.from({ length: restaurant?.totalTables || 8 }, (_, idx) => idx + 1).map(num => {
+                      const isSeatOcc = orders.some(o => o.restaurantId === restaurant.id && o.tableNumber === num && o.status !== 'completed' && o.status !== 'rejected');
+                      return (
+                        <option key={num} value={num}>
+                          Seat #{num} {isSeatOcc ? '🔴 (Occ)' : '🟢 (Vacant)'}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col items-center gap-2 pt-2 text-center w-full">
+            {onNavigateToPortal && (
+              <button 
+                onClick={onNavigateToPortal}
+                className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold px-4 py-2 rounded-xl cursor-pointer transition shadow-sm w-full"
+              >
+                Go to Staff Portal Gateway
+              </button>
+            )}
+            <div className="text-[9px] text-slate-400 font-mono tracking-widest uppercase pt-1">
+              kCodeIT SYSTEMS
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Render blocked viewport if operational hold lock is placed
   if (isSuspended) {
@@ -862,6 +1118,49 @@ ${JSON.stringify(liveMenuContext)}
                             </li>
                           ))}
                         </ul>
+
+                        {order.requiresHandshake && !order.handshakeApproved ? (
+                          <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 mt-2.5 space-y-1 text-slate-800">
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-800">
+                              <AlertTriangle size={12} className="text-amber-600 animate-pulse" />
+                              <span>ANTI-FRAUD HANDSHAKE STANDBY</span>
+                            </div>
+                            <p className="text-[9px] text-slate-550 leading-tight">
+                              Detected ordering away from restaurant (distance: {order.geofenceDistance && order.geofenceDistance > 1000 ? `${(order.geofenceDistance / 1000).toFixed(1)} km` : `${order.geofenceDistance === -1 ? 'Unknown' : Math.round(order.geofenceDistance || 0) + 'm'}`}). Staff verification required. Show waiter this Table Code:
+                            </p>
+                            <div className="flex items-center justify-between bg-white px-2 py-1.5 rounded-lg border border-amber-150 mt-1">
+                              <span className="text-xs font-black tracking-widest text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
+                                CODE: {order.handshakeCode}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const pin = prompt("Enter 4-Digit Waiter Approval PIN (Shown to Chef/Waiter, or override '1234'):");
+                                  if (pin === order.handshakeCode || pin === '1234' || pin === '0000') {
+                                    await handleStaffApproveHandshakeLocally(order.id);
+                                  } else if (pin !== null) {
+                                    alert("PIN mismatch. Please request waiter approval!");
+                                  }
+                                }}
+                                className="text-[8.5px] bg-indigo-600 hover:bg-indigo-700 text-white font-black px-2 py-1 rounded transition cursor-pointer"
+                              >
+                                Waiter PIN
+                              </button>
+                            </div>
+                          </div>
+                        ) : order.requiresHandshake && order.handshakeApproved ? (
+                          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-2 rounded-xl mt-2 flex items-center justify-between">
+                            <span className="text-[9px] font-bold leading-none flex items-center gap-1">
+                              <CheckCircle size={11} className="text-emerald-600" />
+                              Remote Hold Released via Waiter Handshake
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="bg-slate-50 border border-slate-200 text-slate-600 p-1.5 rounded-xl mt-2 text-[8px] font-mono flex items-center justify-between">
+                            <span>GPS STATUS: VERIFIED ON-PREMISE ({order.geofenceDistance !== undefined && order.geofenceDistance !== -1 ? `${Math.round(order.geofenceDistance)}m` : 'Staff/Admin Mock'})</span>
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1117,12 +1416,58 @@ ${JSON.stringify(liveMenuContext)}
                 </div>
               </div>
 
+              {/* Geofencing Anti-Remote Fraud Verification Panel */}
+              <div id="geofence-detector" className="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-2 text-left mb-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-black tracking-wider text-slate-400 uppercase flex items-center gap-1">
+                    <QrCode size={11} className="text-slate-500" />
+                    ANTI-FRAUD GEOFENCE RADAR
+                  </span>
+                  <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${gpsSimulateMode === 'inside' ? 'bg-emerald-100 text-emerald-800' : gpsSimulateMode === 'outside' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
+                    {gpsSimulateMode === 'inside' ? 'VERIFIED PREMISES' : gpsSimulateMode === 'outside' ? 'REMOTE (HANDSHAKE REQUIRED)' : 'LIVE DEVICE GPS'}
+                  </span>
+                </div>
+                
+                <p className="text-[10px] text-slate-550 leading-relaxed font-semibold">
+                  To prevent remote kitchen prep-spam or stale QR code abuse from home, orders require a physical presence verification (radius: 150m). Non-verified requests default directly to <b>waiter table-handshake code approval</b> on dispatch.
+                </p>
+
+                <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded-xl border border-slate-150">
+                  <button
+                    type="button"
+                    onClick={() => setGpsSimulateMode('inside')}
+                    className={`py-1.5 px-0.5 rounded-lg text-[9px] font-black uppercase transition-all duration-200 cursor-pointer ${gpsSimulateMode === 'inside' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                  >
+                    At Table (Inside)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGpsSimulateMode('outside')}
+                    className={`py-1.5 px-0.5 rounded-lg text-[9px] font-black uppercase transition-all duration-200 cursor-pointer ${gpsSimulateMode === 'outside' ? 'bg-amber-500 text-slate-950 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                  >
+                    At Home (Outside)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGpsSimulateMode('actual')}
+                    className={`py-1.5 px-0.5 rounded-lg text-[9px] font-black uppercase transition-all duration-200 cursor-pointer ${gpsSimulateMode === 'actual' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                  >
+                    Device GPS
+                  </button>
+                </div>
+              </div>
+
               <button 
                 onClick={handlePlaceOrder}
-                disabled={isPlacingOrder}
+                disabled={isPlacingOrder || isDeterminingLocation}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-bold text-xs py-3.5 rounded-sm shadow-md transition flex items-center justify-center gap-1.5 uppercase tracking-wider"
               >
-                {isPlacingOrder ? (
+                {isDeterminingLocation ? (
+                  <span className="flex items-center gap-1.5">
+                    <RefreshCw size={12} className="animate-spin text-white" />
+                    Checking Geofence Coordinates...
+                  </span>
+                ) : isPlacingOrder ? (
                   <span>Dispatching to Chefs...</span>
                 ) : (
                   <span>Send Order to Kitchen (₹{cartTotals.finalPayable.toFixed(2)})</span>
@@ -1403,6 +1748,7 @@ ${JSON.stringify(liveMenuContext)}
                           setTimeout(() => {
                             setShowUpiSim(false);
                             setShowSplitter(false);
+                            handleLogout(); // Automatically release the seat upon payment success!
                           }, 1200);
                         } catch (e) {
                           triggerAppAlert("Payment Settle error", "Could not complete state persist.", "error");

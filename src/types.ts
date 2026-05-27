@@ -5,6 +5,9 @@ export interface Restaurant {
   status: "active" | "inactive";
   lockedBySuperAdmin: boolean;
   totalTables: number;
+  latitude?: number;
+  longitude?: number;
+  geofenceRadiusMeters?: number;
 }
 
 export interface MenuItem {
@@ -46,6 +49,15 @@ export interface Order {
   status: OrderStatus;
   createdAt: string;
   totalAmount: number; // Final payable nets
+  
+  // Geofencing & Handshake fields
+  geofenceVerified?: boolean;
+  geofenceDistance?: number;
+  userLatitude?: number;
+  userLongitude?: number;
+  requiresHandshake?: boolean;
+  handshakeCode?: string;
+  handshakeApproved?: boolean;
 }
 
 export interface Buzzer {

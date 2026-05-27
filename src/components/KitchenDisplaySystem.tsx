@@ -299,6 +299,28 @@ function KdsTicketCard({ order, onStatusUpdate, onCancelDish, ticker }: KdsTicke
         </div>
       </div>
 
+      {/* ANTI-FRAUD HOLD STAGING WARNING */}
+      {order.requiresHandshake && !order.handshakeApproved && (
+        <div className="bg-amber-955/65 border border-amber-900/60 text-amber-300 p-2.5 rounded-xl flex flex-col gap-1 text-[10.5px]">
+          <span className="font-extrabold flex items-center gap-1">
+            <AlertTriangle size={12} className="text-amber-500 animate-pulse" />
+            ANTI-FRAUD HOLD ACTIVATED — REMOTE ORDER
+          </span>
+          <p className="text-[9.5px] text-slate-400 font-medium leading-normal">
+            Customer physical coordinates are away from restaurant. Waiting for staff handshake.
+          </p>
+          <div className="flex items-center justify-between mt-1 pt-1 border-t border-amber-900/40">
+            <span className="font-extrabold text-[12px] tracking-wider text-white">PIN CODE: {order.handshakeCode}</span>
+            <button
+              onClick={() => onStatusUpdate(order.id, 'accepted')}
+              className="bg-amber-550 hover:bg-amber-500 text-slate-950 px-2.5 py-1 rounded text-[8px] font-black cursor-pointer transition uppercase"
+            >
+              Chef Release
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Ticket dish items lists */}
       <div className="border-t border-slate-850 pt-3 space-y-1.5">
         <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest block font-mono">Order Details</p>

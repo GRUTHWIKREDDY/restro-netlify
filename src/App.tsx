@@ -241,7 +241,11 @@ export default function App() {
     try {
       const targetOrder = orders.find(o => o.id === orderId);
       if (targetOrder) {
-        const updatedOrder = { ...targetOrder, status: nextStatus };
+        const updatedOrder = { 
+          ...targetOrder, 
+          status: nextStatus,
+          handshakeApproved: (nextStatus === 'accepted' || nextStatus === 'completed') ? true : targetOrder.handshakeApproved
+        };
         const res = await fetch("/api/orders", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -542,6 +546,7 @@ export default function App() {
                   onTableUpdate={(count) => handleModifyRestaurantTablesGlobal(activeRestaurantObj.id, count - activeRestaurantObj.totalTables)}
                   triggerAppAlert={triggerAppAlert}
                   buzzers={buzzers}
+                  ticker={ticker}
                 />
               )}
 
