@@ -1,0 +1,107 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // catch-all default-deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // helper functions
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    
+    function incoming() {
+      return request.resource.data;
+    }
+    
+    function existing() {
+      return resource.data;
+    }
+
+    // validation for Restaurant
+    function isValidRestaurant(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 200
+        && data.logoUrl is string && data.logoUrl.size() <= 2000
+        && data.status is string && (data.status == 'active' || data.status == 'inactive')
+        && data.lockedBySuperAdmin is bool
+        && data.totalTables is int && data.totalTables >= 1 && data.totalTables <= 100;
+    }
+
+    // validation for MenuItem
+    function isValidMenuItem(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.restaurantId is string && data.restaurantId.size() <= 128
+        && data.name is string && data.name.size() <= 200
+        && data.description is string && data.description.size() <= 2000
+        && (data.price is int || data.price is float) && data.price >= 0
+        && data.category is string && data.category.size() <= 100
+        && data.isAvailable is bool
+        && data.isLimitedTimeOffer is bool
+        && data.offerDetails is string && data.offerDetails.size() <= 500
+        && (data.promoValue is int || data.promoValue is float) && data.promoValue >= 0
+        && (!('isVeg' in data) || data.isVeg is bool);
+    }
+
+    // validation for Order
+    function isValidOrder(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.restaurantId is string && data.restaurantId.size() <= 128
+        && data.tableNumber is int && data.tableNumber >= 1
+        && data.userPhone is string && data.userPhone.size() <= 30
+        && data.userName is string && data.userName.size() <= 200
+        && data.items is list
+        && data.status is string && (data.status == 'pending' || data.status == 'accepted' || data.status == 'completed' || data.status == 'rejected')
+        && data.createdAt is string
+        && (data.totalAmount is int || data.totalAmount is float) && data.totalAmount >= 0;
+    }
+
+    // validation for User
+    function isValidUser(data) {
+      return data.phone is string && data.phone.size() <= 30
+        && data.name is string && data.name.size() <= 200
+        && data.globalOrderHistory is list;
+    }
+
+    // validation for Buzzer request
+    function isValidBuzzer(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.restaurantId is string && data.restaurantId.size() <= 128
+        && data.tableNumber is int && data.tableNumber >= 1
+        && data.requestType is string && data.requestType.size() <= 100
+        && data.status is string && (data.status == 'pending' || data.status == 'resolved')
+        && data.createdAt is string;
+    }
+
+    match /restaurants/{restaurantId} {
+      allow read: if true;
+      allow create, update: if isValidId(restaurantId) && isValidRestaurant(incoming());
+      allow delete: if false;
+    }
+
+    match /menus/{menuId} {
+      allow read: if true;
+      allow create, update: if isValidId(menuId) && isValidMenuItem(incoming());
+      allow delete: if true;
+    }
+
+    match /orders/{orderId} {
+      allow read: if true;
+      allow create, update: if isValidId(orderId) && isValidOrder(incoming());
+      allow delete: if false;
+    }
+
+    match /users/{userId} {
+      allow read: if true;
+      allow create, update: if isValidId(userId) && isValidUser(incoming());
+      allow delete: if false;
+    }
+
+    match /buzzers/{buzzerId} {
+      allow read: if true;
+      allow create, update: if isValidId(buzzerId) && isValidBuzzer(incoming());
+      allow delete: if true;
+    }
+  }
+}

@@ -1,0 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;450;500;600;700;800;900&family=JetBrains+Mono:wght@300;450;600;700;800&family=Space+Grotesk:wght@450;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@keyframes pulse-red {
+  0%, 100% { border-color: #ef4444; box-shadow: 0 0 0 0px rgba(239, 68, 68, 0.4); }
+  50% { border-color: #f87171; box-shadow: 0 0 12px 6px rgba(239, 68, 68, 0.2); }
+}
+
+@keyframes shiver-spark {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  50% { transform: scale(1.15) rotate(5deg); }
+}
+
+.sla-breach-pulse {
+  animation: pulse-red 2s infinite;
+}
+
+.sparkle-shiver {
+  animation: shiver-spark 3s infinite ease-in-out;
+}
+
+/* Hide scrollbars for simple view widgets */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

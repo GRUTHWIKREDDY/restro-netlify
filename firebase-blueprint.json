@@ -1,0 +1,101 @@
+{
+  "entities": {
+    "restaurant": {
+      "title": "Restaurant",
+      "description": "A tenant restaurant brand onboarded to the SaaS platform",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "lockedBySuperAdmin": { "type": "boolean" },
+        "totalTables": { "type": "number" }
+      },
+      "required": ["id", "name", "status"]
+    },
+    "menuItem": {
+      "title": "MenuItem",
+      "description": "A menu catalog option offered by a restaurant",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "restaurantId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "category": { "type": "string" },
+        "isAvailable": { "type": "boolean" },
+        "isLimitedTimeOffer": { "type": "boolean" },
+        "offerDetails": { "type": "string" },
+        "promoValue": { "type": "number" },
+        "isVeg": { "type": "boolean" }
+      },
+      "required": ["id", "restaurantId", "name", "price", "category", "isAvailable"]
+    },
+    "order": {
+      "title": "Order",
+      "description": "A dining ticket or order placed by a seated customer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "restaurantId": { "type": "string" },
+        "tableNumber": { "type": "number" },
+        "userPhone": { "type": "string" },
+        "userName": { "type": "string" },
+        "items": { "type": "array" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "completed", "rejected"] },
+        "createdAt": { "type": "string" },
+        "totalAmount": { "type": "number" }
+      },
+      "required": ["id", "restaurantId", "tableNumber", "userPhone", "userName", "items", "status", "createdAt", "totalAmount"]
+    },
+    "user": {
+      "title": "DineInUser",
+      "description": "A customer user profile registered in the SaaS system",
+      "type": "object",
+      "properties": {
+        "phone": { "type": "string" },
+        "name": { "type": "string" },
+        "globalOrderHistory": { "type": "array" }
+      },
+      "required": ["phone", "name"]
+    },
+    "buzzer": {
+      "title": "Buzzer",
+      "description": "A waiter summons request placed by a customer table",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "restaurantId": { "type": "string" },
+        "tableNumber": { "type": "number" },
+        "requestType": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "resolved"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "restaurantId", "tableNumber", "requestType", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "restaurants": {
+      "schema": "restaurant",
+      "description": "Master collection of all registered brand tenants"
+    },
+    "menus": {
+      "schema": "menuItem",
+      "description": "Master collection of all menu options across all tenants"
+    },
+    "orders": {
+      "schema": "order",
+      "description": "History of all food orders placed in the system"
+    },
+    "users": {
+      "schema": "user",
+      "description": "User profile registrations sync storage"
+    },
+    "buzzers": {
+      "schema": "buzzer",
+      "description": "Live waiter service request tickets from dining tables"
+    }
+  }
+}
