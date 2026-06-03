@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ChefHat, Clock, AlertTriangle, Check, X, ClipboardList, Info } from 'lucide-react';
+import { ChefHat, Clock, AlertTriangle, Check, X, ClipboardList, Info, ArrowLeftRight } from 'lucide-react';
 import { Restaurant, Order, Buzzer } from '../types';
 
 interface KdsProps {
@@ -382,13 +382,22 @@ function KdsTicketCard({ order, onStatusUpdate, onCancelDish, ticker }: KdsTicke
         )}
 
         {order.status === 'accepted' && (
-          <button
-            onClick={() => onStatusUpdate(order.id, 'completed')}
-            className="w-full bg-emerald-650 hover:bg-emerald-700 text-white py-2 text-[10px] font-black uppercase rounded-xl transition shadow-lg flex items-center justify-center gap-1"
-          >
-            <Check size={14} className="stroke-[3]" />
-            Mark Fulfilled & Served
-          </button>
+          <div className="flex flex-col gap-1.5 w-full">
+            <button
+              onClick={() => onStatusUpdate(order.id, 'completed')}
+              className="w-full bg-emerald-650 hover:bg-emerald-700 text-white py-2 text-[10px] font-black uppercase rounded-xl transition shadow-lg flex items-center justify-center gap-1 cursor-pointer"
+            >
+              <Check size={14} className="stroke-[3]" />
+              Mark Fulfilled & Served
+            </button>
+            <button
+              onClick={() => onStatusUpdate(order.id, 'pending')}
+              className="w-full bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 py-1.5 text-[9px] font-black uppercase rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <ArrowLeftRight size={11} className="stroke-[2.5]" />
+              <span>Revert to Incoming Queue</span>
+            </button>
+          </div>
         )}
       </div>
 

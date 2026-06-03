@@ -71,6 +71,20 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  // Dynamic deep-link parser for table QR codes: /r/:restaurantId/t/:tableNumber
+  useEffect(() => {
+    const match = currentPath.match(/^\/r\/([^/]+)\/t\/(\d+)/);
+    if (match) {
+      const parsedRestId = match[1];
+      const parsedTableNum = parseInt(match[2], 10);
+      if (parsedRestId && !isNaN(parsedTableNum)) {
+        setSelectedRestaurantId(parsedRestId);
+        setSelectedTableNumber(parsedTableNum);
+        setActiveMode('dinein');
+      }
+    }
+  }, [currentPath]);
+
   const isPortalRoute = currentPath.startsWith('/portal') || currentPath.startsWith('/admin') || currentPath.startsWith('/backend') || currentPath.startsWith('/staff');
 
   // Enforce correct modes depending on the current URL path
@@ -237,14 +251,15 @@ export default function App() {
   };
 
   // State update propagation helpers
-  const handleUpdateOrderStatus = async (orderId: string, nextStatus: any) => {
+  const handleUpdateOrderStatus = async (orderId: string, nextStatus: any, released?: boolean) => {
     try {
       const targetOrder = orders.find(o => o.id === orderId);
       if (targetOrder) {
         const updatedOrder = { 
           ...targetOrder, 
           status: nextStatus,
-          handshakeApproved: (nextStatus === 'accepted' || nextStatus === 'completed') ? true : targetOrder.handshakeApproved
+          handshakeApproved: (nextStatus === 'accepted' || nextStatus === 'completed') ? true : targetOrder.handshakeApproved,
+          released: released !== undefined ? released : targetOrder.released
         };
         const res = await fetch("/api/orders", {
           method: "POST",
@@ -253,7 +268,7 @@ export default function App() {
         });
         await res.json();
         await refreshUnifiedDatabase();
-        triggerAppAlert("Order State Modified", `Order moved safely to ${nextStatus.toUpperCase()}.`, "success");
+        // Silent update: successfully changed status, state reflections handle feedback in real-time
       }
     } catch (e) {
       triggerAppAlert("Error", "Could not submit status override to network.", "error");
@@ -272,13 +287,11 @@ export default function App() {
         if (remainingItems.length === 0) {
           nextStatus = 'rejected' as const;
           newTotal = 0;
-          triggerAppAlert("Order Cancelled", "All items in ticket were removed. Order status updated to Rejected.", "info");
         } else {
           // Re-calculate total amount excluding discounts accordingly
           newTotal = remainingItems.reduce((acc, chunk) => {
             return acc + (chunk.price * chunk.quantity);
           }, 0);
-          triggerAppAlert("Dish item removed", `re-calculated net cost is $${newTotal.toFixed(2)}.`, "success");
         }
 
         const updatedOrder = {
@@ -295,6 +308,7 @@ export default function App() {
         });
         await res.json();
         await refreshUnifiedDatabase();
+        // Silent update on dish cancellation
       }
     } catch (e) {
       triggerAppAlert("Override Failure", "Could not remove specific item on the server.", "error");
@@ -547,6 +561,7 @@ export default function App() {
                   triggerAppAlert={triggerAppAlert}
                   buzzers={buzzers}
                   ticker={ticker}
+                  onSwitchToKitchenMode={() => setActiveMode('kitchen')}
                 />
               )}
 

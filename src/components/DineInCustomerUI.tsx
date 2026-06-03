@@ -478,7 +478,9 @@ ${JSON.stringify(liveMenuContext)}
     return orders.filter(o => 
       o.restaurantId === restaurant.id && 
       o.tableNumber === tableNumber &&
-      o.userPhone === customerSession.phone
+      o.userPhone === customerSession.phone &&
+      o.released !== true &&
+      !o.id.startsWith("seat-")
     );
   }, [orders, restaurant, tableNumber, customerSession]);
 
@@ -519,6 +521,78 @@ ${JSON.stringify(liveMenuContext)}
     return calculateBillSummary(list);
   }, [allOrderedItems, selectedSplitItems]);
 
+  const prevOrdersRef = useRef<{ 
+    [orderId: string]: { 
+      status: string; 
+      items: { [itemId: string]: { name: string; quantity: number } } 
+    } 
+  }>({});
+
+  useEffect(() => {
+    if (!customerSession) {
+      prevOrdersRef.current = {};
+      return;
+    }
+
+    const currentMap: typeof prevOrdersRef.current = {};
+    customerOrders.forEach(o => {
+      const itemsMap: { [itemId: string]: { name: string; quantity: number } } = {};
+      o.items.forEach(it => {
+        itemsMap[it.id] = { name: it.name, quantity: it.quantity };
+      });
+      currentMap[o.id] = { status: o.status, items: itemsMap };
+    });
+
+    const isInitial = Object.keys(prevOrdersRef.current).length === 0;
+    if (isInitial) {
+      prevOrdersRef.current = currentMap;
+      return;
+    }
+
+    // Compare to trigger alerts when cancelled
+    Object.keys(prevOrdersRef.current).forEach(orderId => {
+      const prevOrder = prevOrdersRef.current[orderId];
+      const currOrder = currentMap[orderId];
+
+      if (currOrder) {
+        // Case A: Whole order is now cancelled/rejected
+        if (prevOrder.status !== 'rejected' && currOrder.status === 'rejected') {
+          triggerAppAlert(
+            "Order Cancelled", 
+            `Your order #${orderId.slice(-6).toUpperCase()} has been cancelled by the kitchen/staff.`, 
+            "error"
+          );
+        } 
+        // Case B: Individual items within an active order are cancelled or removed
+        else if (prevOrder.status !== 'rejected' && currOrder.status !== 'rejected') {
+          Object.keys(prevOrder.items).forEach(itemId => {
+            const prevItem = prevOrder.items[itemId];
+            const currItem = currOrder.items[itemId];
+
+            if (!currItem) {
+               // Dish was cancelled/removed
+              triggerAppAlert(
+                "Dish Cancelled", 
+                `"${prevItem.name}" was cancelled from your order.`, 
+                "error"
+              );
+            } else if (currItem.quantity < prevItem.quantity) {
+              // Quantity was reduced
+              triggerAppAlert(
+                "Dish Reduced", 
+                `Quantity for "${prevItem.name}" was reduced.`, 
+                "info"
+              );
+            }
+          });
+        }
+      }
+    });
+
+    // Save the state
+    prevOrdersRef.current = currentMap;
+  }, [customerOrders, customerSession, triggerAppAlert]);
+
   const [localSecondsTicker, setLocalSecondsTicker] = useState(0);
   useEffect(() => {
     const handle = setInterval(() => {
@@ -531,8 +605,8 @@ ${JSON.stringify(liveMenuContext)}
     return orders.filter(
       o => o.restaurantId === restaurant.id &&
            o.tableNumber === tableNumber &&
-           o.status !== 'completed' &&
-           o.status !== 'rejected'
+           o.status !== 'rejected' &&
+           o.released !== true
     );
   }, [orders, restaurant.id, tableNumber]);
 
@@ -780,6 +854,20 @@ ${JSON.stringify(liveMenuContext)}
 
           {customerSession && (
             <div className="flex items-center gap-1.5">
+              {/* Shopping Cart Button */}
+              <button
+                onClick={() => setIsCartOpen(true)}
+                className="p-2 bg-indigo-600 text-white rounded-sm hover:bg-indigo-700 transition shadow-md relative flex items-center justify-center border border-indigo-500 cursor-pointer"
+                title="Open basket review"
+              >
+                <ShoppingCart size={14} />
+                {(Object.values(cart) as number[]).reduce((a: number, b: number) => a + b, 0) > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[8px] font-black w-4.5 h-4.5 flex items-center justify-center rounded-full border border-white">
+                    {(Object.values(cart) as number[]).reduce((a: number, b: number) => a + b, 0)}
+                  </span>
+                )}
+              </button>
+
               {/* Floating AI Maitre D' chat button */}
               <button
                 onClick={() => setIsAiConciergeOpen(!isAiConciergeOpen)}
@@ -880,22 +968,6 @@ ${JSON.stringify(liveMenuContext)}
                 </div>
               </div>
 
-              {/* TEMPORARY GOLD LOYALTY CARD ACCENTS */}
-              <div className="bg-gradient-to-r from-amber-50/90 via-amber-100/90 to-amber-50/90 rounded-2xl border border-amber-200 p-3.5 flex items-center justify-between text-xs text-amber-900 shadow-xs hover:shadow-sm hover:border-amber-300 transition-all">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-600 shrink-0">
-                    <Award size={16} className="text-amber-500 animate-pulse" />
-                  </div>
-                  <div>
-                    <p className="font-extrabold text-[10px] tracking-wide uppercase leading-none text-slate-900">Gold Diner Rewards Club</p>
-                    <p className="text-[9px] text-amber-850 mt-1 font-semibold">Accumulating <span className="font-extrabold">{Math.round(cumulativeBill.finalPayable / 10)} pts</span> • Seating Streak: 3 Days 🔥</p>
-                  </div>
-                </div>
-                <span className="text-[8px] bg-amber-500 text-white font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider shadow-xs">
-                  ACTIVE
-                </span>
-              </div>
-
               {/* Special Limited Time Offers section */}
               {restaurantMenus.some(m => m.isLimitedTimeOffer && m.isAvailable) && (
                 <div className="space-y-2.5">
@@ -931,7 +1003,7 @@ ${JSON.stringify(liveMenuContext)}
                               ₹{(item.price + item.promoValue).toFixed(2)}
                             </span>
                           </div>
-                          <span className="text-[9px] text-indigo-600 font-extrabold bg-white px-2.5 py-1 rounded-full border border-amber-200 shadow-xs hover:bg-slate-50 transition">
+                          <span className="text-[9px] text-indigo-700 font-extrabold bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-200 shadow-sm transition hover:bg-indigo-100 active:scale-95 select-none">
                             + Add
                           </span>
                         </div>
@@ -1057,7 +1129,7 @@ ${JSON.stringify(liveMenuContext)}
                           ) : (
                             <button 
                               onClick={() => updateCartQty(item.id, 1)}
-                              className="px-3.5 py-1.5 bg-white border border-slate-200 hover:border-indigo-500 hover:text-indigo-600 text-slate-705 text-[10px] font-bold rounded-full transition shadow-xs hover:shadow-sm"
+                              className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-[10px] rounded-full border border-indigo-200 shadow-sm transition active:scale-95 active:bg-indigo-200 select-none cursor-pointer"
                             >
                               + Add
                             </button>
@@ -1254,19 +1326,6 @@ ${JSON.stringify(liveMenuContext)}
                               </div>
                             </div>
                           )}
-
-                          {/* GENERATE UPI INSTANT QR */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowUpiSim(true);
-                              setCustomUpiStatus('idle');
-                            }}
-                            className="w-full bg-emerald-600 hover:bg-emerald-700 font-extrabold text-white text-[9px] py-2 rounded uppercase tracking-wider flex items-center justify-center gap-1 transition"
-                          >
-                            <QrCode size={11} />
-                            <span>Scan Split Receipt QR</span>
-                          </button>
                         </div>
                       )}
                     </div>
@@ -1647,119 +1706,6 @@ ${JSON.stringify(liveMenuContext)}
                 >
                   Submit Stars
                 </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* INSTANT UPI QR SIMULATED PAYMENT DIALOG */}
-        {showUpiSim && (
-          <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 text-slate-850">
-            <div className="bg-white rounded p-5 w-76 space-y-4 border border-slate-200 shadow-2xl relative">
-              <button 
-                type="button"
-                onClick={() => {
-                  setShowUpiSim(false);
-                  setCustomUpiStatus('idle');
-                }}
-                className="absolute top-3.5 right-3.5 text-slate-400 hover:text-slate-600"
-              >
-                <X size={16} />
-              </button>
-
-              <div className="text-center space-y-1">
-                <span className="text-[8px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full uppercase tracking-widest inline-block mx-auto mb-1">BHIM UPI Settle Gateway</span>
-                <h3 className="font-extrabold text-xs text-slate-900 uppercase tracking-widest">Interactive Table Payment</h3>
-                <p className="text-[10px] text-slate-400">
-                  Scan receipt or simulate instant settle at Table #{tableNumber}
-                </p>
-              </div>
-
-              <div className="bg-slate-50 border border-slate-200 p-4 rounded flex flex-col items-center justify-center">
-                {customUpiStatus === 'success' ? (
-                  <div className="py-6 flex flex-col items-center justify-center space-y-2 text-center text-emerald-600">
-                    <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
-                      <CheckCircle size={28} className="text-emerald-600" />
-                    </div>
-                    <div>
-                      <p className="font-black text-xs uppercase tracking-wider">PAYMENT COMPLETED</p>
-                      <p className="text-[9px] text-slate-500">Merchant Soundbox Settle Received!</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="relative p-2.5 bg-white border border-slate-100 rounded shadow-xs flex flex-col items-center">
-                    <svg width="120" height="120" viewBox="0 0 100 100" className="opacity-90">
-                      <path d="M0,0 h30 v10 h-20 v20 h-10 z" fill="#000" />
-                      <path d="M70,0 h30 v30 h-10 v-20 h-20 z" fill="#000" />
-                      <path d="M0,70 v30 h30 v-10 h-20 v-20 z" fill="#000" />
-                      <path d="M70,100 h30 v-30 h-10 v-20 h-20 z" fill="#000" />
-                      <rect x="15" y="15" width="15" height="15" fill="#312e81" />
-                      <rect x="70" y="15" width="15" height="15" fill="#312e81" />
-                      <rect x="15" y="70" width="15" height="15" fill="#312e81" />
-                      <path d="M40,15 h10 v10 h-10 z" fill="#312e81" />
-                      <path d="M40,35 h20 v10 h-20 z" fill="#312e81" />
-                      <path d="M15,45 h10 v20 h-10 z" fill="#312e81" />
-                      <path d="M45,70 h30 v10 h-30 z" fill="#312e81" />
-                      <path d="M75,45 h15 v15 h-15 z" fill="#312e81" />
-                    </svg>
-                    <div className="absolute inset-x-0 bottom-2 bg-white/95 text-center py-0.5">
-                      <p className="font-black text-[13px] text-slate-900 leading-none">
-                        ₹{(splitterMode === 'equal' ? (cumulativeBill.finalPayable / splitCount) : splitterCustomBill.finalPayable).toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-1 font-mono text-[8px] text-slate-400 text-center leading-none">
-                <p>Merchant QR ID: {restaurant.id}-T{tableNumber}</p>
-                <p>Ref Hash: BZR-{tableNumber}-{Math.floor(1000 + Math.random() * 9000)}</p>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowUpiSim(false);
-                    setCustomUpiStatus('idle');
-                  }}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 rounded text-xs text-center transition"
-                >
-                  Cancel
-                </button>
-                {customUpiStatus !== 'success' && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setCustomUpiStatus('scanning');
-                      setTimeout(async () => {
-                        try {
-                          // Settle local customer orders
-                          for (const cd of customerOrders) {
-                            if (cd.status !== 'completed') {
-                              await setDoc(doc(db, "orders", cd.id), {
-                                ...cd,
-                                status: "completed"
-                              }, { merge: true });
-                            }
-                          }
-                          setCustomUpiStatus('success');
-                          triggerAppAlert("Settled successfully!", "Payment simulated successfully. Merchant queue updated.", "success");
-                          setTimeout(() => {
-                            setShowUpiSim(false);
-                            setShowSplitter(false);
-                            handleLogout(); // Automatically release the seat upon payment success!
-                          }, 1200);
-                        } catch (e) {
-                          triggerAppAlert("Payment Settle error", "Could not complete state persist.", "error");
-                        }
-                      }, 1800);
-                    }}
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-2 rounded text-xs text-center shadow-md transition"
-                  >
-                    Simulate Paid ✔
-                  </button>
-                )}
               </div>
             </div>
           </div>

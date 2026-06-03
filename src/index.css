@@ -33,3 +33,45 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+@media print {
+  /* Hide everything except our print element */
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  
+  #kitchen-display-system-root,
+  main,
+  header,
+  footer,
+  aside,
+  nav,
+  button,
+  .print\:hidden {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  #print-qr-flyer-area,
+  #print-qr-flyer-area * {
+    visibility: visible !important;
+  }
+
+  #print-qr-flyer-area {
+    display: flex !important;
+    visibility: visible !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    right: 0 !important;
+    margin: 0 auto !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+}

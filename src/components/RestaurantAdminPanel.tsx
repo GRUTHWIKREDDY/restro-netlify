@@ -3,7 +3,7 @@ import {
   Building2, Store, ClipboardList, ChefHat, CheckCircle, Clock, 
   AlertTriangle, DollarSign, QrCode, Plus, Edit, Trash2, Search, 
   Wand2, BrainCircuit, Bot, FileText, X, Sparkles, RefreshCw, 
-  AlertOctagon, Info, ArrowLeftRight, Bell, Camera, Check, Loader2
+  AlertOctagon, Info, ArrowLeftRight, Bell, Camera, Check, Loader2, Utensils
 } from 'lucide-react';
 import { Restaurant, MenuItem, Order, Buzzer } from '../types';
 import { db } from '../firebase';
@@ -17,11 +17,12 @@ interface AdminProps {
   onMenuItemSave: (menuItem: MenuItem, isEdit: boolean) => void;
   onMenuItemDelete: (id: string) => void;
   orders: Order[];
-  onUpdateOrderStatus: (id: string, nextStatus: any) => void;
+  onUpdateOrderStatus: (id: string, nextStatus: any, released?: boolean) => void;
   onTableUpdate: (count: number) => void;
   triggerAppAlert: (title: string, message: string, type?: 'success' | 'error' | 'info') => void;
   buzzers: Buzzer[];
   ticker?: number;
+  onSwitchToKitchenMode: () => void;
 }
 
 export default function RestaurantAdminPanel({
@@ -36,7 +37,8 @@ export default function RestaurantAdminPanel({
   onTableUpdate,
   triggerAppAlert,
   buzzers,
-  ticker
+  ticker,
+  onSwitchToKitchenMode
 }: AdminProps) {
   const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'tables' | 'floor' | 'buzzers'>('orders');
 
@@ -82,6 +84,8 @@ export default function RestaurantAdminPanel({
 
   const [tempTableCount, setTempTableCount] = useState<string>(restaurant?.totalTables.toString() || '8');
   const [selectedQRTable, setSelectedQRTable] = useState<number>(1);
+  const [flyerTheme, setFlyerTheme] = useState<'noir' | 'gold' | 'emerald' | 'cobalt'>('noir');
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
 
   useEffect(() => {
     if (restaurant) {
@@ -438,7 +442,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
     return Array.from({ length: total }, (_, idx) => {
       const tableNum = idx + 1;
       const tableOrders = tenantOrders.filter(o => o.tableNumber === tableNum);
-      const activeOrders = tableOrders.filter(o => o.status !== 'completed' && o.status !== 'rejected');
+      const activeOrders = tableOrders.filter(o => o.status !== 'rejected' && o.released !== true);
       const isOccupied = activeOrders.length > 0;
 
       const openPendingCount = activeOrders.filter(o => o.status === 'pending').length;
@@ -453,8 +457,6 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
         } else {
           floorState = 'served';
         }
-      } else if (tableOrders.some(o => o.status === 'completed')) {
-        floorState = 'served';
       }
 
       let occupantName = "";
@@ -490,12 +492,12 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
     const tableData = floorTableData.find(t => t.tableNum === tableNum);
     if (!tableData || !tableData.isOccupied) return;
 
-    const confirmRelease = window.confirm(`Release Table #${tableNum}? This will settle and mark all active tickets as Completed.`);
+    const confirmRelease = window.confirm(`Release Table #${tableNum}? This will settle and mark all active tickets as Completed and Checked Out.`);
     if (!confirmRelease) return;
 
     try {
       for (const order of tableData.activeOrders) {
-        await onUpdateOrderStatus(order.id, 'completed');
+        await onUpdateOrderStatus(order.id, 'completed', true);
       }
       triggerAppAlert("Table Released", `Table #${tableNum} has been released successfully and is now unoccupied.`, "success");
     } catch (err) {
@@ -576,105 +578,76 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
       {/* KPI Indicators grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         
-        {/* Trigger financial audits popup */}
+        {/* CARD 1: NetGross Cache */}
         <button 
           onClick={() => setIsSalesLedgerOpen(true)}
-          className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm text-left hover:border-emerald-500 hover:shadow-md active:scale-[0.99] transition duration-200 group relative block"
+          className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm text-left hover:border-emerald-500 hover:shadow-md active:scale-[0.99] transition duration-200 group relative block cursor-pointer"
         >
           <div className="flex justify-between text-slate-400">
-            <span className="text-[10px] uppercase font-black tracking-wider group-hover:text-emerald-600">Net Gross Cash Ledger</span>
+            <span className="text-[10px] uppercase font-black tracking-wider group-hover:text-emerald-600">NetGross Cache</span>
             <div className="text-emerald-500 font-extrabold text-sm font-mono">₹</div>
           </div>
           <h3 className="text-2xl font-black text-slate-900 mt-1">₹{stats.revenue.toFixed(2)}</h3>
           <p className="text-[10px] text-slate-400 mt-1 group-hover:text-emerald-600 transition font-mono">Run Ledger Audits →</p>
         </button>
 
+        {/* CARD 2: Seat Floor Manager */}
         <button 
-          onClick={() => setActiveTab('tables')}
-          className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm text-left hover:border-rose-500 hover:shadow-md active:scale-[0.99] transition duration-200 group relative block"
+          onClick={() => setActiveTab('floor')}
+          className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm text-left hover:border-indigo-505 hover:border-indigo-500 hover:shadow-md active:scale-[0.99] transition duration-200 group relative block cursor-pointer"
         >
           <div className="flex justify-between text-slate-400">
-            <span className="text-[10px] uppercase font-black tracking-wider group-hover:text-rose-600">Dynamic Tables</span>
-            <QrCode size={18} className="text-rose-500" />
+            <span className="text-[10px] uppercase font-black tracking-wider group-hover:text-indigo-600">Seat Floor Manager</span>
+            <span className="text-indigo-500 text-xs text-right">🪑</span>
           </div>
-          <h3 className="text-2xl font-black text-slate-900 mt-1">{restaurant.totalTables} Seats</h3>
-          <p className="text-[10px] text-slate-400 mt-1 group-hover:text-rose-600 transition font-mono">Modify scale maps →</p>
-        </button>
-
-        <button 
-          onClick={() => setActiveTab('orders')}
-          className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm text-left hover:border-yellow-500 hover:shadow-md active:scale-[0.99] transition duration-200 group relative block"
-        >
-          <div className="flex justify-between text-slate-400">
-            <span className="text-[10px] uppercase font-black tracking-wider group-hover:text-yellow-600">Queue pending</span>
-            <Clock size={18} className="text-yellow-500" />
-          </div>
-          <h3 className="text-2xl font-black text-slate-900 mt-1">{stats.pending} Tickets</h3>
-          <p className="text-[10px] text-slate-400 mt-1 group-hover:text-yellow-600 transition font-mono">Review customer list →</p>
-        </button>
-
-        <button 
-          onClick={() => setActiveTab('orders')}
-          className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm text-left hover:border-indigo-500 hover:shadow-md active:scale-[0.99] transition duration-200 group relative block"
-        >
-          <div className="flex justify-between text-slate-400">
-            <span className="text-[10px] uppercase font-black tracking-wider group-hover:text-indigo-600">Cooking station</span>
-            <ChefHat size={18} className="text-indigo-500" />
-          </div>
-          <h3 className="text-2xl font-black text-slate-900 mt-1">{stats.accepted} Cooking</h3>
-          <p className="text-[10px] text-slate-400 mt-1 group-hover:text-indigo-500 transition font-mono">Observe culinary prep →</p>
-        </button>
-      </div>
-
-      {/* GEMINI PRICING OPTIMIZER */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-950 to-indigo-950 p-5 rounded-3xl shadow-md text-white border border-indigo-900 flex flex-col md:flex-row gap-6 justify-between items-center relative overflow-hidden">
-        <div className="flex-1 space-y-3 z-10">
-          <div className="flex items-center gap-1.5">
-            <Sparkles size={14} className="text-amber-400 sparkle-shiver" />
-            <span className="font-mono text-[9px] font-black text-indigo-400 tracking-widest uppercase">Gemini 3.5 Sales Optimizer</span>
-          </div>
-          <h3 className="text-base font-black tracking-tight text-white leading-none">Diagnostic Pricing & Sales Report</h3>
-          <p className="text-xs text-slate-400 max-w-xl leading-relaxed">
-            Invite AI to evaluate menu lists, track active items, and analyze margin optimizations to propose up-selling happy hour goals.
+          <h3 className="text-2xl font-black text-slate-900 mt-1">
+            {floorTableData.filter(t => t.isOccupied).length} / {restaurant.totalTables} Occupied
+          </h3>
+          <p className="text-[10px] text-slate-400 mt-1 group-hover:text-indigo-600 transition font-mono">
+            {floorTableData.filter(t => t.floorState === 'empty').length} vacant seats • {floorTableData.filter(t => t.isOccupied).length} busy →
           </p>
-          <button
-            onClick={handleGenerateAiOptimizerReport}
-            disabled={isGeneratingReport}
-            className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-900 border border-indigo-500 font-extrabold text-xs px-4 py-2.5 rounded-xl transition flex items-center gap-1.5"
-          >
-            {isGeneratingReport ? (
-              <>
-                <RefreshCw size={13} className="animate-spin" />
-                <span>Auditing transactions...</span>
-              </>
-            ) : (
-              <>
-                <BrainCircuit size={14} />
-                <span>Compile AI Optimization Reports</span>
-              </>
-            )}
-          </button>
-        </div>
+        </button>
 
-        <div className="w-full md:w-80 bg-slate-900/90 border border-slate-800 rounded-2xl p-4 max-h-48 overflow-y-auto scrollbar-none text-xs z-10">
-          {aiReportOutput ? (
-            <div className="space-y-1">
-              <span className="text-[9px] font-bold uppercase text-indigo-500 block">AI Strategic Recommendations</span>
-              <p className="text-slate-300 leading-normal whitespace-pre-line font-medium">{aiReportOutput}</p>
-            </div>
-          ) : (
-            <div className="h-full flex flex-col items-center justify-center text-center p-3 opacity-60">
-              <Bot size={28} className="text-indigo-400 mb-1.5 animate-pulse" />
-              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Strategy Report Empty</p>
-              <p className="text-[9px] text-slate-500 mt-1">Submit menu diagnostics to view strategies.</p>
-            </div>
-          )}
-        </div>
+        {/* CARD 3: Menu & Promos */}
+        <button 
+          onClick={() => setActiveTab('menu')}
+          className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm text-left hover:border-rose-500 hover:shadow-md active:scale-[0.99] transition duration-200 group relative block cursor-pointer"
+        >
+          <div className="flex justify-between text-slate-400">
+            <span className="text-[10px] uppercase font-black tracking-wider group-hover:text-rose-600">Menu & Promos</span>
+            <Utensils size={18} className="text-rose-505 text-rose-500" />
+          </div>
+          <h3 className="text-2xl font-black text-slate-900 mt-1">Catalog & Promos</h3>
+          <p className="text-[10px] text-slate-400 mt-1 group-hover:text-rose-600 transition font-mono">Manage menu items, recipes, and discounts →</p>
+        </button>
+
+        {/* CARD 4: Cooking Station */}
+        <button 
+          onClick={() => {
+            setActiveTab('orders');
+            setTimeout(() => {
+              const element = document.getElementById('live-override-hub');
+              if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }
+            }, 100);
+          }}
+          className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm text-left hover:border-amber-500 hover:shadow-md active:scale-[0.99] transition duration-200 group relative block cursor-pointer"
+        >
+          <div className="flex justify-between text-slate-400">
+            <span className="text-[10px] uppercase font-black tracking-wider group-hover:text-amber-600">Cooking Station</span>
+            <ChefHat size={18} className="text-amber-500 animate-pulse" />
+          </div>
+          <h3 className="text-lg font-black text-slate-900 mt-2">
+            {stats.accepted} Cooking • {stats.pending} Pending
+          </h3>
+          <p className="text-[10px] text-slate-400 mt-1 group-hover:text-amber-600 transition font-mono">Open Kitchen Layout Monitor →</p>
+        </button>
       </div>
 
       {/* TAB: TICKETS DISPATCH OVERVIEW */}
       {activeTab === 'orders' && (
-        <div className="space-y-4">
+        <div id="live-override-hub" className="space-y-4">
           <div className="bg-white p-4 rounded-3xl border border-slate-200">
             <h3 className="text-base font-bold text-slate-905">Live Culinary Override Hub</h3>
             <p className="text-xs text-slate-500 mt-0.5">Manage chronological order cards. Admins can override chef tasks and move accidentally completed orders back into active preparation.</p>
@@ -791,20 +764,29 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                           )}
 
                           {o.status === 'accepted' && (
-                            <>
+                            <div className="flex flex-col gap-1.5 w-full">
+                              <div className="flex gap-1 w-full">
+                                <button 
+                                  onClick={() => onUpdateOrderStatus(o.id, 'rejected')}
+                                  className="w-1/2 bg-white hover:bg-rose-50 border border-slate-250 text-rose-550 text-rose-500 px-2 py-1 text-[10px] font-black rounded-lg transition cursor-pointer"
+                                >
+                                  Cancel order
+                                </button>
+                                <button 
+                                  onClick={() => onUpdateOrderStatus(o.id, 'completed')}
+                                  className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 text-[10px] font-black rounded-lg transition shadow-sm cursor-pointer"
+                                >
+                                  Deliver Table
+                                </button>
+                              </div>
                               <button 
-                                onClick={() => onUpdateOrderStatus(o.id, 'rejected')}
-                                className="w-1/2 bg-white hover:bg-rose-50 border border-slate-250 text-rose-500 px-2 py-1 text-[10px] font-black rounded-lg transition"
+                                onClick={() => onUpdateOrderStatus(o.id, 'pending')}
+                                className="w-full bg-slate-100 hover:bg-slate-200 border border-slate-250 text-slate-700 py-1 text-[10px] font-black rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer"
                               >
-                                Cancel order
+                                <ArrowLeftRight size={11} className="text-slate-500" />
+                                <span>Return to Incoming Queue</span>
                               </button>
-                              <button 
-                                onClick={() => onUpdateOrderStatus(o.id, 'completed')}
-                                className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 text-[10px] font-black rounded-lg transition shadow-sm"
-                              >
-                                Deliver Table
-                              </button>
-                            </>
+                            </div>
                           )}
 
                           {(o.status === 'completed' || o.status === 'rejected') && (
@@ -951,17 +933,26 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
       {/* TAB: QR CODE flyers GENERATOR */}
       {activeTab === 'tables' && (
         <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-6 shadow-sm">
-          <div className="border-b border-slate-150 pb-4">
-            <h3 className="text-base font-bold text-slate-900">Seating Node Allocator</h3>
-            <p className="text-xs text-slate-500">Allocate dynamic seating maps and output high-resolution vector layout codes ready for merchant downloads.</p>
+          <div className="border-b border-slate-150 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">Seating Node QR Suite</h3>
+              <p className="text-xs text-slate-500">Provision smart touchpoint QR layouts, choose branded desk-tent display themes, and print physical posters.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span>
+              <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
+                URL Routing Engine: Active
+              </span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-205 space-y-4">
-              <h4 className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400">Merchant Settings</h4>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Control Column */}
+            <div className="lg:col-span-4 bg-slate-50 p-5 rounded-2xl border border-slate-205 space-y-5">
+              <h4 className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400">QR Suite Settings</h4>
               
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-550 block">Allocate Tables Quantity</label>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block">1. Allocate Tables Quantity</label>
                 <div className="flex gap-2">
                   <input 
                     type="number" 
@@ -969,83 +960,247 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                     max="50"
                     value={tempTableCount}
                     onChange={(e) => setTempTableCount(e.target.value)}
-                    className="w-24 bg-white border border-slate-300 rounded-xl text-center px-3 py-1.5 font-bold"
+                    className="w-20 bg-white border border-slate-300 rounded-xl text-center px-2 py-1.5 font-black text-slate-800"
                   />
                   <button 
                     onClick={handleCommitTableCount}
-                    className="flex-1 bg-slate-900 hover:bg-slate-800 text-white py-1.5 px-3 rounded-xl font-bold transition text-xs"
+                    className="flex-1 bg-slate-900 hover:bg-slate-800 text-white py-1.5 px-3 rounded-xl font-bold transition text-xs cursor-pointer shadow-xs"
                   >
-                    Commit Configuration
+                    Set Table Count
                   </button>
                 </div>
-                <p className="text-[10px] text-slate-400 leading-normal pt-1">
-                  Decreasing scaling totals immediately invalidates removed pathway routing links.
+                <p className="text-[9.5px] text-slate-400 leading-normal">
+                  Scale your physical seats dynamically. Max: 50. Code routes are created live.
                 </p>
               </div>
 
-              <div className="pt-3 border-t border-slate-200 space-y-1">
-                <label className="text-xs font-bold text-slate-550 block">Target Seat Flyer</label>
+              <div className="pt-3 border-t border-slate-200 space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block text-left">2. Choose Seat Showcase</label>
                 <select
                   value={selectedQRTable}
                   onChange={(e) => setSelectedQRTable(parseInt(e.target.value))}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-2 py-1.5 font-bold text-slate-805"
+                  className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-2 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-500 cursor-pointer"
                 >
                   {Array.from({ length: restaurant.totalTables }, (_, idx) => idx + 1).map(num => (
-                    <option key={num} value={num}>Table #{num} Poster</option>
+                    <option key={num} value={num}>Desk Standing Card — Table #{num}</option>
                   ))}
                 </select>
               </div>
+
+              <div className="pt-3 border-t border-slate-200 space-y-2">
+                <label className="text-xs font-bold text-slate-700 block">3. Flyer Branding Theme</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'noir', name: 'Noir Charcoal', bg: 'bg-slate-900 border-slate-700 text-slate-200' },
+                    { id: 'gold', name: 'Majestic Gold', bg: 'bg-amber-950 border-amber-600 text-amber-200' },
+                    { id: 'emerald', name: 'Sage Emerald', bg: 'bg-emerald-950 border-emerald-600 text-emerald-200' },
+                    { id: 'cobalt', name: 'Royale Cobalt', bg: 'bg-indigo-950 border-teal-500 text-indigo-200' }
+                  ].map(themeItem => (
+                    <button
+                      key={themeItem.id}
+                      onClick={() => setFlyerTheme(themeItem.id as any)}
+                      className={`p-2.5 rounded-xl border text-[10px] font-extrabold text-left transition-all cursor-pointer ${
+                        flyerTheme === themeItem.id 
+                          ? 'border-indigo-600 ring-2 ring-indigo-500/25 shadow-sm' 
+                          : 'border-slate-200 hover:border-slate-350 bg-white text-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-3.5 h-3.5 rounded-full ${themeItem.bg} border flex items-center justify-center text-[6px]`}>◆</span>
+                        {themeItem.name}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-200 text-xs text-slate-505 space-y-2">
+                <p className="font-extrabold text-slate-700 uppercase text-[9px] tracking-wider">Device Test Link</p>
+                <p className="text-[10px] leading-relaxed text-slate-400">
+                  Click below to open the digital customer ordering page for <b className="text-slate-600 font-bold">Table #{selectedQRTable}</b> in a new browser tab to try seating:
+                </p>
+                <a
+                  href={`${window.location.origin}/r/${restaurant.id}/t/${selectedQRTable}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold py-2 px-3 rounded-xl text-[10.5px] uppercase tracking-wider block text-center border border-indigo-100 transition shadow-2xs"
+                >
+                  📱 Test Guest Portal (Table #{selectedQRTable})
+                </a>
+              </div>
             </div>
 
-            <div className="md:col-span-2 bg-gradient-to-br from-slate-900 to-slate-950 text-white p-6 rounded-2xl border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-6 shadow">
-              <div className="space-y-3 flex-1 text-center sm:text-left max-w-sm">
-                <span className="bg-rose-500 text-white py-0.5 px-2.5 rounded-full text-[8px] font-black uppercase tracking-widest block w-max mx-auto sm:mx-0">
-                  PRINT FLYERS
-                </span>
-                <h4 className="text-base font-extrabold tracking-tight">Table #{selectedQRTable} Poster Vector</h4>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Export vector flyers. Seated guests point their phones, enter text tabs, and dispatch tickets.
-                </p>
-                <div className="bg-slate-850 p-2 text-[10px] font-mono border border-slate-800 rounded-xl text-emerald-450 break-all select-all">
-                  kcodeit.app/r/{restaurant.id}/t/{selectedQRTable}
-                </div>
-                <button
-                  onClick={() => triggerAppAlert("Asset Generated", `Flyer poster for Table ${selectedQRTable} prepared successfully.`, "success")}
-                  className="bg-white hover:bg-slate-100 text-slate-950 font-black px-4 py-2 rounded-xl text-xs transition inline-block shadow-lg"
-                >
-                  Download Asset Package
-                </button>
-              </div>
+            {/* Preview Column */}
+            <div className="lg:col-span-8 space-y-4">
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 text-white space-y-6 shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-48 h-48 bg-slate-800/10 rounded-full blur-3xl pointer-events-none"></div>
+                
+                <div className="flex flex-col md:flex-row items-center gap-6">
+                  {/* Real-time printable poster display mock */}
+                  <div className="flex-1 space-y-4">
+                    <span className="bg-rose-500 text-white py-0.5 px-3 rounded-full text-[8.5px] font-black uppercase tracking-widest block w-max">
+                      LIVE DESK TEMPLATE PREVIEW
+                    </span>
+                    <h4 className="text-lg font-black tracking-tight">Interactive Table Tent Flyer</h4>
+                    <p className="text-xs text-slate-305 leading-relaxed">
+                      Custom branded with your menu content & logo. Guests scan with their native camera to immediately initiate order tickets on our database.
+                    </p>
+                    
+                    <div className="space-y-1">
+                      <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block">Direct Dynamic Endpoint</span>
+                      <div className="bg-slate-950 p-2 text-[10.5px] font-mono border border-slate-800 rounded-xl text-emerald-400 flex items-center justify-between select-all max-w-sm">
+                        <span className="truncate">{window.location.origin}/r/{restaurant.id}/t/{selectedQRTable}</span>
+                        <span className="text-[8px] bg-slate-850 text-slate-500 px-1 py-0.2 rounded shrink-0 ml-1">Live</span>
+                      </div>
+                    </div>
 
-              <div className="bg-white text-slate-950 p-3 rounded-2xl flex flex-col items-center">
-                <p className="text-[9px] font-black tracking-widest uppercase text-rose-500 mb-2">SCAN TABLE SEAT</p>
-                <div className="w-28 h-28 bg-slate-950 rounded-lg p-2 flex items-center justify-center relative shadow-inner">
-                  <div className="grid grid-cols-4 gap-2 w-full h-full opacity-80">
-                    <div className="bg-white rounded-sm"></div>
-                    <div className="bg-white rounded-sm"></div>
-                    <div className="bg-transparent"></div>
-                    <div className="bg-white rounded-sm"></div>
-                    <div className="bg-white rounded-sm"></div>
-                    <div className="bg-transparent"></div>
-                    <div className="bg-white rounded-sm"></div>
-                    <div className="bg-white rounded-sm"></div>
-                    <div className="bg-transparent"></div>
-                    <div className="bg-white rounded-sm"></div>
-                    <div className="bg-white rounded-sm"></div>
-                    <div className="bg-transparent"></div>
-                    <div className="bg-white rounded-sm"></div>
-                    <div className="bg-transparent"></div>
-                    <div className="bg-white rounded-sm"></div>
-                    <div className="bg-white rounded-sm"></div>
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        onClick={() => window.print()}
+                        className="bg-white hover:bg-slate-100 text-slate-950 font-black px-4 py-2 rounded-xl text-xs transition shadow-lg flex items-center gap-1.5 cursor-pointer"
+                      >
+                        🖨 Print QR Desk-Tent
+                      </button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=0f172a&data=${encodeURIComponent(`${window.location.origin}/r/${restaurant.id}/t/${selectedQRTable}`)}`;
+                            const response = await fetch(qrUrl);
+                            const blob = await response.blob();
+                            const blobUrl = URL.createObjectURL(blob);
+                            const link = document.createElement('a');
+                            link.href = blobUrl;
+                            link.download = `${restaurant.name.toLowerCase().replace(/\s+/g, '-')}-table-${selectedQRTable}-qr.png`;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            URL.revokeObjectURL(blobUrl);
+                          } catch (err) {
+                            const link = document.createElement('a');
+                            link.href = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=0f172a&data=${encodeURIComponent(`${window.location.origin}/r/${restaurant.id}/t/${selectedQRTable}`)}`;
+                            link.target = '_self';
+                            link.download = `table-${selectedQRTable}-qr-code.png`;
+                            link.click();
+                          }
+                        }}
+                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-extrabold px-3 py-2 rounded-xl text-xs transition cursor-pointer"
+                      >
+                        ↓ Get QR Image
+                      </button>
+                    </div>
                   </div>
-                  <div className="absolute inset-0 m-auto w-8 h-8 rounded-lg bg-white p-1 flex items-center justify-center font-black text-xs text-rose-500 border border-slate-205">
-                    kC
+
+                  {/* Visual flyer container reflecting select design template */}
+                  <div className={`w-64 border rounded-2xl p-4 flex flex-col items-center text-center shadow-2xl shrink-0 transition-all duration-300 ${
+                    flyerTheme === 'noir' ? 'bg-slate-950 border-slate-800 text-white' :
+                    flyerTheme === 'gold' ? 'bg-gradient-to-b from-amber-950 to-slate-950 border-amber-550/40 text-amber-50' :
+                    flyerTheme === 'emerald' ? 'bg-gradient-to-b from-emerald-950 to-slate-950 border-emerald-550/40 text-emerald-50' :
+                    'bg-gradient-to-b from-indigo-950 to-slate-950 border-teal-555/40 text-sky-50'
+                  }`}>
+                    {/* Flyer Header Logo mockup */}
+                    <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest opacity-80 border-b border-white/20 pb-2 w-full justify-center">
+                      <Utensils size={10} />
+                      {restaurant.name}
+                    </div>
+
+                    <div className="my-4">
+                      <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Please Scan</div>
+                      <h5 className="text-base font-extrabold tracking-tight">ORDER DIRECTLY</h5>
+                      <p className="text-[8px] text-slate-400 max-w-[150px] mx-auto leading-tight mt-1">
+                        View menu, request floor assistance, & self-checkout instantly
+                      </p>
+                    </div>
+
+                    {/* QR Code Container */}
+                    <div className="bg-white p-2.5 rounded-xl shadow-lg flex flex-col items-center">
+                      <img 
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&color=0f172a&data=${encodeURIComponent(`${window.location.origin}/r/${restaurant.id}/t/${selectedQRTable}`)}`}
+                        alt={`QR code for Table ${selectedQRTable}`}
+                        referrerPolicy="no-referrer"
+                        className="w-28 h-28 object-contain"
+                      />
+                      <span className="text-[7.5px] font-black tracking-widest uppercase text-slate-900 mt-1.5 bg-slate-100 px-2 py-0.5 rounded font-mono">
+                        SCAN ME
+                      </span>
+                    </div>
+
+                    <div className="mt-4 pt-2 border-t border-white/10 w-full">
+                      <div className="text-[10px] font-bold text-slate-400">YOUR SEATING NODE</div>
+                      <div className="text-xl font-black tracking-widest font-mono text-white mt-0.5">
+                        TABLE #{selectedQRTable}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <span className="text-[8px] font-mono text-slate-400 font-bold mt-2">
-                  {restaurant.name} T#{selectedQRTable}
-                </span>
               </div>
+                 {/* ALWAYS RENDERED FOR DIRECT PRINT - INVISIBLE ON SCREEN, VISIBLE ON PRINT */}
+      <div id="print-qr-flyer-area" className="hidden print:flex flex-col items-center justify-center min-h-screen bg-white">
+        <div className={`w-full max-w-sm border-2 rounded-3xl p-8 flex flex-col items-center text-center shadow-none relative ${
+          flyerTheme === 'noir' ? 'bg-slate-950 border-slate-800 text-white' :
+          flyerTheme === 'gold' ? 'bg-gradient-to-b from-amber-950 via-slate-950 to-slate-950 border-amber-500 text-amber-50' :
+          flyerTheme === 'emerald' ? 'bg-gradient-to-b from-emerald-950 via-slate-950 to-slate-950 border-emerald-500 text-emerald-50' :
+          'bg-gradient-to-b from-indigo-950 via-slate-950 to-slate-950 border-teal-500 text-teal-50'
+        }`}>
+          {/* Visual top accent ribbon */}
+          <div className={`absolute top-0 inset-x-0 h-2.5 rounded-t-3xl ${
+            flyerTheme === 'noir' ? 'bg-indigo-600' :
+            flyerTheme === 'gold' ? 'bg-amber-500' :
+            flyerTheme === 'emerald' ? 'bg-emerald-500' :
+            'bg-teal-500'
+          }`}></div>
+
+          {/* Restaurant Mark */}
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest opacity-90 border-b border-white/20 pb-3 w-full justify-center pt-2">
+            <Utensils size={14} className={
+              flyerTheme === 'noir' ? 'text-indigo-400' :
+              flyerTheme === 'gold' ? 'text-amber-400' :
+              flyerTheme === 'emerald' ? 'text-emerald-400' :
+              'text-teal-400'
+            } />
+            <span>{restaurant.name}</span>
+          </div>
+
+          {/* Subheadings */}
+          <div className="my-6 space-y-2">
+            <div className={`text-xs font-black tracking-widest uppercase ${
+              flyerTheme === 'noir' ? 'text-indigo-400' :
+              flyerTheme === 'gold' ? 'text-amber-400' :
+              flyerTheme === 'emerald' ? 'text-emerald-400' :
+              'text-teal-400'
+            }`}>
+              ORDER & PAY DIRECTLY
+            </div>
+            <h2 className="text-xl font-extrabold tracking-tight">SKIP THE WAIT</h2>
+            <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
+              View high-definition food photos, split the bill dynamically on UPI, call the server directly, and book food to the kitchen instantly.
+            </p>
+          </div>
+
+          {/* QR Core Code */}
+          <div className="bg-white p-4 rounded-2xl shadow-2xl flex flex-col items-center border-4 border-slate-200">
+            <img 
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=0f172a&data=${encodeURIComponent(`${window.location.origin}/r/${restaurant.id}/t/${selectedQRTable}`)}`}
+              alt={`Table QR code`}
+              referrerPolicy="no-referrer"
+              className="w-44 h-44 object-contain"
+            />
+            <div className="text-[10px] font-black tracking-widest uppercase text-slate-900 mt-2 bg-slate-100 px-3 py-1 rounded-full border border-slate-200 font-mono">
+              ✦ SCAN SCREEN TO SEAT ✦
+            </div>
+          </div>
+
+          {/* Seat Indicator footer card */}
+          <div className="mt-8 pt-4 border-t border-white/10 w-full space-y-1">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Digital Seating Address</div>
+            <div className="text-2xl font-black tracking-widest font-mono text-white">
+              TABLE #{selectedQRTable}
+            </div>
+            <p className="text-[8.5px] text-slate-500 font-mono select-all">
+              {window.location.origin}/r/{restaurant.id}/t/{selectedQRTable}
+            </p>
+          </div>
+        </div>
+      </div>
             </div>
           </div>
         </div>
@@ -1054,9 +1209,18 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
       {/* TAB: LIVE FLOOR SEATING MONITOR */}
       {activeTab === 'floor' && (
         <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-6 shadow-sm">
-          <div className="border-b border-slate-150 pb-4">
-            <h3 className="text-base font-bold text-slate-900">Live active Seating Floor</h3>
-            <p className="text-xs text-slate-500">Monitor table occupancies, pending chefs tickets, and unbilled active sums.</p>
+          <div className="border-b border-slate-150 pb-4 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+            <div>
+              <h3 className="text-base font-bold text-slate-900">Live active Seating Floor</h3>
+              <p className="text-xs text-slate-500">Monitor table occupancies, pending chefs tickets, and unbilled active sums.</p>
+            </div>
+            <button
+              onClick={() => setActiveTab('tables')}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[11px] px-3.5 py-2 rounded-xl transition duration-150 shadow-sm flex items-center gap-1.5 cursor-pointer w-max"
+            >
+              <QrCode size={13} />
+              <span>QR Management Suite</span>
+            </button>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">

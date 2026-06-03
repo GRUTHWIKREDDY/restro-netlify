@@ -49,6 +49,7 @@ export interface Order {
   status: OrderStatus;
   createdAt: string;
   totalAmount: number; // Final payable nets
+  released?: boolean; // Settle-released state flag
   
   // Geofencing & Handshake fields
   geofenceVerified?: boolean;
