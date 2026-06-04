@@ -86,23 +86,64 @@ Per-tenant credentials can also be set during tenant creation (`adminUsername`/`
 
 ### RestaurantAdmin Analytics Tab
 - Tab labeled "📊 Analytics" in the admin panel tab bar
-- Shows KPI summary cards: Total Revenue, Orders Processed, Pending Orders, Tables
-- Placeholder for detailed charts (peak hours, item popularity, revenue trends)
+- Uses `<AnalyticsDashboard>` component with `restaurantId` bound to current restaurant
+- Full tabbed interface with all 7 modules + scorecard
 
 ### SuperAdmin Analytics Overlay
 - Bento card labeled "📊 Analytics Suite" in the dashboard grid
-- Full-screen overlay with: Gross Revenue, Total Orders, Active Brands, Total Tables
-- Revenue-by-restaurant breakdown list
-- Placeholder for detailed charts
+- Full-screen overlay using `<AnalyticsDashboard restaurantId="all">` for cross-tenant data
 
-### API Endpoints (`/api/analytics/*`)
+### Analytics Module Components
+
+All modules live in `src/components/analytics/AnalyticsDashboard.tsx` — a single self-contained component with internal tab navigation:
+
+| Module | Tab Key | Data Source (API) | Key Metrics |
+|---|---|---|---|
+| Sales | sales | `GET /api/:id/analytics/sales?range=` | Revenue, AOV, daily trend, day-of-week heatmap, top items |
+| Menu | menu | `GET /api/:id/analytics/menu` | Menu engineering matrix (star/plowhorse/puzzle/dog), item ratings |
+| Operations | operations | `GET /api/:id/analytics/operations` | Ticket time, peak/off-peak throughput, discount rate |
+| Labor | labor | `GET /api/:id/analytics/labor?range=` | Sales/labor hour, labor cost %, shift slot performance |
+| Customers | customers | `GET /api/:id/analytics/customers?range=` | Repeat rate, CLV estimate, churn candidates, visit frequency |
+| Feedback | feedback | `GET /api/:id/analytics/feedback?range=` | Avg rating, sentiment breakdown, complaint themes |
+| Inventory | inventory | `GET /api/:id/analytics/inventory` | Stock levels, low stock alerts, spoilage %, waste logs |
+| Scorecard | scorecard | `GET /api/:id/analytics/scorecard` | 8-metric health check with green/red indicators |
+
+### API Endpoints (`/api/*/analytics/*`)
+
+The `:restaurantId` param accepts either a specific restaurant ID or `all` for cross-tenant data.
 
 | Endpoint | Description |
 |---|---|
-| `GET /api/analytics/revenue` | Aggregate revenue, orders today, status breakdown |
-| `GET /api/analytics/per-restaurant` | Per-restaurant revenue, order counts, pending |
-| `GET /api/analytics/popular-items` | Top 20 most-ordered items by quantity |
-| `GET /api/analytics/peak-hours` | Hourly order distribution (0-23) |
+| `POST /api/analytics/aggregate-daily-summaries` | Generate/refresh dailySummary documents |
+| `GET /api/analytics/daily-summaries` | Read daily summaries (history range) |
+| `GET /api/:restaurantId/analytics/sales?range=` | Module 1: Sales analytics |
+| `GET /api/:restaurantId/analytics/menu` | Module 2: Menu analytics |
+| `GET /api/:restaurantId/analytics/labor?range=` | Module 3: Labor analytics |
+| `GET /api/:restaurantId/analytics/inventory` | Module 4: Inventory analytics |
+| `GET /api/:restaurantId/analytics/customers?range=` | Module 5: Customer analytics |
+| `GET /api/:restaurantId/analytics/feedback?range=` | Module 6: Feedback analytics |
+| `GET /api/:restaurantId/analytics/operations` | Module 7: Operational analytics |
+| `GET /api/:restaurantId/analytics/scorecard` | Unit Economics Scorecard |
+| `GET /api/superadmin/analytics/platform` | Cross-tenant platform overview |
+| `POST /api/:restaurantId/feedback` | Write feedback response |
+| `POST /api/:restaurantId/waste-log` | Write waste log entry |
+| `POST /api/:restaurantId/shifts` | Write staff shift (future) |
+
+### Seed Script
+- `seed-analytics.ts` — generates 90 days of realistic data for 3 outlets
+- Run with: `npx tsx seed-analytics.ts`
+- Creates orders with lunch/dinner rush patterns, dailySummaries, customer profiles, staff shifts, and feedback
+- Weekend traffic boosted 30% Friday-Saturday, reduced 20% Sunday
+
+### Date Range Selection
+- 7 Days, 30 Days, 90 Days toggle in the analytics header
+- Range param passed to all relevant API endpoints
+- Export CSV button for all modules
+
+### New TypeScript Types
+All defined in `src/types.ts`:
+
+`DailySummary`, `StaffShift`, `InventoryItem`, `Recipe`, `WasteLog`, `PurchaseOrder`, `CustomerProfile`, `Session`, `FeedbackResponse`, `ExternalReview`, `KdsEvent`, `AnalyticsFilters`
 
 When a new restaurant is onboarded:
 1. Generates sequential ID (`rest-{max+1}`)
