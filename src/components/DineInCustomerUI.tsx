@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  Utensils, Sparkles, ChevronRight, LogOut, Search, Tag, 
+  Utensils, Sparkles, ChevronRight, Search, Tag, 
   ShoppingCart, Send, X, AlertTriangle, Store, User, Phone, 
   ArrowRight, Info, Bell, Calculator, QrCode, Star, Award, Heart, CheckCircle, RefreshCw, Lock, Clock, MapPin
 } from 'lucide-react';
@@ -395,16 +395,6 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
     }
   };
   */
-
-  const handleLogout = () => {
-    setCustomerSession(null);
-    setCart({});
-    setIsCartOpen(false);
-    setIsAiConciergeOpen(false);
-    setNeedsPinVerification(false);
-    setSubmittedPin('');
-    setPinError('');
-  };
 
   const updateCartQty = (menuId: string, delta: number) => {
     if (restaurant?.lockAllItems) {
@@ -906,14 +896,6 @@ ${JSON.stringify(liveMenuContext)}
                 className="p-2 bg-amber-500 text-slate-950 rounded-sm hover:bg-amber-600 transition shadow-md relative group flex items-center justify-center border border-amber-400"
               >
                 <Sparkles size={14} className="sparkle-shiver" />
-              </button>
-              
-              <button 
-                onClick={handleLogout}
-                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-sm transition border border-transparent hover:border-slate-200"
-                title="Change table seating check-in"
-              >
-                <LogOut size={16} />
               </button>
             </div>
           )}
