@@ -1,9 +1,7 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import * as dotenv from "dotenv";
-dotenv.config();
-// DeepSeek replaces GoogleGenAI — uses OpenAI-compatible API via native fetch
+import { GoogleGenAI } from "@google/genai";
 import { initializeApp } from "firebase/app";
 import {
   getFirestore,
@@ -603,47 +601,29 @@ async function seedDatabaseIfEmpty() {
   }
 }
 
-// DeepSeek AI client — OpenAI-compatible, uses native fetch
-const DEEPSEEK_API_BASE = "https://api.deepseek.com/v1";
-const DEEPSEEK_MODEL = "deepseek-chat";
-
-async function callDeepSeek(prompt: string, systemInstruction: string): Promise<string> {
-  const key = process.env.DEEPSEEK_API_KEY;
-  if (!key) {
-    console.warn("WARNING: DEEPSEEK_API_KEY is not defined. AI functions will run with mock outputs.");
-    return "";
+// Lazy GoogleGenAI client initialisation
+let googleAiClient: GoogleGenAI | null = null;
+function getGoogleAi(): GoogleGenAI {
+  if (!googleAiClient) {
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) {
+      console.warn("WARNING: GEMINI_API_KEY is not defined. AI functions will run with mock outputs.");
+    }
+    googleAiClient = new GoogleGenAI({
+      apiKey: key || "MOCK_KEY",
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
   }
-
-  const response = await fetch(`${DEEPSEEK_API_BASE}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${key}`
-    },
-    body: JSON.stringify({
-      model: DEEPSEEK_MODEL,
-      messages: [
-        { role: "system", content: systemInstruction },
-        { role: "user", content: prompt }
-      ],
-      max_tokens: 1024,
-      temperature: 0.7,
-      stream: false
-    })
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`DeepSeek API error ${response.status}: ${errorBody}`);
-  }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content?.trim() || "";
+  return googleAiClient;
 }
 
 async function startServer() {
   const app = express();
-  const PORT = 3001;
+  const PORT = 3000;
 
   app.use(express.json());
 
@@ -865,41 +845,49 @@ async function startServer() {
     }
   });
 
-  // === DEEPSEEK AI SECURE BACKEND CONTROLLER ===
+  // === GEMINI AI SECURE BACKEND CONTROLLER ===
 
-  app.post("/api/deepseek/chat", async (req, res) => {
+  app.post("/api/gemini/chat", async (req, res) => {
     const { userPrompt, systemInstruction } = req.body;
     if (!userPrompt) {
       return res.status(400).json({ error: "userPrompt parameter is required." });
     }
 
     try {
-      const key = process.env.DEEPSEEK_API_KEY;
+      const key = process.env.GEMINI_API_KEY;
       if (!key) {
         // Fallback mockup responses if API key is missing to keep preview functioning safely
         return res.json({
-          text: `[Offline Aarudy D' AI Assistant]: Namaste! I am running in local safe-mode. Based on our delicious menu, I highly recommend our Chef's legendary Murgh Makhani (Butter Chicken) (₹380.00) paired with sweet, chilled Alphonso Mango Lassi (₹120.00)! Or for vegetarian diners, the Ghee Roast Dosa with fresh coconut chutney is an absolute must. May I add any of these to your basket?`
+          text: `[Offline Maitre D' AI Assistant]: Namaste! I am running in local safe-mode. Based on our delicious menu, I highly recommend our Chef's legendary Murgh Makhani (Butter Chicken) (₹380.00) paired with sweet, chilled Alphonso Mango Lassi (₹120.00)! Or for vegetarian diners, the Ghee Roast Dosa with fresh coconut chutney is an absolute must. May I add any of these to your basket?`
         });
       }
 
-      const result = await callDeepSeek(userPrompt, systemInstruction || "You are a professional hospitality digital dining guide.");
-      res.json({ text: result });
+      const client = getGoogleAi();
+      const aiResponse = await client.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: userPrompt,
+        config: {
+          systemInstruction: systemInstruction || "You are a professional hospitality digital dining guide."
+        }
+      });
+
+      res.json({ text: aiResponse.text || "" });
     } catch (err: any) {
-      console.error("DeepSeek AI API Error in server.ts:", err);
+      console.error("Gemini AI API Error in server.ts:", err);
       res.json({
         text: `[Dining AI Assistant Error]: Sorry! I couldn't reach the celestial servers. The current menu consists of standard artisan entrees. How can I assist you manually?`
       });
     }
   });
 
-  app.post("/api/deepseek/report", async (req, res) => {
+  app.post("/api/gemini/report", async (req, res) => {
     const { userPrompt, systemInstruction } = req.body;
     if (!userPrompt) {
       return res.status(400).json({ error: "userPrompt is required." });
     }
 
     try {
-      const key = process.env.DEEPSEEK_API_KEY;
+      const key = process.env.GEMINI_API_KEY;
       if (!key) {
         return res.json({
           text: `### 🇮🇳 Strategic Restaurant Performance Report
@@ -909,10 +897,18 @@ async function startServer() {
         });
       }
 
-      const result = await callDeepSeek(userPrompt, systemInstruction || "You are an elite Michelin-star restaurant consultant generating detailed business performance reports in markdown.");
-      res.json({ text: result });
+      const client = getGoogleAi();
+      const aiResponse = await client.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: userPrompt,
+        config: {
+          systemInstruction: systemInstruction || "You are an elite Michelin-star restaurant consultant."
+        }
+      });
+
+      res.json({ text: aiResponse.text || "" });
     } catch (err: any) {
-      console.error("DeepSeek AI report error in server.ts:", err);
+      console.error("Gemini AI report error in server.ts:", err);
       res.status(500).json({ error: err.message });
     }
   });

@@ -439,7 +439,7 @@ export default function SuperAdminDashboard({
     setAiSaaSReport('');
 
     try {
-      const res = await fetch("/api/deepseek/report", {
+      const res = await fetch("/api/gemini/report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -721,7 +721,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               kCodeIT Network Core
             </span>
             <span className="bg-amber-100 text-amber-900 font-extrabold text-[9px] px-2 py-0.5 rounded-lg flex items-center gap-1">
-              <Sparkles size={11} className="sparkle-shiver" /> DeepSeek Insights Enabled
+              <Sparkles size={11} className="sparkle-shiver" /> Gemini Insights Enabled
             </span>
           </div>
 
@@ -1736,7 +1736,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                 <Sparkles size={20} className="text-indigo-600 font-black animate-pulse" />
                 <div>
                   <h4 className="text-base font-black text-slate-900">AI Platform SaaS strategies</h4>
-                  <p className="text-[11px] text-slate-500 font-mono uppercase mt-1">Compiled by DeepSeek Chat</p>
+                  <p className="text-[11px] text-slate-500 font-mono uppercase mt-1">Compiled by Gemini 3.5 Flash</p>
                 </div>
               </div>
               <button onClick={() => setOverlayTab(null)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition">
