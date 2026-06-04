@@ -865,6 +865,99 @@ async function startServer() {
     }
   });
 
+  // === ANALYTICS API ENDPOINTS ===
+
+  app.get("/api/analytics/revenue", async (req, res) => {
+    try {
+      const qSnap = await getDocs(collection(db, "orders"));
+      const orders = qSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      const totalRevenue = orders.filter((o: any) => o.status !== 'rejected').reduce((s: number, o: any) => s + (o.totalAmount || 0), 0);
+      const ordersToday = orders.filter((o: any) => new Date(o.createdAt).toDateString() === new Date().toDateString());
+      res.json({
+        totalRevenue,
+        totalOrders: orders.length,
+        ordersToday: ordersToday.length,
+        todayRevenue: ordersToday.filter((o: any) => o.status !== 'rejected').reduce((s: number, o: any) => s + (o.totalAmount || 0), 0),
+        statusBreakdown: {
+          pending: orders.filter((o: any) => o.status === 'pending').length,
+          accepted: orders.filter((o: any) => o.status === 'accepted').length,
+          completed: orders.filter((o: any) => o.status === 'completed').length,
+          rejected: orders.filter((o: any) => o.status === 'rejected').length,
+        }
+      });
+    } catch (err: any) {
+      console.error("GET /api/analytics/revenue error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/analytics/per-restaurant", async (req, res) => {
+    try {
+      const [resSnap, ordSnap] = await Promise.all([
+        getDocs(collection(db, "restaurants")),
+        getDocs(collection(db, "orders")),
+      ]);
+      const restaurants = resSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      const perRestaurant = restaurants.map((r: any) => {
+        const rOrders = orders.filter((o: any) => o.restaurantId === r.id);
+        return {
+          restaurantId: r.id,
+          name: r.name,
+          totalOrders: rOrders.length,
+          revenue: rOrders.filter((o: any) => o.status !== 'rejected').reduce((s: number, o: any) => s + (o.totalAmount || 0), 0),
+          pendingOrders: rOrders.filter((o: any) => o.status === 'pending').length,
+        };
+      });
+      res.json(perRestaurant);
+    } catch (err: any) {
+      console.error("GET /api/analytics/per-restaurant error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/analytics/popular-items", async (req, res) => {
+    try {
+      const ordSnap = await getDocs(collection(db, "orders"));
+      const orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      const itemCount: Record<string, { name: string; quantity: number; revenue: number }> = {};
+      for (const o of orders) {
+        for (const item of (o.items || [])) {
+          if (!itemCount[item.menuId]) itemCount[item.menuId] = { name: item.name, quantity: 0, revenue: 0 };
+          itemCount[item.menuId].quantity += item.quantity || 0;
+          itemCount[item.menuId].revenue += (item.price || 0) * (item.quantity || 0);
+        }
+      }
+      const sorted = Object.entries(itemCount)
+        .map(([menuId, data]) => ({ menuId, ...data }))
+        .sort((a, b) => b.quantity - a.quantity)
+        .slice(0, 20);
+      res.json(sorted);
+    } catch (err: any) {
+      console.error("GET /api/analytics/popular-items error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/analytics/peak-hours", async (req, res) => {
+    try {
+      const ordSnap = await getDocs(collection(db, "orders"));
+      const orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      const hourlyBuckets: Record<number, number> = {};
+      for (const o of orders) {
+        const hour = new Date(o.createdAt).getHours();
+        hourlyBuckets[hour] = (hourlyBuckets[hour] || 0) + 1;
+      }
+      const peakHours = Object.entries(hourlyBuckets)
+        .map(([hour, count]) => ({ hour: parseInt(hour), count }))
+        .sort((a, b) => a.hour - b.hour);
+      res.json(peakHours);
+    } catch (err: any) {
+      console.error("GET /api/analytics/peak-hours error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // === DEEPSEEK AI SECURE BACKEND CONTROLLER ===
 
   app.post("/api/gemini/chat", async (req, res) => {

@@ -80,7 +80,29 @@ Three roles, each with hardcoded credentials:
 
 Per-tenant credentials can also be set during tenant creation (`adminUsername`/`adminPassword`/`chefUsername`/`chefPassword`).
 
-## 7. Tenant Creation (SuperAdmin)
+## 8. Analytics Dashboard
+
+**Added as modules in both RestaurantAdmin and SuperAdmin.**
+
+### RestaurantAdmin Analytics Tab
+- Tab labeled "📊 Analytics" in the admin panel tab bar
+- Shows KPI summary cards: Total Revenue, Orders Processed, Pending Orders, Tables
+- Placeholder for detailed charts (peak hours, item popularity, revenue trends)
+
+### SuperAdmin Analytics Overlay
+- Bento card labeled "📊 Analytics Suite" in the dashboard grid
+- Full-screen overlay with: Gross Revenue, Total Orders, Active Brands, Total Tables
+- Revenue-by-restaurant breakdown list
+- Placeholder for detailed charts
+
+### API Endpoints (`/api/analytics/*`)
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/analytics/revenue` | Aggregate revenue, orders today, status breakdown |
+| `GET /api/analytics/per-restaurant` | Per-restaurant revenue, order counts, pending |
+| `GET /api/analytics/popular-items` | Top 20 most-ordered items by quantity |
+| `GET /api/analytics/peak-hours` | Hourly order distribution (0-23) |
 
 When a new restaurant is onboarded:
 1. Generates sequential ID (`rest-{max+1}`)

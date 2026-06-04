@@ -67,7 +67,7 @@ export default function RestaurantAdminPanel({
     );
   }
 
-  const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'tables' | 'floor' | 'history'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'tables' | 'floor' | 'history' | 'analytics'>('orders');
   const [historySearch, setHistorySearch] = useState('');
   const [selectedHistoryDate, setSelectedHistoryDate] = useState<string>('');
   const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | 'pending' | 'accepted' | 'completed' | 'rejected'>('all');
@@ -795,7 +795,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
 
         {/* Tab triggers */}
         <div className="flex flex-wrap gap-1 bg-slate-150 p-1.5 rounded-2xl border border-slate-200">
-          {(['orders', 'menu', 'tables', 'floor', 'history'] as const).map(tab => (
+          {(['orders', 'menu', 'tables', 'floor', 'history', 'analytics'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -806,7 +806,8 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                  tab === 'menu' ? 'Menu & Promos' : 
                  tab === 'tables' ? 'QR Code Suite' : 
                  tab === 'floor' ? 'Seat Floor' : 
-                 'Order Histories'}
+                 tab === 'history' ? 'Order Histories' :
+                 '📊 Analytics'}
               </span>
             </button>
           ))}
@@ -2190,6 +2191,40 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* TAB: ANALYTICS DASHBOARD */}
+      {activeTab === 'analytics' && (
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-6 shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-150 pb-4">
+            <div>
+              <h3 className="text-base font-black text-slate-900">📊 Restaurant Analytics Dashboard</h3>
+              <p className="text-xs text-slate-500 mt-1">Real-time performance metrics, revenue insights, and operational KPIs</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-gradient-to-br from-indigo-50 to-indigo-100/50 rounded-2xl p-4 border border-indigo-100">
+              <span className="text-[9px] font-black text-indigo-500 uppercase tracking-wider">Total Revenue</span>
+              <p className="text-xl font-black text-indigo-900 mt-1">₹{stats.revenue.toFixed(2)}</p>
+            </div>
+            <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-2xl p-4 border border-emerald-100">
+              <span className="text-[9px] font-black text-emerald-500 uppercase tracking-wider">Orders Processed</span>
+              <p className="text-xl font-black text-emerald-900 mt-1">{tenantOrders.length}</p>
+            </div>
+            <div className="bg-gradient-to-br from-amber-50 to-amber-100/50 rounded-2xl p-4 border border-amber-100">
+              <span className="text-[9px] font-black text-amber-500 uppercase tracking-wider">Pending Orders</span>
+              <p className="text-xl font-black text-amber-900 mt-1">{tenantOrders.filter(o => o.status === 'pending').length}</p>
+            </div>
+            <div className="bg-gradient-to-br from-rose-50 to-rose-100/50 rounded-2xl p-4 border border-rose-100">
+              <span className="text-[9px] font-black text-rose-500 uppercase tracking-wider">Tables</span>
+              <p className="text-xl font-black text-rose-900 mt-1">{restaurant.totalTables}</p>
+            </div>
+          </div>
+          <div className="bg-slate-50 rounded-2xl border border-dashed border-slate-200 p-8 text-center">
+            <p className="text-sm font-bold text-slate-400">📈 Detailed analytics charts coming soon</p>
+            <p className="text-xs text-slate-400 mt-1">Peak hours heatmap, item popularity, revenue trends, table turnover — data from <code className="font-mono bg-slate-200 px-1 rounded">/api/analytics/*</code></p>
+          </div>
         </div>
       )}
 

@@ -34,7 +34,7 @@ export default function SuperAdminDashboard({
   ticker
 }: SuperAdminProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [overlayTab, setOverlayTab] = useState<'tenants' | 'seating' | 'feed' | 'accounting' | 'aiSaaS' | 'history' | null>(null);
+  const [overlayTab, setOverlayTab] = useState<'tenants' | 'seating' | 'feed' | 'accounting' | 'aiSaaS' | 'history' | 'analytics' | null>(null);
   const [overlaySearch, setOverlaySearch] = useState('');
   const [selectedHistoryDate, setSelectedHistoryDate] = useState<string>('');
   const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | 'pending' | 'accepted' | 'completed' | 'rejected'>('all');
@@ -863,6 +863,23 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
           </div>
           <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
             <ClipboardList size={18} />
+          </div>
+        </button>
+
+        <button
+          onClick={() => { setOverlayTab('analytics'); }}
+          className="bg-white p-4 rounded-3xl border border-slate-205 text-left hover:border-violet-500 hover:shadow-md transition active:scale-[0.99] group flex justify-between items-center"
+        >
+          <div>
+            <span className="text-[10px] uppercase font-black text-slate-400 block group-hover:text-violet-600">📊 Analytics Suite</span>
+            <div className="mt-1">
+              <span className="text-xs font-bold text-slate-500 block">Cross-tenant KPIs</span>
+              <span className="text-sm font-black text-violet-700 block">{globalAnalytics.totalOrders} orders tracked</span>
+            </div>
+            <p className="text-[9px] text-violet-600 font-bold mt-1">View analytics dashboard →</p>
+          </div>
+          <div className="w-10 h-10 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center">
+            <TrendingUp size={18} />
           </div>
         </button>
 
@@ -1782,6 +1799,74 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               <button onClick={() => setOverlayTab(null)} className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-5 py-2 rounded-xl">
                 Dismiss strategies
               </button>
+            </div>
+          </div>
+        </div>
+      )}  {/* end aiSaaS */}
+
+      {/* ANALYTICS DASHBOARD OVERLAY */}
+      {overlayTab === 'analytics' && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 flex flex-col">
+            <div className="sticky top-0 bg-white z-10 flex items-center justify-between p-4 border-b border-slate-200 rounded-t-3xl">
+              <div>
+                <h3 className="text-sm font-black text-slate-900">📊 SaaS Analytics Suite</h3>
+                <p className="text-[10px] text-slate-500 mt-0.5">Cross-tenant KPIs and performance metrics</p>
+              </div>
+              <button onClick={() => setOverlayTab(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-3 py-2 rounded-xl text-xs transition">
+                Close
+              </button>
+            </div>
+
+            <div className="p-4 space-y-6">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-gradient-to-br from-indigo-50 to-indigo-100/50 rounded-2xl p-4 border border-indigo-100">
+                  <span className="text-[9px] font-black text-indigo-500 uppercase tracking-wider">Gross Revenue</span>
+                  <p className="text-xl font-black text-indigo-900 mt-1">₹{globalAnalytics.totalRevenue.toFixed(2)}</p>
+                </div>
+                <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-2xl p-4 border border-emerald-100">
+                  <span className="text-[9px] font-black text-emerald-500 uppercase tracking-wider">Total Orders</span>
+                  <p className="text-xl font-black text-emerald-900 mt-1">{globalAnalytics.totalOrders}</p>
+                </div>
+                <div className="bg-gradient-to-br from-amber-50 to-amber-100/50 rounded-2xl p-4 border border-amber-100">
+                  <span className="text-[9px] font-black text-amber-500 uppercase tracking-wider">Active Brands</span>
+                  <p className="text-xl font-black text-amber-900 mt-1">{globalAnalytics.activeBrands} / {globalAnalytics.totalBrands}</p>
+                </div>
+                <div className="bg-gradient-to-br from-rose-50 to-rose-100/50 rounded-2xl p-4 border border-rose-100">
+                  <span className="text-[9px] font-black text-rose-500 uppercase tracking-wider">Total Tables</span>
+                  <p className="text-xl font-black text-rose-900 mt-1">{globalAnalytics.totalTables}</p>
+                </div>
+              </div>
+
+              {/* Revenue by Restaurant */}
+              <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4">
+                <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3">Revenue by Restaurant</h4>
+                <div className="space-y-2">
+                  {restaurants.map(r => {
+                    const rev = orders.filter(o => o.restaurantId === r.id && o.status !== 'rejected').reduce((s, o) => s + o.totalAmount, 0);
+                    const ordCount = orders.filter(o => o.restaurantId === r.id).length;
+                    return (
+                      <div key={r.id} className="flex items-center justify-between bg-white rounded-xl px-3 py-2 border border-slate-100">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className={`w-2 h-2 rounded-full ${r.status === 'active' ? 'bg-emerald-500' : 'bg-red-400'}`} />
+                          <span className="text-xs font-bold text-slate-800 truncate">{r.name}</span>
+                        </div>
+                        <div className="flex items-center gap-4 shrink-0">
+                          <span className="text-[10px] font-bold text-slate-500">{ordCount} orders</span>
+                          <span className="text-xs font-black text-slate-900">₹{rev.toFixed(0)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Placeholder for detailed analytics */}
+              <div className="bg-slate-50 rounded-2xl border border-dashed border-slate-200 p-8 text-center">
+                <p className="text-sm font-bold text-slate-400">📈 Detailed charts coming soon</p>
+                <p className="text-xs text-slate-400 mt-1">Peak hours, item popularity, revenue trends — data from <code className="font-mono bg-slate-200 px-1 rounded">/api/analytics/*</code></p>
+              </div>
             </div>
           </div>
         </div>
