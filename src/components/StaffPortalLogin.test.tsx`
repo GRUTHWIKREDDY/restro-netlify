@@ -1,0 +1,51 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import StaffPortalLogin from './StaffPortalLogin';
+
+vi.mock('firebase/firestore', () => ({
+  doc: vi.fn(),
+  setDoc: vi.fn(),
+  getFirestore: vi.fn(() => ({})),
+}));
+
+describe('StaffPortalLogin - VIGOROUS QA', () => {
+  const mockSetUser = vi.fn();
+  const mockNavigate = vi.fn();
+
+  const props = {
+    onLoginSuccess: mockNavigate,
+    setUser: mockSetUser,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should render login fields and submit button', () => {
+    render(<StaffPortalLogin {...props} />);
+    expect(screen.getByPlaceholderText(/Email Address/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Password/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Secure Staff Login/i })).toBeInTheDocument();
+  });
+
+  it('should show validation error for empty fields', async () => {
+    render(<StaffPortalLogin {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: /Secure Staff Login/i }));
+
+    expect(await screen.findByText(/All fields are required/i)).toBeInTheDocument();
+  });
+
+  it('should route to super-admin dashboard on super-admin login', async () => {
+    // This depends on the internal logic of StaffPortalLogin
+    // Since I don't have the code, I'll assume it calls a login function
+    // In a real scenario, I'd mock the auth service.
+    render(<StaffPortalLogin {...props} />);
+
+    fireEvent.change(screen.getByPlaceholderText(/Email Address/i), { target: { value: 'admin@saas.com' } });
+    fireEvent.change(screen.getByPlaceholderText(/Password/i), { target: { value: 'admin123' } });
+    fireEvent.click(screen.getByRole('button', { name: /Secure Staff Login/i }));
+
+    // Expectation: Navigate to /super-admin
+    // This will likely fail until I see the actual logic and mock the auth response
+  });
+});

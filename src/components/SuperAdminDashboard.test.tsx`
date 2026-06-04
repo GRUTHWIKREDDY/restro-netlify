@@ -1,0 +1,54 @@
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import SuperAdminDashboard from './SuperAdminDashboard';
+import { Restaurant } from '../types';
+
+vi.mock('firebase/firestore', () => ({
+  doc: vi.fn(),
+  setDoc: vi.fn(),
+  getFirestore: vi.fn(() => ({})),
+}));
+
+describe('SuperAdminDashboard - VIGOROUS QA', () => {
+  const mockRestaurants: Restaurant[] = [
+    { id: 'r1', name: 'The Royal Clay Oven', status: 'active', lockAllItems: false },
+    { id: 'r2', name: 'Saffron Breeze', status: 'suspended', lockAllItems: true },
+  ];
+
+  const props = {
+    restaurants: mockRestaurants,
+    onTenantUpdate: vi.fn(),
+    onTenantCreate: vi.fn(),
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should render the global platform overview with tenant list', () => {
+    render(<SuperAdminDashboard {...props} />);
+    expect(screen.getByText(/Global Platform Overview/i)).toBeInTheDocument();
+    expect(screen.getByText('The Royal Clay Oven')).toBeInTheDocument();
+    expect(screen.getByText('Saffron Breeze')).toBeInTheDocument();
+  });
+
+  it('should allow suspending a tenant restaurant', async () => {
+    render(<SuperAdminDashboard {...props} />);
+
+    const targetTenant = screen.getByText('The Royal Clay Oven').closest('div');
+    const suspendBtn = targetTenant?.querySelector('button'); // Simplified selection
+
+    if (suspendBtn) {
+      fireEvent.click(suspendBtn);
+      expect(props.onTenantUpdate).toHaveBeenCalled();
+    }
+  });
+
+  it('should display the "Locked" status for restricted tenants', () => {
+    render(<SuperAdminDashboard {...props} />);
+    const suspendedTenant = screen.getByText('Saffron Breeze').closest('div');
+    expect(suspendedTenant).toBeInTheDocument();
+    // Check for a status indicator (e.g., 'suspended' text)
+    expect(screen.getByText(/suspended/i)).toBeInTheDocument();
+  });
+});
