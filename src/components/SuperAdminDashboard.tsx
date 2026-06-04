@@ -65,6 +65,19 @@ export default function SuperAdminDashboard({
   const [tenantChefUsername, setTenantChefUsername] = useState('');
   const [tenantChefPassword, setTenantChefPassword] = useState('');
 
+  // Tenant creation confirmation overlay
+  const [tenantConfirmation, setTenantConfirmation] = useState<{
+    id: string;
+    name: string;
+    url: string;
+    adminUsername: string;
+    adminPassword: string;
+    chefUsername: string;
+    chefPassword: string;
+    verificationPin: string;
+    totalTables: number;
+  } | null>(null);
+
   // Edit Tenant states
   const [isEditTenantOpen, setIsEditTenantOpen] = useState(false);
   const [editTenantId, setEditTenantId] = useState('');
@@ -582,6 +595,19 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
       setSelectedRestaurantId(newTenant.id); // Auto-focus viewing tenant
       setIsAddTenantOpen(false);
 
+      // Show confirmation overlay with URL + credentials
+      setTenantConfirmation({
+        id: newTenant.id,
+        name: newTenant.name,
+        url: `${window.location.origin}/r/${newTenant.id}/t/1`,
+        adminUsername: newTenant.adminUsername || 'admin',
+        adminPassword: newTenant.adminPassword || 'password',
+        chefUsername: newTenant.chefUsername || 'chef',
+        chefPassword: newTenant.chefPassword || 'password',
+        verificationPin: pin,
+        totalTables: tQty,
+      });
+
       setTenantName('');
       setTenantLogo('');
       setTenantTables('8');
@@ -589,7 +615,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
       setTenantLongitude('77.2025');
       setTenantVerificationPin('1234');
 
-      triggerAppAlert("Tenant Brand Onboarded", `Successfully registered ${newTenant.name} as an operational kCodeIT subscriber and seeded 3 starter gourmet menus on live database nodes.`, "success");
+      triggerAppAlert("Tenant Brand Onboarded", `Successfully registered ${newTenant.name}. Check credentials and public URL shown in the confirmation panel.`, "success");
     } catch (err) {
       triggerAppAlert("Onboarding Error", "Failed to register new restaurant in Firestore database.", "error");
     } finally {
@@ -1912,6 +1938,64 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* TENANT CREATION CONFIRMATION OVERLAY */}
+      {tenantConfirmation && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl border border-emerald-100 overflow-hidden">
+            <div className="bg-emerald-600 p-4 text-white text-center">
+              <CheckCircle size={28} className="mx-auto mb-1" />
+              <h3 className="text-sm font-black uppercase tracking-wider">Tenant Onboarded Successfully</h3>
+              <p className="text-[10px] text-emerald-200 mt-0.5">{tenantConfirmation.name} is now live</p>
+            </div>
+            <div className="p-4 space-y-4 text-xs">
+              <div>
+                <label className="block font-black text-slate-500 uppercase tracking-wider mb-1.5 text-[9px]">Customer Public URL</label>
+                <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-2.5 flex items-center justify-between gap-2">
+                  <code className="text-[10px] font-mono text-indigo-700 truncate select-all">{tenantConfirmation.url}</code>
+                  <button
+                    onClick={() => { navigator.clipboard.writeText(tenantConfirmation.url); triggerAppAlert("Copied!", "Public URL copied to clipboard.", "success"); }}
+                    className="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <p className="text-[9px] text-slate-400 mt-1">Replace <code className="font-mono">t/1</code> with target table (1-{tenantConfirmation.totalTables})</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-150">
+                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider block">Admin Portal</span>
+                  <span className="text-[11px] font-bold text-slate-800 block mt-1">{tenantConfirmation.adminUsername} / {tenantConfirmation.adminPassword}</span>
+                </div>
+                <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-150">
+                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider block">Chef KDS</span>
+                  <span className="text-[11px] font-bold text-slate-800 block mt-1">{tenantConfirmation.chefUsername} / {tenantConfirmation.chefPassword}</span>
+                </div>
+              </div>
+              <div className="flex gap-2 text-[9px]">
+                <div className="bg-amber-50 border border-amber-100 rounded-xl p-2.5 flex-1">
+                  <span className="font-black text-amber-600 uppercase tracking-wider">Table PIN</span>
+                  <p className="font-bold text-amber-800 mt-0.5">{tenantConfirmation.verificationPin}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-150 rounded-xl p-2.5 flex-1">
+                  <span className="font-black text-slate-500 uppercase tracking-wider">Tables</span>
+                  <p className="font-bold text-slate-800 mt-0.5">{tenantConfirmation.totalTables}</p>
+                </div>
+                <div className="bg-slate-50 border border-slate-150 rounded-xl p-2.5 flex-1">
+                  <span className="font-black text-slate-500 uppercase tracking-wider">ID</span>
+                  <p className="font-bold text-slate-800 mt-0.5 font-mono">{tenantConfirmation.id}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setTenantConfirmation(null)}
+                className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black py-2.5 rounded-xl text-xs uppercase tracking-wider transition shadow-sm"
+              >
+                Done — Go to Dashboard
+              </button>
+            </div>
           </div>
         </div>
       )}
