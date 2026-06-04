@@ -979,6 +979,11 @@ async function startServer() {
       else if (range === 'custom' && req.query.startDate) rangeStart = new Date(req.query.startDate as string);
 
       orders = orders.filter((o: any) => new Date(o.createdAt) >= rangeStart);
+      if (range === 'custom' && req.query.endDate) {
+        const end = new Date(req.query.endDate as string);
+        end.setHours(23, 59, 59, 999);
+        orders = orders.filter((o: any) => new Date(o.createdAt) <= end);
+      }
 
       const completed = orders.filter((o: any) => o.status !== 'rejected');
       const totalRevenue = completed.reduce((s: number, o: any) => s + (o.totalAmount || 0), 0);
@@ -1024,12 +1029,22 @@ async function startServer() {
       const topItems = Object.entries(itemMap).map(([menuId, d]) => ({ menuId, ...d }))
         .sort((a, b) => b.revenue - a.revenue).slice(0, 10);
 
+      // GST calculation: 5% on net bill amount (standard Indian restaurant rate)
+      const gstTotal = completed.reduce((s: number, o: any) => s + Math.round((o.totalAmount || 0) * 0.05 * 100) / 100, 0);
+      const gstRate = 5;
+
       res.json({
         totalRevenue,
         totalOrders: completed.length,
         avgOrderValue: completed.length > 0 ? totalRevenue / completed.length : 0,
         totalDiscount,
         discountPercent: totalRevenue > 0 ? (totalDiscount / totalRevenue) * 100 : 0,
+        gstTotal,
+        gstRate,
+        gstBreakdown: {
+          cgst: gstTotal / 2,
+          sgst: gstTotal / 2,
+        },
         dailySales: Object.entries(dailyMap).map(([date, data]) => ({ date, ...data })).sort((a, b) => a.date.localeCompare(b.date)),
         heatmap: Object.entries(heatmap).map(([key, value]) => ({ key, value })),
         dayOfWeek: Object.entries(dow).map(([day, data]) => ({ day, ...data })),

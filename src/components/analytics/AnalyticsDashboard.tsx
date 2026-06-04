@@ -10,10 +10,11 @@ interface AnalyticsProps {
   restaurantName: string;
 }
 
-type AnalyticsTab = 'sales' | 'menu' | 'operations' | 'labor' | 'customers' | 'feedback' | 'inventory' | 'scorecard';
+type AnalyticsTab = 'sales' | 'gst' | 'menu' | 'operations' | 'labor' | 'customers' | 'feedback' | 'inventory' | 'scorecard';
 
 const TAB_META: Record<AnalyticsTab, { label: string; icon: React.ReactNode; color: string }> = {
   sales:      { label: 'Sales',       icon: <DollarSign size={13} />,     color: 'indigo' },
+  gst:        { label: 'GST',         icon: <TrendingUp size={13} />,     color: 'purple' },
   menu:       { label: 'Menu',        icon: <PieChart size={13} />,      color: 'emerald' },
   operations: { label: 'Operations',  icon: <BarChart3 size={13} />,    color: 'amber' },
   labor:      { label: 'Labor',       icon: <Users size={13} />,        color: 'rose' },
@@ -23,17 +24,20 @@ const TAB_META: Record<AnalyticsTab, { label: string; icon: React.ReactNode; col
   scorecard:  { label: 'Scorecard',   icon: <ClipboardList size={13} />,color: 'slate' },
 };
 
-function fmt(n: number): string {
+function fmt(n: number | undefined | null): string {
+  if (n === undefined || n === null || isNaN(n)) return '₹0';
   if (n >= 10000000) return `₹${(n / 10000000).toFixed(2)}Cr`;
   if (n >= 100000) return `₹${(n / 100000).toFixed(2)}L`;
   return `₹${n.toLocaleString('en-IN')}`;
 }
 
-function fmtPct(n: number): string {
+function fmtPct(n: number | undefined | null): string {
+  if (n === undefined || n === null || isNaN(n)) return '0.0%';
   return n.toFixed(1) + '%';
 }
 
-function fmtNum(n: number): string {
+function fmtNum(n: number | undefined | null): string {
+  if (n === undefined || n === null || isNaN(n)) return '0';
   return n.toLocaleString('en-IN');
 }
 
@@ -42,28 +46,43 @@ function fmtNum(n: number): string {
 // ======================
 export default function AnalyticsDashboard({ restaurantId, restaurantName }: AnalyticsProps) {
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('sales');
-  const [range, setRange] = useState<'7d' | '30d' | '90d'>('30d');
+  const [range, setRange] = useState<'7d' | '30d' | '90d' | 'custom'>('30d');
+  const [customStartDate, setCustomStartDate] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 30);
+    return d.toISOString().split('T')[0];
+  });
+  const [customEndDate, setCustomEndDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>({});
 
   const fetchAnalytics = async (tab: AnalyticsTab) => {
     setLoading(true);
     try {
+      const baseRange = range === 'custom'
+        ? `range=custom&startDate=${customStartDate}&endDate=${customEndDate}`
+        : `range=${range}`;
       const endpoints: Record<string, string> = {
-        sales: `/api/${restaurantId}/analytics/sales?range=${range}`,
+        sales: `/api/${restaurantId}/analytics/sales?${baseRange}`,
+        gst: `/api/${restaurantId}/analytics/sales?${baseRange}`,
         menu: `/api/${restaurantId}/analytics/menu`,
         operations: `/api/${restaurantId}/analytics/operations`,
-        labor: `/api/${restaurantId}/analytics/labor?range=${range}`,
-        customers: `/api/${restaurantId}/analytics/customers?range=${range}`,
-        feedback: `/api/${restaurantId}/analytics/feedback?range=${range}`,
+        labor: `/api/${restaurantId}/analytics/labor?${baseRange}`,
+        customers: `/api/${restaurantId}/analytics/customers?${baseRange}`,
+        feedback: `/api/${restaurantId}/analytics/feedback?${baseRange}`,
         inventory: `/api/${restaurantId}/analytics/inventory`,
         scorecard: `/api/${restaurantId}/analytics/scorecard`,
       };
       const res = await fetch(endpoints[tab]);
       const json = await res.json();
-      setData((prev: any) => ({ ...prev, [tab]: json }));
+      if (json.error) {
+        console.error(`Analytics API error for ${tab}:`, json.error);
+        setData((prev: any) => ({ ...prev, [tab]: null }));
+      } else {
+        setData((prev: any) => ({ ...prev, [tab]: json }));
+      }
     } catch (err) {
       console.error('Analytics fetch error:', err);
+      setData((prev: any) => ({ ...prev, [tab]: null }));
     } finally {
       setLoading(false);
     }
@@ -71,7 +90,7 @@ export default function AnalyticsDashboard({ restaurantId, restaurantName }: Ana
 
   useEffect(() => {
     fetchAnalytics(activeTab);
-  }, [activeTab, range, restaurantId]);
+  }, [activeTab, range, customStartDate, customEndDate, restaurantId]);
 
   const handleExportCsv = () => {
     const d = data[activeTab];
@@ -97,13 +116,22 @@ export default function AnalyticsDashboard({ restaurantId, restaurantName }: Ana
         </div>
         <div className="flex items-center gap-2">
           <div className="flex bg-slate-100 rounded-xl p-0.5 border border-slate-200">
-            {(['7d', '30d', '90d'] as const).map(r => (
+            {(['7d', '30d', '90d', 'custom'] as const).map(r => (
               <button key={r} onClick={() => setRange(r)}
                 className={`px-3 py-1.5 text-[10px] font-black uppercase rounded-lg transition ${range === r ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
-                {r === '7d' ? '7 Days' : r === '30d' ? '30 Days' : '90 Days'}
+                {r === '7d' ? '7 Days' : r === '30d' ? '30 Days' : r === '90d' ? '90 Days' : 'Custom'}
               </button>
             ))}
           </div>
+          {range === 'custom' && (
+            <div className="flex items-center gap-1.5">
+              <input type="date" value={customStartDate} onChange={e => setCustomStartDate(e.target.value)}
+                className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[10px] font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+              <span className="text-[10px] text-slate-400">—</span>
+              <input type="date" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)}
+                className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[10px] font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            </div>
+          )}
           <button onClick={handleExportCsv} className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition text-slate-500" title="Export CSV">
             <Download size={14} />
           </button>
@@ -131,6 +159,7 @@ export default function AnalyticsDashboard({ restaurantId, restaurantName }: Ana
         ) : (
           <>
             {activeTab === 'sales' && <SalesView data={data.sales} />}
+            {activeTab === 'gst' && <GstView data={data.gst} />}
             {activeTab === 'menu' && <MenuView data={data.menu} />}
             {activeTab === 'operations' && <OperationsView data={data.operations} />}
             {activeTab === 'labor' && <LaborView data={data.labor} />}
@@ -158,6 +187,7 @@ function KpiCard({ label, value, sub, color = 'indigo' }: { label: string; value
     violet: 'from-violet-50 to-violet-100/50 border-violet-100 text-violet-900',
     cyan: 'from-cyan-50 to-cyan-100/50 border-cyan-100 text-cyan-900',
     slate: 'from-slate-50 to-slate-100/50 border-slate-100 text-slate-900',
+    purple: 'from-purple-50 to-purple-100/50 border-purple-100 text-purple-900',
   };
   return (
     <div className={`bg-gradient-to-br ${colors[color] || colors.indigo} rounded-2xl p-4 border`}>
@@ -169,7 +199,7 @@ function KpiCard({ label, value, sub, color = 'indigo' }: { label: string; value
 }
 
 function SalesView({ data }: { data: any }) {
-  if (!data) return <EmptyState />;
+  if (!data || typeof data.totalRevenue !== 'number') return <EmptyState />;
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -252,14 +282,64 @@ function SalesView({ data }: { data: any }) {
   );
 }
 
+function GstView({ data }: { data: any }) {
+  if (!data || typeof data.gstTotal !== 'number') return <EmptyState />;
+  const cgst = data.gstBreakdown?.cgst || data.gstTotal / 2;
+  const sgst = data.gstBreakdown?.sgst || data.gstTotal / 2;
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard label="Total GST Collected" value={fmt(data.gstTotal || 0)} sub={`@ ${data.gstRate || 5}% GST rate`} color="purple" />
+        <KpiCard label="CGST (2.5%)" value={fmt(cgst)} sub="Central GST" color="indigo" />
+        <KpiCard label="SGST (2.5%)" value={fmt(sgst)} sub="State GST" color="emerald" />
+        <KpiCard label="Taxable Revenue" value={fmt(data.totalRevenue || 0)} sub="before GST" color="amber" />
+      </div>
+      <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4">
+        <h4 className="text-xs font-black text-purple-700 uppercase tracking-wider mb-2">GST Summary</h4>
+        <div className="text-sm text-purple-800 space-y-1">
+          <p><span className="font-bold">Period:</span> Based on selected date range</p>
+          <p><span className="font-bold">GST Rate:</span> {data.gstRate || 5}% (standard Indian restaurant rate on food bills)</p>
+          <p><span className="font-bold">Total GST:</span> {fmt(data.gstTotal || 0)}</p>
+          <p className="border-t border-purple-200 pt-1 mt-1">
+            <span className="font-bold">Net Revenue (excl. GST):</span> {fmt((data.totalRevenue || 0) - (data.gstTotal || 0))}
+          </p>
+        </div>
+      </div>
+      {data.dailySales?.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-4">
+          <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3">Daily GST Collected</h4>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead><tr className="text-left text-slate-400 font-bold uppercase tracking-wider text-[9px]">
+                <th className="pb-2 pr-3">Date</th>
+                <th className="pb-2 pr-3 text-right">Revenue</th>
+                <th className="pb-2 text-right">GST @ {data.gstRate || 5}%</th>
+              </tr></thead>
+              <tbody>
+                {data.dailySales.slice(-30).map((d: any, i: number) => (
+                  <tr key={i} className="border-t border-slate-100">
+                    <td className="py-1.5 pr-3 font-bold text-slate-700">{d.date}</td>
+                    <td className="py-1.5 pr-3 text-right font-semibold">{fmt(d.revenue)}</td>
+                    <td className="py-1.5 text-right font-black text-purple-700">{fmt(Math.round(d.revenue * (data.gstRate || 5) / 100 * 100) / 100)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MenuView({ data }: { data: any }) {
-  if (!data) return <EmptyState />;
+  if (!data || typeof data.totalItems !== 'number') return <EmptyState />;
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard label="Total Items" value={fmtNum(data.totalItems)} color="indigo" />
-        <KpiCard label="Stars" value={fmtNum(data.matrix?.star || 0)} sub={`${(data.matrixPercent?.star || 0).toFixed(0)}% of menu`} color="emerald" />
-        <KpiCard label="Dogs" value={fmtNum(data.matrix?.dog || 0)} sub={`${(data.matrixPercent?.dog || 0).toFixed(0)}% of menu`} color="rose" />
+        <KpiCard label="High Performers" value={fmtNum(data.matrix?.star || 0)} sub={`${(data.matrixPercent?.star || 0).toFixed(0)}% of menu`} color="emerald" />
+        <KpiCard label="Review Candidates" value={fmtNum(data.matrix?.dog || 0)} sub={`${(data.matrixPercent?.dog || 0).toFixed(0)}% of menu`} color="rose" />
         <KpiCard label="Avg Rating" value={(data.avgRating || 0).toFixed(1)} sub="★ customer score" color="amber" />
       </div>
 
@@ -268,10 +348,10 @@ function MenuView({ data }: { data: any }) {
         <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3">Menu Engineering Matrix</h4>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { key: 'star', label: '⭐ Stars', desc: 'High margin + High orders', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
-            { key: 'plowhorse', label: '🐴 Plowhorses', desc: 'Low margin + High orders', color: 'bg-amber-100 text-amber-800 border-amber-200' },
-            { key: 'puzzle', label: '🧩 Puzzles', desc: 'High margin + Low orders', color: 'bg-blue-100 text-blue-800 border-blue-200' },
-            { key: 'dog', label: '🐕 Dogs', desc: 'Low margin + Low orders', color: 'bg-rose-100 text-rose-800 border-rose-200' },
+            { key: 'star', label: '⭐ High Performers', desc: 'High profit + High sales — Promote actively', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+            { key: 'plowhorse', label: '🐴 Volume Drivers', desc: 'Low profit + High sales — Consider repricing upward', color: 'bg-amber-100 text-amber-800 border-amber-200' },
+            { key: 'puzzle', label: '🧩 Hidden Gems', desc: 'High profit + Low sales — Market more aggressively', color: 'bg-blue-100 text-blue-800 border-blue-200' },
+            { key: 'dog', label: '🐕 Review Candidates', desc: 'Low profit + Low sales — Consider removing or reworking', color: 'bg-rose-100 text-rose-800 border-rose-200' },
           ].map(m => (
             <div key={m.key} className={`${m.color} border rounded-2xl p-3`}>
               <span className="text-xs font-black block">{m.label}</span>
@@ -315,12 +395,20 @@ function MenuView({ data }: { data: any }) {
 }
 
 function OperationsView({ data }: { data: any }) {
-  if (!data) return <EmptyState />;
+  if (!data || typeof data.totalOrders !== 'number') return <EmptyState />;
+  const totalMinutes = data.avgTicketTimeMinutes || 0;
+  const hours = Math.floor(totalMinutes / 60);
+  const mins = Math.round(totalMinutes % 60);
+  const ticketTimeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+  const kdsMinutes = data.avgKdsTicketTimeMinutes || 0;
+  const kdsHours = Math.floor(kdsMinutes / 60);
+  const kdsMins = Math.round(kdsMinutes % 60);
+  const kdsStr = kdsHours > 0 ? `${kdsHours}h ${kdsMins}m` : `${kdsMins}m`;
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard label="Total Orders" value={fmtNum(data.totalOrders)} color="indigo" />
-        <KpiCard label="Avg Ticket Time" value={`${(data.avgTicketTimeMinutes || 0).toFixed(0)}m`} sub={data.avgKdsTicketTimeMinutes ? `KDS: ${data.avgKdsTicketTimeMinutes.toFixed(0)}m` : undefined} color="amber" />
+        <KpiCard label="Avg Ticket Time" value={ticketTimeStr} sub={data.avgKdsTicketTimeMinutes ? `KDS: ${kdsStr}` : undefined} color="amber" />
         <KpiCard label="Peak Orders/hr" value={(data.peakOrdersPerHour || 0).toFixed(1)} color="emerald" />
         <KpiCard label="Off-Peak Orders/hr" value={(data.offPeakOrdersPerHour || 0).toFixed(1)} color="rose" />
       </div>
@@ -329,7 +417,7 @@ function OperationsView({ data }: { data: any }) {
 }
 
 function LaborView({ data }: { data: any }) {
-  if (!data) return <EmptyState />;
+  if (!data || typeof data.totalHours !== 'number') return <EmptyState />;
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -342,16 +430,26 @@ function LaborView({ data }: { data: any }) {
         <div className="bg-white rounded-2xl border border-slate-200 p-4">
           <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3">Shift Slot Performance</h4>
           <div className="space-y-2">
-            {data.slotPerformance.map((s: any, i: number) => (
+            {data.slotPerformance.map((s: any, i: number) => {
+              const slotTimes: Record<string, string> = {
+                morning: '6:00 AM - 12:00 PM',
+                afternoon: '12:00 PM - 5:00 PM',
+                evening: '5:00 PM - 11:00 PM',
+              };
+              return (
               <div key={i} className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2">
-                <span className="text-xs font-black text-slate-700 uppercase">{s.slot}</span>
+                <div>
+                  <span className="text-xs font-black text-slate-700 uppercase block">{s.slot}</span>
+                  <span className="text-[9px] text-slate-400 font-mono">{slotTimes[s.slot] || ''}</span>
+                </div>
                 <div className="flex items-center gap-4 text-[10px]">
                   <span>{s.orders} orders</span>
                   <span className="font-bold">{s.hours.toFixed(1)}h</span>
                   <span className="font-black text-emerald-700">{fmt(s.revenue)}</span>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         </div>
       )}
@@ -360,7 +458,7 @@ function LaborView({ data }: { data: any }) {
 }
 
 function CustomerView({ data }: { data: any }) {
-  if (!data) return <EmptyState />;
+  if (!data || typeof data.totalCustomers !== 'number') return <EmptyState />;
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -387,7 +485,7 @@ function CustomerView({ data }: { data: any }) {
 }
 
 function FeedbackView({ data }: { data: any }) {
-  if (!data) return <EmptyState />;
+  if (!data || typeof data.total !== 'number') return <EmptyState />;
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -417,7 +515,7 @@ function FeedbackView({ data }: { data: any }) {
 }
 
 function InventoryView({ data }: { data: any }) {
-  if (!data) return <EmptyState />;
+  if (!data || typeof data.totalItems !== 'number') return <EmptyState />;
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -476,7 +574,7 @@ function InventoryView({ data }: { data: any }) {
 }
 
 function ScorecardView({ data }: { data: any }) {
-  if (!data) return <EmptyState />;
+  if (!data || !data.scorecard) return <EmptyState />;
   const { scorecard, greenCount, totalMetrics, passThreshold, recommendation } = data;
 
   return (
@@ -508,8 +606,13 @@ function ScorecardView({ data }: { data: any }) {
                 </span>
               </div>
               <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-2xl font-black">{s.unit === '₹' ? fmt(s.value) : s.unit === '%' ? fmtPct(s.value) : s.value.toFixed(1)}{s.unit === 'min' ? 'm' : ''}</span>
-                <span className="text-[10px] opacity-60">/ target {s.unit === '₹' ? fmt(s.target) : s.target}{s.unit === 'min' ? 'm' : ''}</span>
+                <span className="text-2xl font-black">{
+                  s.unit === '₹' ? fmt(s.value) : 
+                  s.unit === '%' ? fmtPct(s.value) : 
+                  s.unit === 'min' ? (() => { const h = Math.floor(s.value / 60); const m = Math.round(s.value % 60); return h > 0 ? `${h}h ${m}m` : `${m}m`; })() : 
+                  s.value.toFixed(1)
+                }{s.unit === 'min' ? '' : s.unit === '★' ? '' : ''}</span>
+                <span className="text-[10px] opacity-60">/ target {s.unit === '₹' ? fmt(s.target) : s.unit === 'min' ? (() => { const h = Math.floor(s.target / 60); const m = Math.round(s.target % 60); return h > 0 ? `${h}h ${m}m` : `${m}m`; })() : s.target}{s.unit === '★' ? ' ★' : ''}</span>
               </div>
             </div>
           ))}
