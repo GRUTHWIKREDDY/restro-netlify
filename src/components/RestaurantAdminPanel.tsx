@@ -125,6 +125,7 @@ export default function RestaurantAdminPanel({
   const [selectedQRTable, setSelectedQRTable] = useState<number>(1);
   const [flyerTheme, setFlyerTheme] = useState<'noir' | 'gold' | 'emerald' | 'cobalt'>('noir');
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [isBulkPrintOpen, setIsBulkPrintOpen] = useState(false);
   const [pinFormVal, setPinFormVal] = useState<string>(restaurant?.verificationPin || '1234');
 
   // QR Routing Engine Base URL customizable options
@@ -1530,6 +1531,12 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                       >
                         ↓ Download Flyer Image
                       </button>
+                      <button
+                        onClick={() => setIsBulkPrintOpen(true)}
+                        className="bg-emerald-700 hover:bg-emerald-600 text-white border border-emerald-600 font-extrabold px-3 py-2 rounded-xl text-xs transition cursor-pointer"
+                      >
+                        ☰ Print All Tables
+                      </button>
                     </div>
                   </div>
 
@@ -1645,6 +1652,80 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
         </div>
       </div>
             </div>
+          </div>
+        </div>
+      )}
+      
+      {/* BULK QR PRINT MODAL */}
+      {isBulkPrintOpen && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200">
+            {/* Header */}
+            <div className="sticky top-0 bg-white z-10 flex items-center justify-between p-4 border-b border-slate-200 rounded-t-3xl">
+              <div>
+                <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">All Table QR Codes</h3>
+                <p className="text-[10px] text-slate-500 mt-0.5">{restaurant.name} — {restaurant.totalTables} tables</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="bg-slate-900 hover:bg-slate-800 text-white font-black px-4 py-2 rounded-xl text-xs uppercase tracking-wider transition shadow-sm"
+                >
+                  🖨 Print All
+                </button>
+                <button
+                  onClick={() => setIsBulkPrintOpen(false)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-3 py-2 rounded-xl text-xs transition"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            {/* QR Grid — grouped by floor */}
+            <div className="p-4 bulk-print-grid">
+              {floorsData.map((floor, fi) => {
+                const startTable = floorsData.slice(0, fi).reduce((sum, f) => sum + f.seats, 0) + 1;
+                const endTable = startTable + floor.seats - 1;
+                const tableNumbers: number[] = [];
+                for (let t = startTable; t <= endTable && t <= (restaurant.totalTables || 50); t++) {
+                  tableNumbers.push(t);
+                }
+                return (
+                  <div key={fi} className="mb-6">
+                    <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3 border-b border-slate-150 pb-1.5">
+                      {floor.name} — Tables {startTable}-{Math.min(endTable, restaurant.totalTables || 50)}
+                    </h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                      {tableNumbers.map((tnum) => (
+                        <div
+                          key={tnum}
+                          className="bg-white border border-slate-200 rounded-xl p-2.5 flex flex-col items-center text-center shadow-sm"
+                        >
+                          <img
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&color=0f172a&data=${encodeURIComponent(`${activeQRBaseUrl}/r/${restaurant.id}/t/${tnum}`)}`}
+                            alt={`Table ${tnum}`}
+                            referrerPolicy="no-referrer"
+                            className="w-20 h-20 object-contain"
+                          />
+                          <span className="text-[10px] font-black text-slate-800 mt-1 font-mono">TABLE {tnum}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Print-specific styles for bulk print */}
+            <style>{`
+              @media print {
+                body * { visibility: hidden !important; }
+                .bulk-print-grid, .bulk-print-grid * { visibility: visible !important; }
+                .bulk-print-grid { position: fixed; top: 0; left: 0; width: 100%; z-index: 9999; background: white; }
+                @page { margin: 1cm; size: auto; }
+              }
+            `}</style>
           </div>
         </div>
       )}
