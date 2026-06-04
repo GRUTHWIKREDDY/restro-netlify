@@ -3,9 +3,9 @@ import {
   Building2, Utensils, ChefHat, Store, ShoppingBag, RefreshCw, 
   Sliders, CheckCircle, AlertOctagon, Info
 } from 'lucide-react';
-import { Restaurant, MenuItem, Order, DineInUser, Buzzer } from './types';
+import { Restaurant, MenuItem, Order, DineInUser, Buzzer, FloorDef } from './types';
 import { db } from './firebase';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 
 // Import modular layouts
 import DineInCustomerUI from './components/DineInCustomerUI';
@@ -72,6 +72,8 @@ export default function App() {
   }, []);
 
   // Dynamic deep-link parser for table QR codes: /r/:restaurantId/t/:tableNumber
+  const [isDinerRoute, setIsDinerRoute] = useState(false);
+
   useEffect(() => {
     const match = currentPath.match(/^\/r\/([^/]+)\/t\/(\d+)/);
     if (match) {
@@ -81,11 +83,14 @@ export default function App() {
         setSelectedRestaurantId(parsedRestId);
         setSelectedTableNumber(parsedTableNum);
         setActiveMode('dinein');
+        setIsDinerRoute(true);
       }
+    } else {
+      setIsDinerRoute(false);
     }
   }, [currentPath]);
 
-  const isPortalRoute = currentPath.startsWith('/portal') || currentPath.startsWith('/admin') || currentPath.startsWith('/backend') || currentPath.startsWith('/staff');
+  const isPortalRoute = !isDinerRoute;
 
   // Enforce correct modes depending on the current URL path
   useEffect(() => {
@@ -242,7 +247,6 @@ export default function App() {
     try {
       const res = await fetch("/api/reset", { method: "POST" });
       const data = await res.json();
-      await refreshUnifiedDatabase();
       setCustomerSession(null);
       triggerAppAlert("Demo Reset Completed", data.message || "Database tables re-instantiated successfully.", "success");
     } catch (e) {
@@ -255,11 +259,12 @@ export default function App() {
     try {
       const targetOrder = orders.find(o => o.id === orderId);
       if (targetOrder) {
+        const forceReleaseFalse = nextStatus === 'pending' || nextStatus === 'accepted';
         const updatedOrder = { 
           ...targetOrder, 
           status: nextStatus,
           handshakeApproved: (nextStatus === 'accepted' || nextStatus === 'completed') ? true : targetOrder.handshakeApproved,
-          released: released !== undefined ? released : targetOrder.released
+          released: released !== undefined ? released : (forceReleaseFalse ? false : targetOrder.released)
         };
         const res = await fetch("/api/orders", {
           method: "POST",
@@ -267,7 +272,6 @@ export default function App() {
           body: JSON.stringify(updatedOrder)
         });
         await res.json();
-        await refreshUnifiedDatabase();
         // Silent update: successfully changed status, state reflections handle feedback in real-time
       }
     } catch (e) {
@@ -307,7 +311,6 @@ export default function App() {
           body: JSON.stringify(updatedOrder)
         });
         await res.json();
-        await refreshUnifiedDatabase();
         // Silent update on dish cancellation
       }
     } catch (e) {
@@ -315,12 +318,15 @@ export default function App() {
     }
   };
 
-  const handleModifyRestaurantTablesGlobal = async (tenantId: string, delta: number) => {
+  const handleModifyRestaurantTablesGlobal = async (tenantId: string, nextTables: number, floors?: FloorDef[]) => {
     try {
       const tenant = restaurants.find(r => r.id === tenantId);
       if (tenant) {
-        const nextTables = Math.max(1, Math.min(50, tenant.totalTables + delta));
-        const updatedTenant = { ...tenant, totalTables: nextTables };
+        const nextClamped = Math.max(1, Math.min(200, nextTables));
+        const updatedTenant = { ...tenant, totalTables: nextClamped };
+        if (floors) {
+          updatedTenant.floors = floors;
+        }
         
         const res = await fetch("/api/restaurants", {
           method: "POST",
@@ -328,10 +334,27 @@ export default function App() {
           body: JSON.stringify(updatedTenant)
         });
         await res.json();
-        await refreshUnifiedDatabase();
       }
     } catch (e) {
       triggerAppAlert("Database Error", "Failed to scale virtual table counts.", "error");
+    }
+  };
+
+  const handleUpdateRestaurantPin = async (tenantId: string, newPin: string) => {
+    try {
+      const tenant = restaurants.find(r => r.id === tenantId);
+      if (tenant) {
+        const updatedTenant = { ...tenant, verificationPin: newPin };
+        const res = await fetch("/api/restaurants", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updatedTenant)
+        });
+        await res.json();
+        triggerAppAlert("PIN Saved", `Waiter 4-digit verification PIN has been rotated to ${newPin}.`, "success");
+      }
+    } catch (e) {
+      triggerAppAlert("Database Error", "Failed to update restaurant verification pin.", "error");
     }
   };
 
@@ -343,7 +366,6 @@ export default function App() {
         body: JSON.stringify(menuItem)
       });
       await res.json();
-      await refreshUnifiedDatabase();
       triggerAppAlert("Success", `${menuItem.name} catalog record updated successfully.`, "success");
     } catch (e) {
       triggerAppAlert("Error", "Could not log catalog edits with merchant node.", "error");
@@ -359,7 +381,6 @@ export default function App() {
         body: JSON.stringify(remainingMenus)
       });
       await res.json();
-      await refreshUnifiedDatabase();
       triggerAppAlert("Success", "Catalog option removed permanently.", "success");
     } catch (e) {
       triggerAppAlert("Error", "Failed to drop recipe item on server.", "error");
@@ -393,8 +414,6 @@ export default function App() {
         body: JSON.stringify(userPayload)
       });
       await resUser.json();
-
-      await refreshUnifiedDatabase();
     } catch (e) {
       triggerAppAlert("Friction on dispatch", "Please try resending your basket shortly.", "error");
     }
@@ -411,7 +430,6 @@ export default function App() {
           body: JSON.stringify(payload)
         });
         await res.json();
-        await refreshUnifiedDatabase();
       }
     } catch (e) {
       console.error("Failed to register customer profile:", e);
@@ -427,7 +445,31 @@ export default function App() {
         body: JSON.stringify(payload)
       });
       await res.json();
-      await refreshUnifiedDatabase();
+
+      // Clear full-fill tickets (completed & rejected orders) for this restaurant
+      const completedOrders = orders.filter(
+        o => o.restaurantId === activeRestaurantObj.id && (o.status === 'completed' || o.status === 'rejected')
+      );
+      
+      let clearedCount = 0;
+      for (const order of completedOrders) {
+        try {
+          await updateDoc(doc(db, "orders", order.id), { released: true });
+          clearedCount++;
+        } catch (err) {
+          console.error("Failed to update order to released state during status transition:", err);
+        }
+      }
+
+      if (clearedCount > 0) {
+        triggerAppAlert(
+          "Tickets Cleared", 
+          `Updated operational state to ${status.toUpperCase()} and cleared out ${clearedCount} concluded/full-fill tickets.`,
+          "success"
+        );
+      } else {
+        triggerAppAlert("Status Updated", `Restaurant operational state updated to ${status.toUpperCase()} successfully.`, "success");
+      }
     } catch (e) {
       triggerAppAlert("Database error", "Failed to update restaurant operational state.", "error");
     }
@@ -454,41 +496,16 @@ export default function App() {
                 </div>
               </div>
 
-              {/* High-end Dashboard Menu Switches */}
-              <div className="flex flex-wrap gap-1 bg-[#090b11] p-1.5 rounded-full border border-slate-850">
-                <button 
-                  onClick={() => setActiveMode('restadmin')} 
-                  className={`flex items-center gap-1.5 px-4.5 py-2 text-xs font-black uppercase rounded-full transition-all duration-200 ${activeMode === 'restadmin' ? 'bg-indigo-650 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
-                >
-                  <Store size={13} />
-                  Admin Portal
-                </button>
-                <button 
-                  onClick={() => setActiveMode('kitchen')} 
-                  className={`flex items-center gap-1.5 px-4.5 py-2 text-xs font-black uppercase rounded-full transition-all duration-200 ${activeMode === 'kitchen' ? 'bg-amber-500 text-slate-950 shadow font-extrabold' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
-                >
-                  <ChefHat size={13} />
-                  Chefs (KDS)
-                </button>
-                <button 
-                  onClick={() => setActiveMode('superadmin')} 
-                  className={`flex items-center gap-1.5 px-4.5 py-2 text-xs font-black uppercase rounded-full transition-all duration-200 ${activeMode === 'superadmin' ? 'bg-indigo-605 text-white shadow' : 'text-slate-400 hover:text-white hover:bg-slate-900'}`}
-                >
-                  <Building2 size={13} />
-                  SaaS Control
-                </button>
+              {/* Status Display */}
+              <div className="flex flex-wrap gap-1 bg-[#090b11] p-1.5 rounded-full border border-slate-850 px-4">
+                <span className="flex items-center gap-1.5 px-2 py-1 text-xs font-black uppercase text-indigo-400">
+                  {activeMode === 'restadmin' && <><Store size={13} /> Admin Portal</>}
+                  {activeMode === 'kitchen' && <><ChefHat size={13} /> Kitchen Display</>}
+                  {activeMode === 'superadmin' && <><Building2 size={13} /> SaaS Control</>}
+                </span>
               </div>
 
               <div className="flex items-center gap-2.5">
-                <button 
-                  onClick={handleResetData}
-                  className="hidden md:flex items-center gap-1.5 px-4 py-2 bg-slate-900 text-slate-350 hover:text-white hover:bg-slate-800 text-xs font-black rounded-full border border-slate-850 transition shadow-sm"
-                  title="Reset simulation parameters back to start"
-                >
-                  <RefreshCw size={12} />
-                  <span>Reset Demo Tables</span>
-                </button>
-
                 <button 
                   onClick={handleLogout}
                   className="px-4 py-2 bg-rose-950/70 hover:bg-rose-900 border border-rose-900/40 text-rose-200 hover:text-white text-xs font-black rounded-full transition shadow-sm cursor-pointer"
@@ -502,46 +519,16 @@ export default function App() {
         </div>
       )}
 
-      {/* Simulator helper controllers panel */}
-      {isPortalRoute && isAuthenticated && (
-        <div className="bg-white border-b border-slate-200 px-4 py-2.5 text-xs flex flex-wrap items-center justify-between gap-3 text-slate-500 shadow-sm">
-          <div className="flex items-center gap-2 flex-wrap font-medium">
-            <span className="font-extrabold text-slate-700 flex items-center gap-1 uppercase tracking-widest text-[9px]">
-              <Sliders size={13} className="text-slate-450" />
-              Portal Sandbox Settings:
-            </span>
-            <span className="hidden sm:inline text-slate-200">|</span>
-            
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-slate-400">Viewing Tenant:</span>
-              <select 
-                value={selectedRestaurantId} 
-                onChange={(e) => {
-                  setSelectedRestaurantId(e.target.value);
-                  setCustomerSession(null);
-                }}
-                className="bg-white border border-slate-200 rounded px-2 py-0.5 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500 text-[11px] text-slate-800"
-              >
-                {restaurants.map(r => (
-                  <option key={r.id} value={r.id}>
-                    {r.name} ({r.lockedBySuperAdmin ? 'SUSPEND HOLD' : r.status === 'active' ? 'Active' : 'Closed'})
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
 
-          <div className="text-[10px] text-indigo-600 font-extrabold bg-indigo-50 px-2.5 py-1 rounded-sm border border-indigo-100 tracking-wider font-mono">
-            GATEWAY PATH: {currentPath}
-          </div>
-        </div>
-      )}
 
       {/* Main View Router */}
       <main className="flex-1 flex flex-col">
         {isPortalRoute ? (
           !isAuthenticated ? (
             <StaffPortalLogin 
+              restaurants={restaurants}
+              selectedRestaurantId={selectedRestaurantId}
+              onSelectRestaurant={setSelectedRestaurantId}
               onLoginSuccess={handleLoginSuccess}
               onGoBackToDiner={() => navigateTo('/')}
             />
@@ -552,12 +539,14 @@ export default function App() {
                   restaurant={activeRestaurantObj}
                   restaurants={restaurants}
                   onChangeRestaurantStatus={handleSetRestaurantStatus}
+                  onUpdateRestaurantPin={handleUpdateRestaurantPin}
                   menus={menus}
                   onMenuItemSave={handleMenuItemSave}
                   onMenuItemDelete={handleMenuItemDelete}
                   orders={orders}
                   onUpdateOrderStatus={handleUpdateOrderStatus}
-                  onTableUpdate={(count) => handleModifyRestaurantTablesGlobal(activeRestaurantObj.id, count - activeRestaurantObj.totalTables)}
+                  onCancelSpecificDish={handleCancelSpecificDish}
+                  onTableUpdate={(count, floors) => handleModifyRestaurantTablesGlobal(activeRestaurantObj.id, count, floors)}
                   triggerAppAlert={triggerAppAlert}
                   buzzers={buzzers}
                   ticker={ticker}
@@ -612,6 +601,7 @@ export default function App() {
             setSelectedRestaurantId={setSelectedRestaurantId}
             selectedTableNumber={selectedTableNumber}
             setSelectedTableNumber={setSelectedTableNumber}
+            users={users}
           />
         )}
       </main>

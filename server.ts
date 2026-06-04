@@ -29,7 +29,8 @@ const INITIAL_RESTAURANTS = [
     totalTables: 8,
     latitude: 28.5672,
     longitude: 77.2025,
-    geofenceRadiusMeters: 150
+    geofenceRadiusMeters: 150,
+    verificationPin: "1234"
   },
   {
     id: "rest-2",
@@ -40,7 +41,8 @@ const INITIAL_RESTAURANTS = [
     totalTables: 10,
     latitude: 12.9716,
     longitude: 77.5946,
-    geofenceRadiusMeters: 150
+    geofenceRadiusMeters: 150,
+    verificationPin: "5678"
   },
   {
     id: "rest-3",
@@ -51,7 +53,56 @@ const INITIAL_RESTAURANTS = [
     totalTables: 6,
     latitude: 19.0760,
     longitude: 72.8777,
-    geofenceRadiusMeters: 150
+    geofenceRadiusMeters: 150,
+    verificationPin: "9999"
+  },
+  {
+    id: "rest-4",
+    name: "The Dim Sum House",
+    logoUrl: "https://images.unsplash.com/photo-1541696432-82c6da8ce7bf?w=200&auto=format&fit=crop&q=80",
+    status: "active" as const,
+    lockedBySuperAdmin: false,
+    totalTables: 12,
+    latitude: 22.5726,
+    longitude: 88.3639,
+    geofenceRadiusMeters: 150,
+    verificationPin: "4444"
+  },
+  {
+    id: "rest-5",
+    name: "Pizzeria Gusto & Pasta",
+    logoUrl: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=200&auto=format&fit=crop&q=80",
+    status: "active" as const,
+    lockedBySuperAdmin: false,
+    totalTables: 8,
+    latitude: 12.9716,
+    longitude: 77.5946,
+    geofenceRadiusMeters: 150,
+    verificationPin: "5555"
+  },
+  {
+    id: "rest-6",
+    name: "The Sweet Boutique",
+    logoUrl: "https://images.unsplash.com/photo-1579372786545-d24232daf58c?w=200&auto=format&fit=crop&q=80",
+    status: "active" as const,
+    lockedBySuperAdmin: false,
+    totalTables: 6,
+    latitude: 19.0760,
+    longitude: 72.8777,
+    geofenceRadiusMeters: 150,
+    verificationPin: "6666"
+  },
+  {
+    id: "rest-7",
+    name: "The Green Bowl Co.",
+    logoUrl: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=200&auto=format&fit=crop&q=80",
+    status: "active" as const,
+    lockedBySuperAdmin: false,
+    totalTables: 10,
+    latitude: 28.6139,
+    longitude: 77.2090,
+    geofenceRadiusMeters: 150,
+    verificationPin: "7777"
   }
 ];
 
@@ -74,14 +125,41 @@ const INITIAL_MENUS = [
   { id: "menu-2b", restaurantId: "rest-2", name: "Rava Kesari (Pineapple Halwa)", description: "Roasted semolina pudding cooked with real ghee, pineapple chunks, saffron, and cashew crunch.", price: 110, category: "Desserts", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1587314168485-3236d6710814?w=400&auto=format&fit=crop&q=80" },
 
   // rest-3: Chaat Chowk & Co.
-  { id: "menu-10", restaurantId: "rest-3", name: "Classic Vada Pav (Double)", description: "Two legendary potato dumplings fried perfectly and placed inside street-pushed buns with hot garlic masala.", price: 120, category: "Mains", isAvailable: true, isLimitedTimeOffer: true, offerDetails: "Save ₹20 On Street Special", promoValue: 20, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1606491956689-2ea866880c84?w=400&auto=format&fit=crop&q=80" },
+  { id: "menu-10", restaurantId: "rest-3", name: "Classic Vada Pav (Double)", description: "Double potato dumplings fried perfectly and placed inside street-pushed buns with hot garlic masala.", price: 120, category: "Mains", isAvailable: true, isLimitedTimeOffer: true, offerDetails: "Save ₹20 On Street Special", promoValue: 20, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1606491956689-2ea866880c84?w=400&auto=format&fit=crop&q=80" },
   { id: "menu-11", restaurantId: "rest-3", name: "Dahi Puri Bomb Platter", description: "Crisp puffed puris stuffed with potato-chickpea crumble, topped with sweet yogurt and tangy tamarind-mint purees.", price: 140, category: "Starters", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1601050690597-df056fb4ce78?w=400&auto=format&fit=crop&q=80" },
   { id: "menu-12", restaurantId: "rest-3", name: "Sizzling Paneer Tikka Samosa", description: "Triangular crispy crust loaded with mashed spiced potatoes, green peas, paneer-tikka cubes.", price: 90, category: "Starters", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1601050690597-df056fb4ce78?w=400&auto=format&fit=crop&q=80" },
   { id: "menu-13", restaurantId: "rest-3", name: "Cutting Masala Chai (Pitcher)", description: "A hot, comforting, highly frothed milky tea brewed with fresh crushed ginger and green cardamom.", price: 80, category: "Drinks", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1549488344-1f9b8d2bd1f3?w=400&auto=format&fit=crop&q=80" },
-  { id: "menu-14", restaurantId: "rest-3", name: "Delhi Raj Kachori Supreme", description: "Royal crisp golden dome stuffed with pulses, yogurt, chutneys, sprouts, and colorful pomegranate seed cascades.", price: 160, category: "Mains", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1546833959-52319ef16fb7?w=400&auto=format&fit=crop&q=80" }
+  { id: "menu-14", restaurantId: "rest-3", name: "Delhi Raj Kachori Supreme", description: "Royal crisp golden dome stuffed with pulses, yogurt, chutneys, sprouts, and colorful pomegranate seed cascades.", price: 160, category: "Mains", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1546833959-52319ef16fb7?w=400&auto=format&fit=crop&q=80" },
+
+  // rest-4: The Dim Sum House
+  { id: "menu-15", restaurantId: "rest-4", name: "Steamed Chicken Momos", description: "Traditional thin-wrapped dumplings packed with seasoned minced chicken & herbs, served with fire-spiced tomato dip.", price: 180, category: "Starters", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: false, imageUrl: "https://images.unsplash.com/photo-1563245372-f21724e3856d?w=400&auto=format&fit=crop&q=80" },
+  { id: "menu-16", restaurantId: "rest-4", name: "Challi Garlic Hakka Noodles", description: "Wok-tossed noodles with crushed garlic, green chillies, spring onions, crisp exotic vegetables, and light soy seasoning.", price: 240, category: "Mains", isAvailable: true, isLimitedTimeOffer: true, offerDetails: "10% Off Indo-Chinese Classic", promoValue: 24, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1585032226651-759b368d7246?w=400&auto=format&fit=crop&q=80" },
+  { id: "menu-17", restaurantId: "rest-4", name: "Crispy Veg Spring Rolls", description: "Golden deep-fried snacks stuffed with shredded carrots, cabbage, and glass noodles, served with sweet plum dip.", price: 160, category: "Starters", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1544025162-d76694265947?w=400&auto=format&fit=crop&q=80" },
+  { id: "menu-18", restaurantId: "rest-4", name: "Fried Chocolate Baos", description: "Fluffy steamed buns fried to a warm crisp, stuffed with rich Belgian dark chocolate, served with vanilla fudge gelato.", price: 210, category: "Desserts", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1534080391025-a77d018f3ee0?w=400&auto=format&fit=crop&q=80" },
+  { id: "menu-19", restaurantId: "rest-4", name: "Jasmine Honey Iced Tea", description: "Fragrant green jasmine tea leaves cold brewed with local honey and organic lemon slices, extremely refreshing.", price: 130, category: "Drinks", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1497534446932-c925b458314e?w=400&auto=format&fit=crop&q=80" },
+
+  // rest-5: Pizzeria Gusto & Pasta
+  { id: "menu-20", restaurantId: "rest-5", name: "Spicy Pepperoni & Basil Pizza", description: "Wood-fired sourdough pizza topped with plum tomato sauce, fresh mozzarella, spicy pork pepperoni, and garden-picked sweet sweet basil.", price: 520, category: "Mains", isAvailable: true, isLimitedTimeOffer: true, offerDetails: "Special ₹50 discount!", promoValue: 50, isVeg: false, imageUrl: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&auto=format&fit=crop&q=80" },
+  { id: "menu-21", restaurantId: "rest-5", name: "Creamy Fettuccine Alfredo", description: "Housemade egg fettuccine tossed in a rich, buttery white sauce of freshly grated Parmigiano-Reggiano cream and cracked black pepper.", price: 380, category: "Mains", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1645112411341-6c4fd023714a?w=400&auto=format&fit=crop&q=80" },
+  { id: "menu-22", restaurantId: "rest-5", name: "Cheesy Garlic Sourdough Pull-apart", description: "Freshly baked sourdough crown infused with double garlic butter, parsley, and stuffed with gooey melted standard mozzarella.", price: 220, category: "Starters", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1544982503-9f984c14501a?w=400&auto=format&fit=crop&q=80" },
+  { id: "menu-23", restaurantId: "rest-5", name: "Classic Italian Tiramisu", description: "Espresso-soaked ladyfinger cookies layered with rich whipped cream of mascarpone cheese, sweet marsala, and dark cocoa dust.", price: 280, category: "Desserts", isAvailable: true, isLimitedTimeOffer: true, offerDetails: "Pizzeria Signature Pick", promoValue: 30, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1571877227200-a0d98ea607e9?w=400&auto=format&fit=crop&q=80" },
+  { id: "menu-24", restaurantId: "rest-5", name: "Fresh Peach Mojito", description: "Muddled sweet yellow peaches, garden mint leaves, and lime juice, shaken with club soda over crushed mountain ice.", price: 150, category: "Drinks", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=400&auto=format&fit=crop&q=80" },
+
+  // rest-6: The Sweet Boutique
+  { id: "menu-25", restaurantId: "rest-6", name: "Sizzling Chocolate Fudge Brownie", description: "A rich, ultra-dense chocolate walnut brownie served on a piping sizzling cast-iron skillet, topped with premium vanilla gelato and hot fudge cascade.", price: 250, category: "Desserts", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1564355808539-22fda35bed7e?w=400&auto=format&fit=crop&q=80" },
+  { id: "menu-26", restaurantId: "rest-6", name: "Fresh Strawberry Belgian Waffle", description: "Thick, golden crispy liege waffle topped with chopped fresh Mahabaleshwar strawberries, strawberry maple syrup, and whipped milk-fat cream.", price: 220, category: "Desserts", isAvailable: true, isLimitedTimeOffer: true, offerDetails: "Seasonal Delight - Save ₹25", promoValue: 25, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1562376502-6f769499c886?w=400&auto=format&fit=crop&q=80" },
+  { id: "menu-27", restaurantId: "rest-6", name: "Melted Nutella Crepe", description: "Paper-thin French crepe loaded with rich melted hazelnut cocoa Nutella paste and fresh banana disks, folded to a hot golden finish.", price: 190, category: "Desserts", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1519676867240-f03562e64548?w=400&auto=format&fit=crop&q=80" },
+  { id: "menu-28", restaurantId: "rest-6", name: "Lotus Biscoff Milkshake", description: "Creamy vanilla ice cream churned with speculoos Biscoff biscuit spread and crushed cookies, with caramel ribbons.", price: 180, category: "Drinks", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1572490122747-3968b75cc699?w=400&auto=format&fit=crop&q=80" },
+
+  // rest-7: The Green Bowl Co.
+  { id: "menu-29", restaurantId: "rest-7", name: "Avocado Quinoa Power Salad", description: "Crispy baby kale leaves, high-protein organic white quinoa, Hass avocado chunks, cherry tomatoes, cucumbers, sunflower seeds, and citrus vinaigrette drizzle.", price: 320, category: "Mains", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400&auto=format&fit=crop&q=80" },
+  { id: "menu-30", restaurantId: "rest-7", name: "Hummus & Garlic Baked Falafel Bowl", description: "Creamy olive-oil doused chickpeas hummus, roasted warm baked fava-bean falafels, served with pita triangles and sour cabbage pickles.", price: 280, category: "Mains", isAvailable: true, isLimitedTimeOffer: true, offerDetails: "Healthy Option - Save ₹20", promoValue: 20, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1540420773420-3366772f4999?w=400&auto=format&fit=crop&q=80" },
+  { id: "menu-31", restaurantId: "rest-7", name: "Herby Sweet Potato Baked Fries", description: "Crisp oven-roasted local sweet potato batons, tossed in fine Himalayan pink salt and garden rosemary thyme leaves.", price: 160, category: "Starters", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1576107232684-1279f390859f?w=400&auto=format&fit=crop&q=80" },
+  { id: "menu-32", restaurantId: "rest-7", name: "Detox Green Apple & Mint Cooler", description: "Cold-pressed clean green apple juice, organic celery stalks, ginger root cubes, lime squeezes, and fresh crushed spearmint leaves.", price: 150, category: "Drinks", isAvailable: true, isLimitedTimeOffer: false, offerDetails: "", promoValue: 0, isVeg: true, imageUrl: "https://images.unsplash.com/photo-1610970881699-44a5587caaec?w=400&auto=format&fit=crop&q=80" }
 ];
 
 const INITIAL_ORDERS = [
+  // Today's orders
   {
     id: "ord-201",
     restaurantId: "rest-1",
@@ -169,6 +247,50 @@ const INITIAL_ORDERS = [
     totalAmount: 420
   },
   {
+    id: "ord-308",
+    restaurantId: "rest-4",
+    tableNumber: 1,
+    userPhone: "+919830012345",
+    userName: "Rohan Roy",
+    items: [
+      { menuId: "menu-15", name: "Steamed Chicken Momos", quantity: 1, price: 180, promoValue: 0 },
+      { menuId: "menu-19", name: "Jasmine Honey Iced Tea", quantity: 2, price: 130, promoValue: 0 }
+    ],
+    status: "pending" as const,
+    createdAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+    totalAmount: 440
+  },
+  {
+    id: "ord-309",
+    restaurantId: "rest-5",
+    tableNumber: 2,
+    userPhone: "+919810055555",
+    userName: "Alia Bhatt",
+    items: [
+      { menuId: "menu-20", name: "Spicy Pepperoni & Basil Pizza", quantity: 1, price: 520, promoValue: 50 },
+      { menuId: "menu-24", name: "Fresh Peach Mojito", quantity: 2, price: 150, promoValue: 0 }
+    ],
+    status: "accepted" as const,
+    createdAt: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
+    totalAmount: 770
+  },
+  {
+    id: "ord-310",
+    restaurantId: "rest-6",
+    tableNumber: 3,
+    userPhone: "+919820066666",
+    userName: "Ranbir Kapoor",
+    items: [
+      { menuId: "menu-26", name: "Fresh Strawberry Belgian Waffle", quantity: 1, price: 220, promoValue: 25 },
+      { menuId: "menu-28", name: "Lotus Biscoff Milkshake", quantity: 2, price: 180, promoValue: 0 }
+    ],
+    status: "accepted" as const,
+    createdAt: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+    totalAmount: 555
+  },
+
+  // 1 Day Ago (Yesterday)
+  {
     id: "ord-207",
     restaurantId: "rest-1",
     tableNumber: 6,
@@ -180,9 +302,57 @@ const INITIAL_ORDERS = [
       { menuId: "menu-4", name: "Gulab Jamun with Rabri", quantity: 2, price: 140, promoValue: 0 }
     ],
     status: "completed" as const,
-    createdAt: new Date(Date.now() - 360 * 60 * 1000).toISOString(),
-    totalAmount: 840
+    createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000 - 3 * 60 * 60 * 1000).toISOString(),
+    totalAmount: 840,
+    released: true
   },
+  {
+    id: "ord-301",
+    restaurantId: "rest-4",
+    tableNumber: 4,
+    userPhone: "+919830012345",
+    userName: "Rohan Roy",
+    items: [
+      { menuId: "menu-15", name: "Steamed Chicken Momos", quantity: 2, price: 180, promoValue: 0 },
+      { menuId: "menu-16", name: "Challi Garlic Hakka Noodles", quantity: 1, price: 240, promoValue: 24 }
+    ],
+    status: "completed" as const,
+    createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000 - 5 * 60 * 60 * 1000).toISOString(),
+    totalAmount: 576,
+    released: true
+  },
+  {
+    id: "ord-303",
+    restaurantId: "rest-5",
+    tableNumber: 3,
+    userPhone: "+919810022334",
+    userName: "Kabir Kapoor",
+    items: [
+      { menuId: "menu-20", name: "Spicy Pepperoni & Basil Pizza", quantity: 1, price: 520, promoValue: 50 },
+      { menuId: "menu-21", name: "Creamy Fettuccine Alfredo", quantity: 1, price: 380, promoValue: 0 }
+    ],
+    status: "completed" as const,
+    createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000 - 6 * 60 * 60 * 1000).toISOString(),
+    totalAmount: 850,
+    released: true
+  },
+  {
+    id: "ord-306",
+    restaurantId: "rest-7",
+    tableNumber: 6,
+    userPhone: "+919810011122",
+    userName: "Dia Mirza",
+    items: [
+      { menuId: "menu-29", name: "Avocado Quinoa Power Salad", quantity: 2, price: 320, promoValue: 0 },
+      { menuId: "menu-32", name: "Detox Green Apple & Mint Cooler", quantity: 2, price: 150, promoValue: 0 }
+    ],
+    status: "completed" as const,
+    createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000 - 8 * 60 * 60 * 1000).toISOString(),
+    totalAmount: 940,
+    released: true
+  },
+
+  // 2 Days Ago
   {
     id: "ord-208",
     restaurantId: "rest-2",
@@ -195,9 +365,42 @@ const INITIAL_ORDERS = [
       { menuId: "menu-9", name: "Filter Degree Coffee", quantity: 2, price: 60, promoValue: 0 }
     ],
     status: "completed" as const,
-    createdAt: new Date(Date.now() - 480 * 60 * 1000).toISOString(),
-    totalAmount: 675
+    createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 - 2 * 60 * 60 * 1000).toISOString(),
+    totalAmount: 675,
+    released: true
   },
+  {
+    id: "ord-302",
+    restaurantId: "rest-4",
+    tableNumber: 2,
+    userPhone: "+919830055667",
+    userName: "Kriti Sen",
+    items: [
+      { menuId: "menu-16", name: "Challi Garlic Hakka Noodles", quantity: 2, price: 240, promoValue: 24 },
+      { menuId: "menu-19", name: "Jasmine Honey Iced Tea", quantity: 2, price: 130, promoValue: 0 }
+    ],
+    status: "completed" as const,
+    createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 - 4 * 60 * 60 * 1000).toISOString(),
+    totalAmount: 692,
+    released: true
+  },
+  {
+    id: "ord-305",
+    restaurantId: "rest-6",
+    tableNumber: 1,
+    userPhone: "+919930044556",
+    userName: "Sanjay Leela",
+    items: [
+      { menuId: "menu-25", name: "Sizzling Chocolate Fudge Brownie", quantity: 2, price: 250, promoValue: 0 },
+      { menuId: "menu-28", name: "Lotus Biscoff Milkshake", quantity: 2, price: 180, promoValue: 0 }
+    ],
+    status: "completed" as const,
+    createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 - 7 * 60 * 60 * 1000).toISOString(),
+    totalAmount: 860,
+    released: true
+  },
+
+  // 3 Days Ago
   {
     id: "ord-209",
     restaurantId: "rest-3",
@@ -210,9 +413,27 @@ const INITIAL_ORDERS = [
       { menuId: "menu-13", name: "Cutting Masala Chai (Pitcher)", quantity: 1, price: 80, promoValue: 0 }
     ],
     status: "completed" as const,
-    createdAt: new Date(Date.now() - 600 * 60 * 1000).toISOString(),
-    totalAmount: 420
+    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000 - 1 * 60 * 60 * 1000).toISOString(),
+    totalAmount: 420,
+    released: true
   },
+  {
+    id: "ord-304",
+    restaurantId: "rest-5",
+    tableNumber: 5,
+    userPhone: "+919820033445",
+    userName: "Zoya Akhtar",
+    items: [
+      { menuId: "menu-22", name: "Cheesy Garlic Sourdough Pull-apart", quantity: 2, price: 220, promoValue: 0 },
+      { menuId: "menu-23", name: "Classic Italian Tiramisu", quantity: 2, price: 280, promoValue: 30 }
+    ],
+    status: "completed" as const,
+    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000 - 5 * 60 * 60 * 1000).toISOString(),
+    totalAmount: 940,
+    released: true
+  },
+
+  // 4 Days Ago
   {
     id: "ord-210",
     restaurantId: "rest-1",
@@ -223,9 +444,27 @@ const INITIAL_ORDERS = [
       { menuId: "menu-1", name: "Murgh Makhani (Butter Chicken)", quantity: 2, price: 380, promoValue: 57 }
     ],
     status: "completed" as const,
-    createdAt: new Date(Date.now() - 720 * 60 * 1000).toISOString(),
-    totalAmount: 646
+    createdAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000 - 2 * 60 * 60 * 1000).toISOString(),
+    totalAmount: 646,
+    released: true
   },
+  {
+    id: "ord-307",
+    restaurantId: "rest-7",
+    tableNumber: 2,
+    userPhone: "+919810033344",
+    userName: "Milind Soman",
+    items: [
+      { menuId: "menu-30", name: "Hummus & Garlic Baked Falafel Bowl", quantity: 1, price: 280, promoValue: 20 },
+      { menuId: "menu-31", name: "Herby Sweet Potato Baked Fries", quantity: 1, price: 160, promoValue: 0 }
+    ],
+    status: "completed" as const,
+    createdAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000 - 6 * 60 * 60 * 1000).toISOString(),
+    totalAmount: 420,
+    released: true
+  },
+
+  // 5 Days Ago
   {
     id: "ord-211",
     restaurantId: "rest-2",
@@ -237,8 +476,9 @@ const INITIAL_ORDERS = [
       { menuId: "menu-7", name: "Steamed Idli & Vada Combo", quantity: 2, price: 115, promoValue: 15 }
     ],
     status: "completed" as const,
-    createdAt: new Date(Date.now() - 900 * 60 * 1000).toISOString(),
-    totalAmount: 530
+    createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000 - 3 * 60 * 60 * 1000).toISOString(),
+    totalAmount: 530,
+    released: true
   },
   {
     id: "ord-212",
@@ -252,8 +492,9 @@ const INITIAL_ORDERS = [
       { menuId: "menu-13", name: "Cutting Masala Chai (Pitcher)", quantity: 2, price: 80, promoValue: 0 }
     ],
     status: "completed" as const,
-    createdAt: new Date(Date.now() - 1080 * 60 * 1000).toISOString(),
-    totalAmount: 500
+    createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000 - 7 * 60 * 60 * 1000).toISOString(),
+    totalAmount: 500,
+    released: true
   },
   {
     id: "ord-213",
@@ -266,8 +507,9 @@ const INITIAL_ORDERS = [
       { menuId: "menu-2", name: "Paneer Lababdar & Butter Kulcha", quantity: 1, price: 290, promoValue: 0 }
     ],
     status: "completed" as const,
-    createdAt: new Date(Date.now() - 1260 * 60 * 1000).toISOString(),
-    totalAmount: 650
+    createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000 - 8 * 60 * 60 * 1000).toISOString(),
+    totalAmount: 650,
+    released: true
   },
   {
     id: "ord-214",
@@ -279,9 +521,10 @@ const INITIAL_ORDERS = [
       { menuId: "menu-12", name: "Sizzling Paneer Tikka Samosa", quantity: 4, price: 90, promoValue: 0 },
       { menuId: "menu-13", name: "Cutting Masala Chai (Pitcher)", quantity: 2, price: 80, promoValue: 0 }
     ],
-    status: "accepted" as const,
-    createdAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    totalAmount: 520
+    status: "completed" as const,
+    createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000 - 10 * 60 * 60 * 1000).toISOString(),
+    totalAmount: 520,
+    released: true
   }
 ];
 
@@ -297,7 +540,16 @@ const INITIAL_USERS = [
   { phone: "+919666777888", name: "Srinivas Rao", globalOrderHistory: ["ord-211"] },
   { phone: "+919777888999", name: "Priya Malhotra", globalOrderHistory: ["ord-212"] },
   { phone: "+919888999000", name: "Karan Johar", globalOrderHistory: ["ord-213"] },
-  { phone: "+919999000111", name: "Aditya Roy", globalOrderHistory: ["ord-214"] }
+  { phone: "+919999000111", name: "Aditya Roy", globalOrderHistory: ["ord-214"] },
+  { phone: "+919830012345", name: "Rohan Roy", globalOrderHistory: ["ord-301", "ord-308"] },
+  { phone: "+919830055667", name: "Kriti Sen", globalOrderHistory: ["ord-302"] },
+  { phone: "+919810022334", name: "Kabir Kapoor", globalOrderHistory: ["ord-303"] },
+  { phone: "+919820033445", name: "Zoya Akhtar", globalOrderHistory: ["ord-304"] },
+  { phone: "+919930044556", name: "Sanjay Leela", globalOrderHistory: ["ord-305"] },
+  { phone: "+919810011122", name: "Dia Mirza", globalOrderHistory: ["ord-306"] },
+  { phone: "+919810033344", name: "Milind Soman", globalOrderHistory: ["ord-307"] },
+  { phone: "+919810055555", name: "Alia Bhatt", globalOrderHistory: ["ord-309"] },
+  { phone: "+919820066666", name: "Ranbir Kapoor", globalOrderHistory: ["ord-310"] }
 ];
 
 // Seeding engine
@@ -306,11 +558,12 @@ async function seedDatabaseIfEmpty() {
     const qSnap = await getDocs(collection(db, "restaurants"));
     const oSnap = await getDocs(collection(db, "orders"));
     
-    // Check if empty, or old 'ord-101' exists, or our mandatory new 'ord-214' order is missing
+    // Check if empty, or old 'ord-101' exists, or our mandatory new 'ord-214' order is missing, or one of the new restaurants is missing
     let needsUpgrade = qSnap.empty;
     if (!needsUpgrade) {
+      const rIds = qSnap.docs.map(doc => doc.id);
       const ids = oSnap.docs.map(doc => doc.id);
-      if (ids.includes("ord-101") || !ids.includes("ord-214")) {
+      if (ids.includes("ord-101") || !ids.includes("ord-214") || !rIds.includes("rest-4")) {
         needsUpgrade = true;
       }
     }

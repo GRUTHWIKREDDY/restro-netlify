@@ -5,7 +5,7 @@ import {
   Wand2, BrainCircuit, Bot, FileText, X, Sparkles, RefreshCw, 
   AlertOctagon, Info, ArrowLeftRight, Bell, Camera, Check, Loader2, Utensils
 } from 'lucide-react';
-import { Restaurant, MenuItem, Order, Buzzer } from '../types';
+import { Restaurant, MenuItem, Order, Buzzer, FloorDef } from '../types';
 import { db } from '../firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
 
@@ -13,12 +13,14 @@ interface AdminProps {
   restaurant: Restaurant;
   restaurants: Restaurant[];
   onChangeRestaurantStatus: (status: 'active' | 'inactive') => void;
+  onUpdateRestaurantPin?: (tenantId: string, pin: string) => void;
   menus: MenuItem[];
   onMenuItemSave: (menuItem: MenuItem, isEdit: boolean) => void;
   onMenuItemDelete: (id: string) => void;
   orders: Order[];
   onUpdateOrderStatus: (id: string, nextStatus: any, released?: boolean) => void;
-  onTableUpdate: (count: number) => void;
+  onCancelSpecificDish?: (orderId: string, itemIdx: number) => void;
+  onTableUpdate: (count: number, floors?: FloorDef[]) => void;
   triggerAppAlert: (title: string, message: string, type?: 'success' | 'error' | 'info') => void;
   buzzers: Buzzer[];
   ticker?: number;
@@ -29,18 +31,49 @@ export default function RestaurantAdminPanel({
   restaurant,
   restaurants,
   onChangeRestaurantStatus,
+  onUpdateRestaurantPin,
   menus,
   onMenuItemSave,
   onMenuItemDelete,
   orders,
   onUpdateOrderStatus,
+  onCancelSpecificDish,
   onTableUpdate,
   triggerAppAlert,
   buzzers,
   ticker,
   onSwitchToKitchenMode
 }: AdminProps) {
-  const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'tables' | 'floor' | 'buzzers'>('orders');
+  if (restaurant?.disableAdminPortal) {
+    return (
+      <div id="restaurant-admin-panel-blocked" className="max-w-4xl mx-auto my-12 p-8 bg-white border border-rose-100 rounded-3xl shadow-xl text-center">
+        <div className="w-16 h-16 bg-rose-50 border border-rose-100 rounded-2xl flex items-center justify-center mx-auto text-rose-600 mb-4 animate-bounce">
+          <AlertOctagon size={32} />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900">Admin Portal Access Suspended</h2>
+        <p className="text-sm text-slate-500 mt-2 max-w-lg mx-auto leading-relaxed">
+          The administrative privileges for <span className="font-extrabold text-slate-800">{restaurant.name}</span> have been temporarily disabled or limited by the platforms' SaaS Super Administrator. Contact support to request reinstatement.
+        </p>
+        <div className="mt-6 flex justify-center gap-3">
+          <button
+            onClick={() => window.location.href = '/portal'}
+            className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition cursor-pointer"
+          >
+            Go to Portal Gateway
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'tables' | 'floor' | 'history'>('orders');
+  const [historySearch, setHistorySearch] = useState('');
+  const [selectedHistoryDate, setSelectedHistoryDate] = useState<string>('');
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | 'pending' | 'accepted' | 'completed' | 'rejected'>('all');
+  const [historyReleaseFilter, setHistoryReleaseFilter] = useState<'all' | 'active' | 'cleared'>('all');
+  const [historyMinAmount, setHistoryMinAmount] = useState<string>('');
+  const [historyMaxAmount, setHistoryMaxAmount] = useState<string>('');
+  const [showAllHistoryDates, setShowAllHistoryDates] = useState<boolean>(false);
 
   const pendingBuzzers = useMemo(() => {
     return buzzers.filter(b => b.restaurantId === restaurant.id);
@@ -57,6 +90,9 @@ export default function RestaurantAdminPanel({
 
   const [isSalesLedgerOpen, setIsSalesLedgerOpen] = useState(false);
   const [ledgerSearch, setLedgerSearch] = useState('');
+  const [ledgerFromDate, setLedgerFromDate] = useState<string>('');
+  const [ledgerToDate, setLedgerToDate] = useState<string>('');
+  const [releasingTableNum, setReleasingTableNum] = useState<number | null>(null);
 
   // AI states
   const [isAiWritingDescription, setIsAiWritingDescription] = useState(false);
@@ -83,20 +119,145 @@ export default function RestaurantAdminPanel({
   const [isFormulatingPrompt, setIsFormulatingPrompt] = useState(false);
 
   const [tempTableCount, setTempTableCount] = useState<string>(restaurant?.totalTables.toString() || '8');
+  const [useFloors, setUseFloors] = useState<boolean>(!!(restaurant?.floors && restaurant.floors.length > 0));
+  const [floorsData, setFloorsData] = useState<FloorDef[]>(restaurant?.floors || [{ name: 'Main Floor', seats: restaurant?.totalTables || 8 }]);
   const [selectedQRTable, setSelectedQRTable] = useState<number>(1);
   const [flyerTheme, setFlyerTheme] = useState<'noir' | 'gold' | 'emerald' | 'cobalt'>('noir');
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [pinFormVal, setPinFormVal] = useState<string>(restaurant?.verificationPin || '1234');
+
+  // QR Routing Engine Base URL customizable options
+  const [qrBaseUrlOption, setQrBaseUrlOption] = useState<'auto' | 'custom'>('auto');
+  const [qrCustomBaseUrl, setQrCustomBaseUrl] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return window.location.origin;
+    }
+    return '';
+  });
+
+  const activeQRBaseUrl = useMemo(() => {
+    if (qrBaseUrlOption === 'custom' && qrCustomBaseUrl.trim()) {
+      return qrCustomBaseUrl.trim().replace(/\/+$/, '');
+    }
+    return window.location.origin;
+  }, [qrBaseUrlOption, qrCustomBaseUrl]);
 
   useEffect(() => {
     if (restaurant) {
       setTempTableCount(restaurant.totalTables.toString());
+      setUseFloors(!!(restaurant.floors && restaurant.floors.length > 0));
+      setFloorsData(restaurant.floors || [{ name: 'Main Floor', seats: restaurant.totalTables || 8 }]);
       setSelectedQRTable(1);
+      setPinFormVal(restaurant.verificationPin || '1234');
     }
   }, [restaurant]);
 
   const tenantOrders = useMemo(() => {
-    return orders.filter(o => o.restaurantId === restaurant?.id);
+    let filtered = orders.filter(o => o.restaurantId === restaurant?.id);
+    if (restaurant?.hideHistoryOlderThanOneDay) {
+      const oneDayAgo = new Date().getTime() - (24 * 60 * 60 * 1000);
+      filtered = filtered.filter(o => {
+        const orderTime = new Date(o.createdAt).getTime();
+        return orderTime >= oneDayAgo || o.status === 'pending' || o.status === 'accepted';
+      });
+    }
+    return filtered;
   }, [orders, restaurant]);
+
+  const dailyHistorySummaries = useMemo(() => {
+    const summaries: Record<string, { count: number; revenue: number; orders: Order[] }> = {};
+    
+    tenantOrders.forEach(o => {
+      const rawDate = o.createdAt ? o.createdAt.split('T')[0] : 'Unknown Date';
+      if (!summaries[rawDate]) {
+        summaries[rawDate] = { count: 0, revenue: 0, orders: [] };
+      }
+      summaries[rawDate].count += 1;
+      if (o.status !== 'rejected') {
+        summaries[rawDate].revenue += o.totalAmount;
+      }
+      summaries[rawDate].orders.push(o);
+    });
+
+    return Object.keys(summaries)
+      .sort((a, b) => b.localeCompare(a))
+      .map(dateStr => ({
+        dateStr,
+        ...summaries[dateStr]
+      }));
+  }, [tenantOrders]);
+
+  useEffect(() => {
+    if (!selectedHistoryDate && dailyHistorySummaries.length > 0) {
+      setSelectedHistoryDate(dailyHistorySummaries[0].dateStr);
+    }
+  }, [dailyHistorySummaries, selectedHistoryDate]);
+
+  const filteredHistoryOrders = useMemo(() => {
+    let sourceOrders: Order[] = [];
+    if (showAllHistoryDates) {
+      sourceOrders = tenantOrders;
+    } else {
+      const activeDateGroup = dailyHistorySummaries.find(g => g.dateStr === selectedHistoryDate);
+      if (activeDateGroup) {
+        sourceOrders = activeDateGroup.orders;
+      }
+    }
+
+    return sourceOrders.filter(o => {
+      // 1. Text Search Filter (Guarded against null/undefined values)
+      const text = historySearch.trim().toLowerCase();
+      if (text) {
+        const userName = (o.userName || '').toLowerCase();
+        const userPhone = (o.userPhone || '');
+        const orderId = (o.id || '').toLowerCase();
+        const tableStr = (o.tableNumber !== undefined && o.tableNumber !== null) ? o.tableNumber.toString() : '';
+        const itemsMatch = o.items ? o.items.some(i => (i.name || '').toLowerCase().includes(text)) : false;
+
+        const matchesText = userName.includes(text) ||
+          userPhone.includes(text) ||
+          orderId.includes(text) ||
+          tableStr.includes(text) ||
+          itemsMatch;
+
+        if (!matchesText) return false;
+      }
+
+      // 2. Status Filter
+      if (historyStatusFilter !== 'all' && o.status !== historyStatusFilter) {
+        return false;
+      }
+
+      // 3. Release/Cleared State Filter
+      if (historyReleaseFilter !== 'all') {
+        const isReleased = o.released === true;
+        if (historyReleaseFilter === 'active' && isReleased) return false;
+        if (historyReleaseFilter === 'cleared' && !isReleased) return false;
+      }
+
+      // 4. Price/Amount Filter
+      if (historyMinAmount) {
+        const minVal = parseFloat(historyMinAmount);
+        if (!isNaN(minVal) && o.totalAmount < minVal) return false;
+      }
+      if (historyMaxAmount) {
+        const maxVal = parseFloat(historyMaxAmount);
+        if (!isNaN(maxVal) && o.totalAmount > maxVal) return false;
+      }
+
+      return true;
+    });
+  }, [tenantOrders, dailyHistorySummaries, selectedHistoryDate, showAllHistoryDates, historySearch, historyStatusFilter, historyReleaseFilter, historyMinAmount, historyMaxAmount]);
+
+  const formatHistoryDate = (dateStr: string) => {
+    if (dateStr === 'Unknown Date') return 'Unknown Date';
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    } catch {
+      return dateStr;
+    }
+  };
 
   const stats = useMemo(() => {
     const pending = tenantOrders.filter(o => o.status === 'pending').length;
@@ -135,7 +296,13 @@ export default function RestaurantAdminPanel({
   };
 
   const ledgerBreakdown = useMemo(() => {
-    const validOrders = tenantOrders.filter(o => o.status !== 'rejected');
+    const validOrders = tenantOrders.filter(o => {
+      if (o.status === 'rejected') return false;
+      const orderDate = o.createdAt ? o.createdAt.split('T')[0] : '';
+      if (ledgerFromDate && orderDate < ledgerFromDate) return false;
+      if (ledgerToDate && orderDate > ledgerToDate) return false;
+      return true;
+    });
     let totalOriginalSubtotal = 0;
     let totalDeductionsExcluded = 0;
     let totalFinalReceived = 0;
@@ -153,7 +320,7 @@ export default function RestaurantAdminPanel({
       totalDeductionsExcluded,
       totalFinalReceived
     };
-  }, [tenantOrders]);
+  }, [tenantOrders, ledgerFromDate, ledgerToDate]);
 
   const handleToggleOperationalStatus = () => {
     if (restaurant.lockedBySuperAdmin) {
@@ -428,13 +595,47 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
   };
 
   const handleCommitTableCount = () => {
-    const val = parseInt(tempTableCount);
-    if (isNaN(val) || val < 1 || val > 50) {
-      triggerAppAlert("Integrity Warning", "Table count must be kept between 1 and 50 nodes.", "error");
+    if (restaurant.disableQrGeneration) {
+      triggerAppAlert("Action Blocked", "Live QR Table scaling/allocations are restricted for this brand by the platform Super Admin.", "error");
       return;
     }
-    onTableUpdate(val);
-    triggerAppAlert("Tables Scale Committed", `${val} live QR seating nodes actively provisioned.`, "success");
+
+    if (useFloors) {
+      const sum = floorsData.reduce((acc, f) => acc + f.seats, 0);
+      if (sum < 1 || sum > 200) {
+         triggerAppAlert("Integrity Warning", "Total seats across floors must be between 1 and 200.", "error");
+         return;
+      }
+      onTableUpdate(sum, floorsData);
+      triggerAppAlert("Floor Scale Committed", `${sum} seats allocated across ${floorsData.length} floors.`, "success");
+    } else {
+      const val = parseInt(tempTableCount);
+      if (isNaN(val) || val < 1 || val > 200) {
+        triggerAppAlert("Integrity Warning", "Table count must be kept between 1 and 200 nodes.", "error");
+        return;
+      }
+      onTableUpdate(val, []);
+      triggerAppAlert("Tables Scale Committed", `${val} live QR seating nodes actively provisioned.`, "success");
+    }
+  };
+
+  const handleCommitWaiterPin = () => {
+    const pin = pinFormVal.trim();
+    if (pin.length !== 4 || isNaN(parseInt(pin))) {
+      triggerAppAlert("Validation Warning", "Verification PIN must be exactly 4 digits.", "error");
+      return;
+    }
+    if (onUpdateRestaurantPin) {
+      onUpdateRestaurantPin(restaurant.id, pin);
+    }
+  };
+
+  const handleRandomizeWaiterPin = () => {
+    const nextPin = Math.floor(1000 + Math.random() * 9000).toString();
+    setPinFormVal(nextPin);
+    if (onUpdateRestaurantPin) {
+      onUpdateRestaurantPin(restaurant.id, nextPin);
+    }
   };
 
   const floorTableData = useMemo(() => {
@@ -488,20 +689,41 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
     });
   }, [tenantOrders, restaurant]);
 
-  const handleReleaseTable = async (tableNum: number) => {
+  const handleReleaseTable = (tableNum: number) => {
+    const tableData = floorTableData.find(t => t.tableNum === tableNum);
+    if (!tableData || !tableData.isOccupied) return;
+    setReleasingTableNum(tableNum);
+  };
+
+  const handlePrepareAndRelease = async (tableNum: number) => {
     const tableData = floorTableData.find(t => t.tableNum === tableNum);
     if (!tableData || !tableData.isOccupied) return;
 
-    const confirmRelease = window.confirm(`Release Table #${tableNum}? This will settle and mark all active tickets as Completed and Checked Out.`);
-    if (!confirmRelease) return;
+    try {
+      const updatePromises = tableData.activeOrders.map(order => 
+        onUpdateOrderStatus(order.id, 'completed', true)
+      );
+      await Promise.all(updatePromises);
+      setReleasingTableNum(null);
+      triggerAppAlert("Table Settled & Released", `Table #${tableNum} has been completely prepared, settled, and released.`, "success");
+    } catch (err) {
+      triggerAppAlert("Release Error", "Could not update all orders.", "error");
+    }
+  };
+
+  const handleCancelAndRelease = async (tableNum: number) => {
+    const tableData = floorTableData.find(t => t.tableNum === tableNum);
+    if (!tableData || !tableData.isOccupied) return;
 
     try {
-      for (const order of tableData.activeOrders) {
-        await onUpdateOrderStatus(order.id, 'completed', true);
-      }
-      triggerAppAlert("Table Released", `Table #${tableNum} has been released successfully and is now unoccupied.`, "success");
+      const updatePromises = tableData.activeOrders.map(order => 
+        onUpdateOrderStatus(order.id, 'rejected', true)
+      );
+      await Promise.all(updatePromises);
+      setReleasingTableNum(null);
+      triggerAppAlert("Table Settled & Cancelled", `Table #${tableNum} active orders cancelled, and table released.`, "success");
     } catch (err) {
-      triggerAppAlert("Release Error", "Could not update orders status.", "error");
+      triggerAppAlert("Release Error", "Could not cancel orders.", "error");
     }
   };
 
@@ -552,7 +774,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
 
         {/* Tab triggers */}
         <div className="flex flex-wrap gap-1 bg-slate-150 p-1.5 rounded-2xl border border-slate-200">
-          {(['orders', 'menu', 'tables', 'floor', 'buzzers'] as const).map(tab => (
+          {(['orders', 'menu', 'tables', 'floor', 'history'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -563,13 +785,8 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                  tab === 'menu' ? 'Menu & Promos' : 
                  tab === 'tables' ? 'QR Code Suite' : 
                  tab === 'floor' ? 'Seat Floor' : 
-                 'Service Buzzers'}
+                 'Order Histories'}
               </span>
-              {tab === 'buzzers' && pendingBuzzers.length > 0 && (
-                <span className="bg-rose-500 text-white font-mono text-[9px] font-black px-1.5 py-0.2 rounded-full animate-pulse">
-                  {pendingBuzzers.length}
-                </span>
-              )}
             </button>
           ))}
         </div>
@@ -645,17 +862,23 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
         </button>
       </div>
 
-      {/* TAB: TICKETS DISPATCH OVERVIEW */}
-      {activeTab === 'orders' && (
-        <div id="live-override-hub" className="space-y-4">
-          <div className="bg-white p-4 rounded-3xl border border-slate-200">
-            <h3 className="text-base font-bold text-slate-905">Live Culinary Override Hub</h3>
+      {/* Dynamic Workspace layout containing left-side tabs and persistent right-side buzzer panel */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+        
+        {/* Main Tab Content Area */}
+        <div className="lg:col-span-3 space-y-6 order-2 lg:order-1">
+
+          {/* TAB: TICKETS DISPATCH OVERVIEW */}
+          {activeTab === 'orders' && (
+            <div id="live-override-hub" className="space-y-4">
+              <div className="bg-white p-4 rounded-3xl border border-slate-200">
+                <h3 className="text-base font-bold text-slate-905">Live Culinary Override Hub</h3>
             <p className="text-xs text-slate-500 mt-0.5">Manage chronological order cards. Admins can override chef tasks and move accidentally completed orders back into active preparation.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {(['pending', 'accepted', 'completed', 'rejected'] as const).map(sectionStatus => {
-              const list = tenantOrders.filter(o => o.status === sectionStatus);
+              const list = tenantOrders.filter(o => o.status === sectionStatus && o.released !== true);
               return (
                 <div key={sectionStatus} className="bg-white p-3.5 rounded-2xl border border-slate-200 flex flex-col space-y-3">
                   <span className={`text-xs font-black uppercase flex items-center gap-1 pb-2 border-b border-slate-100 ${
@@ -683,9 +906,20 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
 
                         <div className="py-2 border-y border-dashed border-slate-200 text-[11px] text-slate-600 space-y-1">
                           {o.items.map((it, idx) => (
-                            <div key={idx} className="flex justify-between">
-                              <span>{it.quantity}x {it.name}</span>
-                              <span className="font-semibold">₹{(it.price * it.quantity).toFixed(2)}</span>
+                            <div key={idx} className="flex justify-between items-center group">
+                              <span className="flex items-center gap-1">
+                                {onCancelSpecificDish && (
+                                  <button
+                                    onClick={() => onCancelSpecificDish(o.id, idx)}
+                                    className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-500 rounded transition cursor-pointer"
+                                    title="Cancel individual dish"
+                                  >
+                                    <X size={10} className="stroke-[3]" />
+                                  </button>
+                                )}
+                                <span>{it.quantity}x {it.name}</span>
+                              </span>
+                              <span className="font-semibold text-slate-800">₹{(it.price * it.quantity).toFixed(2)}</span>
                             </div>
                           ))}
                         </div>
@@ -723,10 +957,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                             <button
                               type="button"
                               onClick={() => {
-                                const confirmRelease = window.confirm(`Release remote hold and accept order for Table #${o.tableNumber}?`);
-                                if (confirmRelease) {
-                                  onUpdateOrderStatus(o.id, 'accepted');
-                                }
+                                onUpdateOrderStatus(o.id, 'accepted');
                               }}
                               className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 text-center py-1 rounded font-black text-[9px] uppercase tracking-wider transition cursor-pointer"
                             >
@@ -815,14 +1046,35 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
       {/* TAB: MENU PROMOS ENGINE */}
       {activeTab === 'menu' && (
         <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-4 shadow-sm">
+          {restaurant.lockAllItems && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-900 rounded-2xl p-4 flex gap-3 text-xs leading-relaxed animate-pulse">
+              <div className="p-1 px-2 font-black rounded bg-rose-600 text-white shrink-0 self-start">CATALOG LOCKED</div>
+              <div className="space-y-0.5">
+                <h4 className="font-extrabold text-rose-950">Recipe and Price Configuration Locked</h4>
+                <p className="text-rose-800 font-medium">This brand has its recipes locked in a strict Read-Only mode by the SaaS platform Super Administrator. Item creation, price revisions, and deletion operations are suspended.</p>
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-150">
             <div>
               <h3 className="text-base font-bold text-slate-900">Custom Brand Catalog ({currentRestaurantMenus.length})</h3>
               <p className="text-xs text-slate-500">Configure dish details and apply Limited Time promotional discounts instantly.</p>
             </div>
             <button
-              onClick={() => handleOpenMenuModal()}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-4 rounded-xl transition flex items-center gap-1 self-start"
+              onClick={() => {
+                if (restaurant.lockAllItems) {
+                  triggerAppAlert("Action Blocked", "Your brand is set to read-only by the Super Admin.", "error");
+                  return;
+                }
+                handleOpenMenuModal();
+              }}
+              disabled={!!restaurant.lockAllItems}
+              className={`font-bold text-xs py-2 px-4 rounded-xl transition flex items-center gap-1 self-start ${
+                restaurant.lockAllItems 
+                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300' 
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+              }`}
             >
               <Plus size={15} />
               Add Menu Item
@@ -894,25 +1146,43 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                     </td>
                     <td className="py-3 px-1.5">
                       <button
-                        onClick={() => onMenuItemSave({ ...item, isAvailable: !item.isAvailable }, true)}
+                        onClick={() => {
+                          if (restaurant.lockAllItems) {
+                            triggerAppAlert("Action Blocked", "Your recipe catalog is currently locked as Read-Only.", "error");
+                            return;
+                          }
+                          onMenuItemSave({ ...item, isAvailable: !item.isAvailable }, true);
+                        }}
                         className={`px-1.5 py-0.5 text-[10px] rounded font-black uppercase ${
                           item.isAvailable ? 'bg-emerald-50 text-emerald-600 border border-emerald-250' :
                           'bg-rose-50 text-rose-500 border border-rose-250'
-                        }`}
+                        } ${restaurant.lockAllItems ? 'opacity-60 cursor-not-allowed' : ''}`}
                       >
                         {item.isAvailable ? "Available" : "Sold Out"}
                       </button>
                     </td>
                     <td className="py-3 px-1.5 text-right space-x-1 whitespace-nowrap">
                       <button 
-                        onClick={() => handleOpenMenuModal(item)}
-                        className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded"
+                        onClick={() => {
+                          if (restaurant.lockAllItems) {
+                            triggerAppAlert("Action Blocked", "Your recipe catalog is currently locked as Read-Only.", "error");
+                            return;
+                          }
+                          handleOpenMenuModal(item);
+                        }}
+                        className={`p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded ${restaurant.lockAllItems ? 'cursor-not-allowed opacity-40' : ''}`}
                       >
                         <Edit size={14} />
                       </button>
                       <button 
-                        onClick={() => onMenuItemDelete(item.id)}
-                        className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded"
+                        onClick={() => {
+                          if (restaurant.lockAllItems) {
+                            triggerAppAlert("Action Blocked", "Your recipe catalog is currently locked as Read-Only.", "error");
+                            return;
+                          }
+                          onMenuItemDelete(item.id);
+                        }}
+                        className={`p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded ${restaurant.lockAllItems ? 'cursor-not-allowed opacity-40' : ''}`}
                       >
                         <Trash2 size={14} />
                       </button>
@@ -933,6 +1203,16 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
       {/* TAB: QR CODE flyers GENERATOR */}
       {activeTab === 'tables' && (
         <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-6 shadow-sm">
+          {restaurant.disableQrGeneration && (
+            <div className="bg-amber-55 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl p-4 flex gap-3 text-xs leading-relaxed animate-pulse">
+              <div className="p-1 px-2 font-black rounded bg-amber-600 text-white shrink-0 self-start">SCALING SUSPENDED</div>
+              <div className="space-y-0.5">
+                <h4 className="font-extrabold text-amber-950">QR Seating Node Modifications Blocked</h4>
+                <p className="text-amber-850 text-amber-800 font-medium">Your brand's seating node limits have been locked by the platform manager. Existing tabletop QR layouts remain routable, but scaling the quantities or re-routing URL parameters is currently suspended.</p>
+              </div>
+            </div>
+          )}
+
           <div className="border-b border-slate-150 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <h3 className="text-base font-bold text-slate-900">Seating Node QR Suite</h3>
@@ -946,31 +1226,113 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
             {/* Control Column */}
-            <div className="lg:col-span-4 bg-slate-50 p-5 rounded-2xl border border-slate-205 space-y-5">
+            <div className="xl:col-span-5 bg-slate-50 p-5 rounded-2xl border border-slate-205 space-y-5">
               <h4 className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400">QR Suite Settings</h4>
               
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 block">1. Allocate Tables Quantity</label>
-                <div className="flex gap-2">
-                  <input 
-                    type="number" 
-                    min="1"
-                    max="50"
-                    value={tempTableCount}
-                    onChange={(e) => setTempTableCount(e.target.value)}
-                    className="w-20 bg-white border border-slate-300 rounded-xl text-center px-2 py-1.5 font-black text-slate-800"
-                  />
-                  <button 
-                    onClick={handleCommitTableCount}
-                    className="flex-1 bg-slate-900 hover:bg-slate-800 text-white py-1.5 px-3 rounded-xl font-bold transition text-xs cursor-pointer shadow-xs"
-                  >
-                    Set Table Count
-                  </button>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700 block">1. Allocate Tables Quantity</label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only peer" 
+                      checked={useFloors}
+                      onChange={(e) => setUseFloors(e.target.checked)}
+                      disabled={!!restaurant.disableQrGeneration}
+                    />
+                    <div className="w-7 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600 relative"></div>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Use Floors Layout</span>
+                  </label>
                 </div>
+                
+                {!useFloors ? (
+                  <div className="flex gap-2">
+                    <input 
+                      type="number" 
+                      min="1"
+                      max="200"
+                      disabled={!!restaurant.disableQrGeneration}
+                      value={tempTableCount}
+                      onChange={(e) => setTempTableCount(e.target.value)}
+                      className={`w-20 bg-white border border-slate-300 rounded-xl text-center px-2 py-1.5 font-black text-slate-800 ${
+                        restaurant.disableQrGeneration ? 'opacity-50 bg-slate-100 cursor-not-allowed border-slate-200' : ''
+                      }`}
+                    />
+                    <button 
+                      onClick={handleCommitTableCount}
+                      disabled={!!restaurant.disableQrGeneration}
+                      className={`flex-1 py-1.5 px-3 rounded-xl font-bold transition text-xs shadow-xs ${
+                        restaurant.disableQrGeneration 
+                          ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300' 
+                          : 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer'
+                      }`}
+                    >
+                      Set Global Table Count
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2 border border-slate-200 rounded-xl p-3 bg-white">
+                    {floorsData.map((floor, index) => (
+                      <div key={index} className="flex gap-2 items-center">
+                        <input 
+                          type="text" 
+                          placeholder="Floor Name"
+                          value={floor.name}
+                          onChange={(e) => {
+                            const nd = [...floorsData];
+                            nd[index].name = e.target.value;
+                            setFloorsData(nd);
+                          }}
+                          disabled={!!restaurant.disableQrGeneration}
+                          className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800"
+                        />
+                        <input 
+                          type="number" 
+                          min="1" max="100"
+                          value={floor.seats}
+                          onChange={(e) => {
+                            const nd = [...floorsData];
+                            nd[index].seats = parseInt(e.target.value) || 0;
+                            setFloorsData(nd);
+                          }}
+                          disabled={!!restaurant.disableQrGeneration}
+                          className="w-16 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 text-center"
+                        />
+                        <button 
+                          onClick={() => {
+                            if (floorsData.length > 1) {
+                              setFloorsData(floorsData.filter((_, i) => i !== index));
+                            }
+                          }}
+                          disabled={!!restaurant.disableQrGeneration || floorsData.length === 1}
+                          className="p-1.5 text-red-400 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    ))}
+                    <div className="flex gap-2 mt-2 pt-2 border-t border-slate-100">
+                      <button 
+                        onClick={() => setFloorsData([...floorsData, { name: `Floor ${floorsData.length + 1}`, seats: 10 }])}
+                        disabled={!!restaurant.disableQrGeneration}
+                        className="flex-1 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-black uppercase rounded-lg transition"
+                      >
+                        + Add Floor
+                      </button>
+                      <button 
+                        onClick={handleCommitTableCount}
+                        disabled={!!restaurant.disableQrGeneration}
+                        className="flex-1 py-1.5 px-3 rounded-lg font-bold transition text-[10px] uppercase shadow-xs bg-slate-900 hover:bg-slate-800 text-white cursor-pointer"
+                      >
+                        Commit Setup ({floorsData.reduce((a,c) => a + c.seats, 0)} Total)
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <p className="text-[9.5px] text-slate-400 leading-normal">
-                  Scale your physical seats dynamically. Max: 50. Code routes are created live.
+                  Scale your physical seats dynamically. Max: 200. Code routes are created live.
                 </p>
               </div>
 
@@ -981,37 +1343,63 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                   onChange={(e) => setSelectedQRTable(parseInt(e.target.value))}
                   className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-2 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-500 cursor-pointer"
                 >
-                  {Array.from({ length: restaurant.totalTables }, (_, idx) => idx + 1).map(num => (
+                  {restaurant.floors && restaurant.floors.length > 0 ? (() => {
+                    let acc = 0;
+                    return restaurant.floors.map((floor, fIdx) => {
+                      const start = acc + 1;
+                      const end = acc + floor.seats;
+                      acc += floor.seats;
+                      if (floor.seats === 0) return null;
+                      return (
+                        <optgroup key={fIdx} label={`${floor.name} (Seats ${start}-${end})`}>
+                          {Array.from({ length: floor.seats }, (_, idx) => start + idx).map(num => (
+                            <option key={num} value={num}>Desk Standing Card — Table #{num}</option>
+                          ))}
+                        </optgroup>
+                      );
+                    });
+                  })() : Array.from({ length: restaurant.totalTables }, (_, idx) => idx + 1).map(num => (
                     <option key={num} value={num}>Desk Standing Card — Table #{num}</option>
                   ))}
                 </select>
               </div>
 
-              <div className="pt-3 border-t border-slate-200 space-y-2">
-                <label className="text-xs font-bold text-slate-700 block">3. Flyer Branding Theme</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { id: 'noir', name: 'Noir Charcoal', bg: 'bg-slate-900 border-slate-700 text-slate-200' },
-                    { id: 'gold', name: 'Majestic Gold', bg: 'bg-amber-950 border-amber-600 text-amber-200' },
-                    { id: 'emerald', name: 'Sage Emerald', bg: 'bg-emerald-950 border-emerald-600 text-emerald-200' },
-                    { id: 'cobalt', name: 'Royale Cobalt', bg: 'bg-indigo-950 border-teal-500 text-indigo-200' }
-                  ].map(themeItem => (
-                    <button
-                      key={themeItem.id}
-                      onClick={() => setFlyerTheme(themeItem.id as any)}
-                      className={`p-2.5 rounded-xl border text-[10px] font-extrabold text-left transition-all cursor-pointer ${
-                        flyerTheme === themeItem.id 
-                          ? 'border-indigo-600 ring-2 ring-indigo-500/25 shadow-sm' 
-                          : 'border-slate-200 hover:border-slate-350 bg-white text-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span className={`w-3.5 h-3.5 rounded-full ${themeItem.bg} border flex items-center justify-center text-[6px]`}>◆</span>
-                        {themeItem.name}
-                      </div>
-                    </button>
-                  ))}
+              <div className="pt-3 border-t border-slate-200 space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 block text-left">3. QR Public URL Target Address</label>
+                <div className="grid grid-cols-2 gap-1.5 bg-white p-1 rounded-xl border">
+                  <button
+                    type="button"
+                    onClick={() => setQrBaseUrlOption('auto')}
+                    className={`text-[9px] font-black uppercase py-1 px-1.5 rounded-lg transition-all ${qrBaseUrlOption === 'auto' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-805'}`}
+                  >
+                    Auto-Detect
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQrBaseUrlOption('custom')}
+                    className={`text-[9px] font-black uppercase py-1 px-1.5 rounded-lg transition-all ${qrBaseUrlOption === 'custom' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-805'}`}
+                  >
+                    Custom URL
+                  </button>
                 </div>
+                {qrBaseUrlOption === 'custom' ? (
+                  <div className="space-y-1">
+                    <input 
+                      type="url" 
+                      placeholder="e.g. https://ais-pre-..."
+                      value={qrCustomBaseUrl}
+                      onChange={(e) => setQrCustomBaseUrl(e.target.value)}
+                      className="w-full bg-white border border-slate-350 rounded-xl px-2.5 py-1.5 text-[10.5px] font-mono font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                    />
+                    <p className="text-[9px] text-amber-600 leading-normal font-semibold">
+                      ⚠️ Paste your Shared App URL or Live Deployment domain so scanning works perfectly on your external mobile phone!
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-[9px] text-slate-400 leading-normal">
+                    Currently utilizing frame host origin: <span className="font-mono text-[9px] font-bold text-slate-500 bg-slate-100 px-1 rounded">{window.location.origin}</span>
+                  </p>
+                )}
               </div>
 
               <div className="pt-4 border-t border-slate-200 text-xs text-slate-505 space-y-2">
@@ -1020,24 +1408,58 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                   Click below to open the digital customer ordering page for <b className="text-slate-600 font-bold">Table #{selectedQRTable}</b> in a new browser tab to try seating:
                 </p>
                 <a
-                  href={`${window.location.origin}/r/${restaurant.id}/t/${selectedQRTable}`}
+                  href={`${activeQRBaseUrl}/r/${restaurant.id}/t/${selectedQRTable}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold py-2 px-3 rounded-xl text-[10.5px] uppercase tracking-wider block text-center border border-indigo-100 transition shadow-2xs"
+                  className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold py-2 px-3 rounded-xl text-[10.5px] uppercase tracking-wider block text-center border border-indigo-100 transition shadow-2xs animate-pulse-slow-once"
                 >
                   📱 Test Guest Portal (Table #{selectedQRTable})
                 </a>
               </div>
+
+              <div className="pt-4 border-t border-slate-200 text-xs space-y-2 text-left">
+                <div className="flex items-center justify-between">
+                  <p className="font-extrabold text-slate-700 uppercase text-[9px] tracking-wider">Waiter Validation PIN</p>
+                  <span className="font-mono text-[9px] bg-slate-100 border border-slate-200 px-1 py-0.2 rounded text-slate-500 font-extrabold">GATEWAY KEY</span>
+                </div>
+                <p className="text-[10px] leading-relaxed text-slate-400">
+                  Update code or auto-generate digits. Waiters share this code with diners when physical device GPS checks fail.
+                </p>
+                <div className="flex gap-2.5">
+                  <input 
+                    type="text" 
+                    maxLength={4}
+                    value={pinFormVal}
+                    onChange={(e) => setPinFormVal(e.target.value.replace(/\D/g, ''))}
+                    className="w-16 bg-white border border-slate-300 rounded-xl text-center font-bold text-slate-800 tracking-widest text-xs py-1.5"
+                    placeholder="1234"
+                  />
+                  <button 
+                    onClick={handleCommitWaiterPin}
+                    className="flex-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] py-1.5 rounded-xl font-bold transition cursor-pointer"
+                  >
+                    Save PIN
+                  </button>
+                  <button 
+                    onClick={handleRandomizeWaiterPin}
+                    title="Generate Random Code"
+                    className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 text-indigo-700 text-[11px] py-1.5 px-2 rounded-xl font-extrabold transition flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw size={11} className="shrink-0" />
+                    Rotate
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Preview Column */}
-            <div className="lg:col-span-8 space-y-4">
+            <div className="xl:col-span-7 space-y-4">
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 text-white space-y-6 shadow-xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-48 h-48 bg-slate-800/10 rounded-full blur-3xl pointer-events-none"></div>
                 
-                <div className="flex flex-col md:flex-row items-center gap-6">
+                <div className="flex flex-col xl:flex-row items-center gap-6 xl:items-start justify-between min-w-0">
                   {/* Real-time printable poster display mock */}
-                  <div className="flex-1 space-y-4">
+                  <div className="flex-1 space-y-4 min-w-0 w-full xl:w-auto">
                     <span className="bg-rose-500 text-white py-0.5 px-3 rounded-full text-[8.5px] font-black uppercase tracking-widest block w-max">
                       LIVE DESK TEMPLATE PREVIEW
                     </span>
@@ -1049,7 +1471,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                     <div className="space-y-1">
                       <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block">Direct Dynamic Endpoint</span>
                       <div className="bg-slate-950 p-2 text-[10.5px] font-mono border border-slate-800 rounded-xl text-emerald-400 flex items-center justify-between select-all max-w-sm">
-                        <span className="truncate">{window.location.origin}/r/{restaurant.id}/t/{selectedQRTable}</span>
+                        <span className="truncate">{activeQRBaseUrl}/r/{restaurant.id}/t/{selectedQRTable}</span>
                         <span className="text-[8px] bg-slate-850 text-slate-500 px-1 py-0.2 rounded shrink-0 ml-1">Live</span>
                       </div>
                     </div>
@@ -1064,7 +1486,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                       <button
                         onClick={async () => {
                           try {
-                            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=0f172a&data=${encodeURIComponent(`${window.location.origin}/r/${restaurant.id}/t/${selectedQRTable}`)}`;
+                            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=0f172a&data=${encodeURIComponent(`${activeQRBaseUrl}/r/${restaurant.id}/t/${selectedQRTable}`)}`;
                             const response = await fetch(qrUrl);
                             const blob = await response.blob();
                             const blobUrl = URL.createObjectURL(blob);
@@ -1077,7 +1499,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                             URL.revokeObjectURL(blobUrl);
                           } catch (err) {
                             const link = document.createElement('a');
-                            link.href = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=0f172a&data=${encodeURIComponent(`${window.location.origin}/r/${restaurant.id}/t/${selectedQRTable}`)}`;
+                            link.href = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=0f172a&data=${encodeURIComponent(`${activeQRBaseUrl}/r/${restaurant.id}/t/${selectedQRTable}`)}`;
                             link.target = '_self';
                             link.download = `table-${selectedQRTable}-qr-code.png`;
                             link.click();
@@ -1114,7 +1536,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                     {/* QR Code Container */}
                     <div className="bg-white p-2.5 rounded-xl shadow-lg flex flex-col items-center">
                       <img 
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&color=0f172a&data=${encodeURIComponent(`${window.location.origin}/r/${restaurant.id}/t/${selectedQRTable}`)}`}
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&color=0f172a&data=${encodeURIComponent(`${activeQRBaseUrl}/r/${restaurant.id}/t/${selectedQRTable}`)}`}
                         alt={`QR code for Table ${selectedQRTable}`}
                         referrerPolicy="no-referrer"
                         className="w-28 h-28 object-contain"
@@ -1179,7 +1601,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
           {/* QR Core Code */}
           <div className="bg-white p-4 rounded-2xl shadow-2xl flex flex-col items-center border-4 border-slate-200">
             <img 
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=0f172a&data=${encodeURIComponent(`${window.location.origin}/r/${restaurant.id}/t/${selectedQRTable}`)}`}
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=0f172a&data=${encodeURIComponent(`${activeQRBaseUrl}/r/${restaurant.id}/t/${selectedQRTable}`)}`}
               alt={`Table QR code`}
               referrerPolicy="no-referrer"
               className="w-44 h-44 object-contain"
@@ -1196,7 +1618,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
               TABLE #{selectedQRTable}
             </div>
             <p className="text-[8.5px] text-slate-500 font-mono select-all">
-              {window.location.origin}/r/{restaurant.id}/t/{selectedQRTable}
+              {activeQRBaseUrl}/r/{restaurant.id}/t/{selectedQRTable}
             </p>
           </div>
         </div>
@@ -1223,74 +1645,163 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
             </button>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
-            {floorTableData.map(t => {
-              let liveDurationStr = "";
-              if (t.isOccupied && t.earliestCreatedAt) {
-                const diffMs = Date.now() - new Date(t.earliestCreatedAt).getTime();
-                const totalSec = Math.floor(Math.max(0, diffMs) / 1000);
-                const min = Math.floor(totalSec / 60);
-                const sec = totalSec % 60;
-                liveDurationStr = `${min}m ${sec}s`;
-              }
+          <div className="space-y-8">
+            {restaurant.floors && restaurant.floors.length > 0 ? (() => {
+              let acc = 0;
+              return restaurant.floors.map((floor, fIdx) => {
+                const start = acc;
+                const end = acc + floor.seats;
+                acc += floor.seats;
+                const floorTables = floorTableData.slice(start, end);
+                
+                if (floorTables.length === 0) return null;
 
-              return (
-                <div
-                  key={t.tableNum}
-                  className={`p-4 rounded-3xl border flex flex-col justify-between min-h-36 transition-all duration-300 relative ${
-                    t.floorState === 'empty' ? 'bg-slate-50 border-slate-200 opacity-60' :
-                    t.floorState === 'pending' ? 'bg-yellow-50 border-yellow-300 shadow-sm shadow-yellow-100' :
-                    t.floorState === 'preparing' ? 'bg-blue-50 border-blue-300 shadow-sm shadow-blue-105' :
-                    'bg-emerald-50 border-emerald-305 shadow-sm shadow-emerald-100'
-                  }`}
-                >
-                  <div>
-                    <div className="flex justify-between items-center text-[9px] text-slate-400">
-                      <span className="font-mono">TABLE NODE</span>
-                      <span className={`w-2.5 h-2.5 rounded-full ${
-                        t.floorState === 'empty' ? 'bg-slate-300' :
-                        t.floorState === 'pending' ? 'bg-yellow-500 animate-pulse' :
-                        t.floorState === 'preparing' ? 'bg-blue-500 animate-pulse' :
-                        'bg-emerald-500'
-                      }`}></span>
+                return (
+                  <div key={fIdx} className="space-y-3">
+                    <h4 className="text-sm font-extrabold text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2">{floor.name}</h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
+                      {floorTables.map(t => {
+                        let liveDurationStr = "";
+                        if (t.isOccupied && t.earliestCreatedAt) {
+                          const diffMs = Date.now() - new Date(t.earliestCreatedAt).getTime();
+                          const totalSec = Math.floor(Math.max(0, diffMs) / 1000);
+                          const min = Math.floor(totalSec / 60);
+                          const sec = totalSec % 60;
+                          liveDurationStr = `${min}m ${sec}s`;
+                        }
+
+                        return (
+                          <div
+                            key={t.tableNum}
+                            className={`p-4 rounded-3xl border flex flex-col justify-between min-h-36 transition-all duration-300 relative ${
+                              t.floorState === 'empty' ? 'bg-slate-50 border-slate-200 opacity-60' :
+                              t.floorState === 'pending' ? 'bg-yellow-50 border-yellow-300 shadow-sm shadow-yellow-100' :
+                              t.floorState === 'preparing' ? 'bg-blue-50 border-blue-300 shadow-sm shadow-blue-105' :
+                              'bg-emerald-50 border-emerald-305 shadow-sm shadow-emerald-100'
+                            }`}
+                          >
+                            <div>
+                              <div className="flex justify-between items-center text-[9px] text-slate-400">
+                                <span className="font-mono">TABLE NODE</span>
+                                <span className={`w-2.5 h-2.5 rounded-full ${
+                                  t.floorState === 'empty' ? 'bg-slate-300' :
+                                  t.floorState === 'pending' ? 'bg-yellow-500 animate-pulse' :
+                                  t.floorState === 'preparing' ? 'bg-blue-500 animate-pulse' :
+                                  'bg-emerald-500'
+                                }`}></span>
+                              </div>
+                              <h4 className="text-xl font-bold text-slate-900 mt-1">Seat #{t.tableNum}</h4>
+                            </div>
+
+                            <div className="mt-2 space-y-1 z-10">
+                              {t.isOccupied ? (
+                                <div className="space-y-1">
+                                  <div className="text-[10px] leading-tight">
+                                    <p className="font-extrabold text-slate-800 uppercase truncate">👤 {t.occupantName}</p>
+                                    <p className="text-[8.5px] text-slate-400 font-mono">{t.occupantPhone}</p>
+                                  </div>
+                                  <div className="text-[9.5px] bg-white/70 border border-slate-200 rounded px-1.5 py-0.5 w-max font-mono flex items-center gap-1 mt-1">
+                                    <span className="text-slate-400">⏱</span>
+                                    <span className="font-bold text-indigo-600 animate-pulse">{liveDurationStr || "0m 0s"}</span>
+                                  </div>
+                                  <div className="pt-1.5 border-t border-slate-250 mt-1.5">
+                                    <p className="text-[9px] text-slate-505 font-bold">{t.ordersCount} tickets</p>
+                                    <p className="text-xs font-black text-slate-955">₹{t.billTotal.toFixed(2)}</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleReleaseTable(t.tableNum)}
+                                    className={`mt-2.5 w-full text-white font-extrabold py-1 px-1.5 rounded-xl text-[8.5px] uppercase tracking-wider transition cursor-pointer block text-center shadow-xs ${t.floorState === 'pending' || t.floorState === 'preparing' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-900 hover:bg-rose-600'}`}
+                                  >
+                                    {t.floorState === 'pending' || t.floorState === 'preparing' ? 'Deliver & Release' : 'Settle & Release'}
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[9px] uppercase tracking-wider font-extrabold text-slate-400">VACANT</span>
+                              )}
+                            </div>
+
+                            <div className="absolute bottom-1 right-2 text-6xl font-black text-slate-950/5 select-none pointer-events-none">
+                              {t.tableNum}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <h4 className="text-xl font-bold text-slate-900 mt-1">Seat #{t.tableNum}</h4>
                   </div>
+                );
+              });
+            })() : (
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
+                {floorTableData.map(t => {
+                  let liveDurationStr = "";
+                  if (t.isOccupied && t.earliestCreatedAt) {
+                    const diffMs = Date.now() - new Date(t.earliestCreatedAt).getTime();
+                    const totalSec = Math.floor(Math.max(0, diffMs) / 1000);
+                    const min = Math.floor(totalSec / 60);
+                    const sec = totalSec % 60;
+                    liveDurationStr = `${min}m ${sec}s`;
+                  }
 
-                  <div className="mt-2 space-y-1 z-10">
-                    {t.isOccupied ? (
-                      <div className="space-y-1">
-                        <div className="text-[10px] leading-tight">
-                          <p className="font-extrabold text-slate-800 uppercase truncate">👤 {t.occupantName}</p>
-                          <p className="text-[8.5px] text-slate-400 font-mono">{t.occupantPhone}</p>
+                  return (
+                    <div
+                      key={t.tableNum}
+                      className={`p-4 rounded-3xl border flex flex-col justify-between min-h-36 transition-all duration-300 relative ${
+                        t.floorState === 'empty' ? 'bg-slate-50 border-slate-200 opacity-60' :
+                        t.floorState === 'pending' ? 'bg-yellow-50 border-yellow-300 shadow-sm shadow-yellow-100' :
+                        t.floorState === 'preparing' ? 'bg-blue-50 border-blue-300 shadow-sm shadow-blue-105' :
+                        'bg-emerald-50 border-emerald-305 shadow-sm shadow-emerald-100'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex justify-between items-center text-[9px] text-slate-400">
+                          <span className="font-mono">TABLE NODE</span>
+                          <span className={`w-2.5 h-2.5 rounded-full ${
+                            t.floorState === 'empty' ? 'bg-slate-300' :
+                            t.floorState === 'pending' ? 'bg-yellow-500 animate-pulse' :
+                            t.floorState === 'preparing' ? 'bg-blue-500 animate-pulse' :
+                            'bg-emerald-500'
+                          }`}></span>
                         </div>
-                        <div className="text-[9.5px] bg-white/70 border border-slate-200 rounded px-1.5 py-0.5 w-max font-mono flex items-center gap-1 mt-1">
-                          <span className="text-slate-400">⏱</span>
-                          <span className="font-bold text-indigo-600 animate-pulse">{liveDurationStr || "0m 0s"}</span>
-                        </div>
-                        <div className="pt-1.5 border-t border-slate-250 mt-1.5">
-                          <p className="text-[9px] text-slate-505 font-bold">{t.ordersCount} tickets</p>
-                          <p className="text-xs font-black text-slate-955">₹{t.billTotal.toFixed(2)}</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleReleaseTable(t.tableNum)}
-                          className="mt-2.5 w-full bg-slate-900 hover:bg-rose-600 hover:text-white text-white font-extrabold py-1 px-1.5 rounded-xl text-[8.5px] uppercase tracking-wider transition cursor-pointer block text-center shadow-xs"
-                        >
-                          Settle & Release
-                        </button>
+                        <h4 className="text-xl font-bold text-slate-900 mt-1">Seat #{t.tableNum}</h4>
                       </div>
-                    ) : (
-                      <span className="text-[9px] uppercase tracking-wider font-extrabold text-slate-400">VACANT</span>
-                    )}
-                  </div>
 
-                  <div className="absolute bottom-1 right-2 text-6xl font-black text-slate-950/5 select-none pointer-events-none">
-                    {t.tableNum}
-                  </div>
-                </div>
-              );
-            })}
+                      <div className="mt-2 space-y-1 z-10">
+                        {t.isOccupied ? (
+                          <div className="space-y-1">
+                            <div className="text-[10px] leading-tight">
+                              <p className="font-extrabold text-slate-800 uppercase truncate">👤 {t.occupantName}</p>
+                              <p className="text-[8.5px] text-slate-400 font-mono">{t.occupantPhone}</p>
+                            </div>
+                            <div className="text-[9.5px] bg-white/70 border border-slate-200 rounded px-1.5 py-0.5 w-max font-mono flex items-center gap-1 mt-1">
+                              <span className="text-slate-400">⏱</span>
+                              <span className="font-bold text-indigo-600 animate-pulse">{liveDurationStr || "0m 0s"}</span>
+                            </div>
+                            <div className="pt-1.5 border-t border-slate-250 mt-1.5">
+                              <p className="text-[9px] text-slate-505 font-bold">{t.ordersCount} tickets</p>
+                              <p className="text-xs font-black text-slate-955">₹{t.billTotal.toFixed(2)}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleReleaseTable(t.tableNum)}
+                              className={`mt-2.5 w-full text-white font-extrabold py-1 px-1.5 rounded-xl text-[8.5px] uppercase tracking-wider transition cursor-pointer block text-center shadow-xs ${t.floorState === 'pending' || t.floorState === 'preparing' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-900 hover:bg-rose-600'}`}
+                            >
+                              {t.floorState === 'pending' || t.floorState === 'preparing' ? 'Deliver & Release' : 'Settle & Release'}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[9px] uppercase tracking-wider font-extrabold text-slate-400">VACANT</span>
+                        )}
+                      </div>
+
+                      <div className="absolute bottom-1 right-2 text-6xl font-black text-slate-950/5 select-none pointer-events-none">
+                        {t.tableNum}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 flex flex-wrap gap-4 text-[10px] font-bold text-slate-500">
@@ -1302,72 +1813,359 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
         </div>
       )}
 
-      {/* TAB: WIRELESS CHIMES TABLE SIGNALS */}
-      {activeTab === 'buzzers' && (
-        <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-6 shadow-sm">
-          <div className="border-b border-slate-150 pb-4 flex items-center justify-between">
+      {/* TAB: DAY-BY-DAY ORDER HISTORIES */}
+      {activeTab === 'history' && (
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-6 shadow-sm font-sans animate-fade-in">
+          <div className="border-b border-slate-150 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h3 className="text-base font-bold text-slate-900">Active Handheld Table Chimes</h3>
-              <p className="text-xs text-slate-500">Wireless real-time signals triggered by active seated patrons.</p>
+              <h3 className="text-base font-bold text-slate-900">Historical Order Logs</h3>
+              <p className="text-xs text-slate-500 mt-1">Check day-by-day finalized revenue collections and order tickets, including those cleared or inactive.</p>
             </div>
-            <span className="bg-rose-100 text-rose-800 font-extrabold text-[10px] px-2.5 py-1 rounded-full uppercase tracking-wider">
-              {pendingBuzzers.length} Calls Pending
-            </span>
+            
+            {/* Quick Reset All Filters */}
+            {(historySearch || historyStatusFilter !== 'all' || historyReleaseFilter !== 'all' || historyMinAmount || historyMaxAmount || showAllHistoryDates) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setHistorySearch('');
+                  setHistoryStatusFilter('all');
+                  setHistoryReleaseFilter('all');
+                  setHistoryMinAmount('');
+                  setHistoryMaxAmount('');
+                  setShowAllHistoryDates(false);
+                }}
+                className="bg-rose-50 hover:bg-rose-100 text-rose-650 text-[11px] font-black uppercase tracking-wider px-3.5 py-2 rounded-xl transition flex items-center gap-1 cursor-pointer"
+              >
+                Clear All Filters (✕)
+              </button>
+            )}
           </div>
 
-          {pendingBuzzers.length === 0 ? (
-            <div className="bg-slate-50 rounded-2xl border border-dashed border-slate-200 p-12 text-center">
-              <div className="w-12 h-12 bg-emerald-50 ring-4 ring-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-3">
-                <CheckCircle size={22} className="text-emerald-500" />
-              </div>
-              <h4 className="text-sm font-extrabold text-slate-900">No Signals Dispatched</h4>
-              <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">Patrons have not summoned service lately. Grab a coffee, chef!</p>
+          {dailyHistorySummaries.length === 0 ? (
+            <div className="text-center py-12 border-2 border-dashed rounded-3xl border-slate-200 bg-slate-50">
+              <ClipboardList size={40} className="text-slate-300 mx-auto mb-3" />
+              <p className="text-sm font-bold text-slate-800">No Historical Records Found</p>
+              <p className="text-xs text-slate-400 mt-1">Concluded tickets or new transactions will materialize here on a day-to-day basis.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {pendingBuzzers.map((b) => (
-                <div key={b.id} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col justify-between hover:shadow-md transition">
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] font-mono uppercase bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-black">
-                        Table #{b.tableNumber}
-                      </span>
-                      <span className="text-[8px] font-mono text-slate-400">
-                        {new Date(b.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                      </span>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+              {/* Left Column: Day-by-Day summaries */}
+              <div className="space-y-3 lg:col-span-1 max-h-[600px] overflow-y-auto pr-1">
+                <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider block mb-1 font-mono">Select Business Day</span>
+                
+                {/* All Available Dates toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAllHistoryDates(true);
+                  }}
+                  className={`w-full text-left p-4 rounded-2xl border transition-all duration-200 flex justify-between items-center cursor-pointer mb-2 ${
+                    showAllHistoryDates
+                      ? 'bg-slate-900 border-slate-950 text-white shadow-md'
+                      : 'bg-indigo-50 border-indigo-100 text-indigo-900 hover:bg-indigo-100/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-base">📅</span>
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-wide">
+                        All Records Combined
+                      </p>
+                      <p className={`text-[10px] mt-0.5 font-semibold ${showAllHistoryDates ? 'text-slate-300' : 'text-indigo-600'}`}>
+                        Search across all timeline logs
+                      </p>
                     </div>
-                    
-                    <div className="flex items-start gap-2 pt-1 text-slate-850">
-                      <div className="bg-indigo-500 text-white p-1.5 rounded-full mt-0.5 flex-shrink-0">
-                        <Bell size={13} className="animate-pulse" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-wide">
-                          {b.requestCode === 'Request Table Service' ? '🤵 Table Service' : 
-                           b.requestCode === 'Bring Extra Water' ? '🥛 Bring Water' : 
-                           b.requestCode === 'Table Clean Up' ? '🧹 Clean Spill' : 
-                           '🧾 Request Bill'}
-                        </h4>
-                        <p className="text-[10px] text-indigo-650 font-bold mt-0.5">{b.message}</p>
-                      </div>
+                  </div>
+                  <span className="text-xs font-bold font-mono">→</span>
+                </button>
+
+                {dailyHistorySummaries.map((day) => (
+                  <button
+                    key={day.dateStr}
+                    type="button"
+                    onClick={() => {
+                      setSelectedHistoryDate(day.dateStr);
+                      setShowAllHistoryDates(false);
+                    }}
+                    className={`w-full text-left p-4 rounded-2xl border transition-all duration-200 flex justify-between items-center cursor-pointer ${
+                      (!showAllHistoryDates && selectedHistoryDate === day.dateStr)
+                        ? 'bg-indigo-600 border-indigo-650 text-white shadow-md'
+                        : 'bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100 hover:border-slate-300'
+                    }`}
+                  >
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-wide">
+                        {formatHistoryDate(day.dateStr)}
+                      </p>
+                      <p className={`text-[10px] mt-1 font-semibold ${(!showAllHistoryDates && selectedHistoryDate === day.dateStr) ? 'text-indigo-100' : 'text-slate-400'}`}>
+                        {day.count} Total Tickets
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-emerald-600">₹{day.revenue.toFixed(2)}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {/* Right Column: Detailed orders list with robust filters */}
+              <div className="lg:col-span-2 space-y-4">
+                {/* Advanced Search & Filtering Console */}
+                <div className="bg-slate-50 p-4 border border-slate-200 rounded-3xl space-y-3">
+                  <span className="text-[9px] uppercase font-black text-slate-400 tracking-wider block font-mono">Advanced Filters Console</span>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Text Search */}
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+                      <input
+                        type="text"
+                        placeholder="Search name, phone, item, table, or ID..."
+                        value={historySearch}
+                        onChange={(e) => setHistorySearch(e.target.value)}
+                        className="w-full bg-white border border-slate-202 rounded-xl py-2 pl-9 pr-4 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-505 text-slate-805"
+                      />
+                    </div>
+
+                    {/* Date Picker (Like Date Change Request!) */}
+                    <div className="flex items-center gap-2 bg-white px-3 py-1 border border-slate-202 rounded-xl">
+                      <span className="text-[10px] font-black text-slate-400 uppercase font-mono whitespace-nowrap">Jump:</span>
+                      <input
+                        type="date"
+                        value={selectedHistoryDate}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            setSelectedHistoryDate(e.target.value);
+                            setShowAllHistoryDates(false);
+                          }
+                        }}
+                        className="w-full text-xs font-extrabold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+                      />
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t border-slate-200/60 mt-4">
-                    <button
-                      type="button"
-                      onClick={() => handleDismissBuzzer(b.id)}
-                      className="w-full bg-slate-900 text-white font-extrabold uppercase text-[9px] py-1.5 rounded hover:bg-slate-800 transition shadow-sm flex items-center justify-center gap-1"
-                    >
-                      <span>Mark Solved ✔</span>
-                    </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                    {/* Status Filter */}
+                    <div className="flex flex-col space-y-1">
+                      <label className="text-[9px] text-slate-400 font-black uppercase font-mono">Chef Status</label>
+                      <select
+                        value={historyStatusFilter}
+                        onChange={(e) => setHistoryStatusFilter(e.target.value as any)}
+                        className="bg-white border border-slate-202 rounded-xl p-2 text-xs font-semibold focus:outline-none text-slate-800"
+                      >
+                        <option value="all">All Kitchen Statuses</option>
+                        <option value="pending">Pending Only</option>
+                        <option value="accepted">Accepted / Cooking</option>
+                        <option value="completed">Completed Only</option>
+                        <option value="rejected">Rejected Only</option>
+                      </select>
+                    </div>
+
+                    {/* Table Release Settle Filter */}
+                    <div className="flex flex-col space-y-1">
+                      <label className="text-[9px] text-slate-400 font-black uppercase font-mono">Billed State</label>
+                      <select
+                        value={historyReleaseFilter}
+                        onChange={(e) => setHistoryReleaseFilter(e.target.value as any)}
+                        className="bg-white border border-slate-202 rounded-xl p-2 text-xs font-semibold focus:outline-none text-slate-800"
+                      >
+                        <option value="all">All States (Active + Cleared)</option>
+                        <option value="active">Active Dining Bills Only</option>
+                        <option value="cleared">Cleared / Released Only</option>
+                      </select>
+                    </div>
+
+                    {/* Price Range */}
+                    <div className="flex flex-col space-y-1">
+                      <label className="text-[9px] text-slate-400 font-black uppercase font-mono">Bill Range (INR)</label>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          placeholder="Min ₹"
+                          value={historyMinAmount}
+                          onChange={(e) => setHistoryMinAmount(e.target.value)}
+                          className="bg-white border border-slate-202 rounded-xl p-2 text-xs font-semibold focus:outline-none w-full text-slate-800"
+                        />
+                        <span className="text-slate-300 text-xs">-</span>
+                        <input
+                          type="number"
+                          placeholder="Max ₹"
+                          value={historyMaxAmount}
+                          onChange={(e) => setHistoryMaxAmount(e.target.value)}
+                          className="bg-white border border-slate-202 rounded-xl p-2 text-xs font-semibold focus:outline-none w-full text-slate-800"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
-              ))}
+
+                {/* Selected Day / Range Context Label */}
+                <div className="flex justify-between items-center bg-indigo-50/50 px-4 py-2.5 rounded-2xl border border-indigo-100">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 bg-indigo-600 rounded-full"></span>
+                    <span className="text-xs font-bold text-slate-700">
+                      Viewing: <strong className="text-indigo-950">{showAllHistoryDates ? "All Available Dates (Eco-timeline)" : formatHistoryDate(selectedHistoryDate)}</strong>
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-black uppercase font-mono text-indigo-650 bg-indigo-100 px-2 py-0.5 rounded-lg">
+                    {filteredHistoryOrders.length} matching tickets
+                  </span>
+                </div>
+
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                  {filteredHistoryOrders.length === 0 ? (
+                    <div className="text-center py-10 bg-slate-50 border rounded-2xl border-slate-200">
+                      <p className="text-xs font-bold text-slate-505">No orders match the current active log filters.</p>
+                      <p className="text-[10px] text-slate-400 mt-1">Try to clear some filters or select "All Records Combined".</p>
+                    </div>
+                  ) : (
+                    filteredHistoryOrders.map((ord) => (
+                      <div
+                        key={ord.id}
+                        className="p-4 bg-slate-50/50 border border-slate-200 rounded-2xl hover:border-slate-350 hover:bg-slate-55 transition"
+                      >
+                        <div className="flex justify-between items-start gap-2 flex-wrap pb-2 border-b border-slate-100 mb-2">
+                          <div>
+                            <span className="text-[9px] font-mono font-bold text-indigo-650 block">
+                              #ID: {ord.id.split('-')[1] || ord.id}
+                            </span>
+                            <span className="text-xs font-black text-slate-900 mt-0.5 inline-block font-sans">
+                              Table #{ord.tableNumber}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                              ord.status === 'completed' ? 'bg-emerald-50 text-emerald-650 border border-emerald-100' :
+                              ord.status === 'accepted' ? 'bg-blue-50 text-blue-650 border border-blue-105' :
+                              ord.status === 'pending' ? 'bg-yellow-50 text-yellow-605 border border-yellow-115' :
+                              'bg-rose-50 text-rose-500 border border-rose-115'
+                            }`}>
+                              {ord.status}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                              ord.released === true 
+                                ? 'bg-slate-100 text-slate-500 border border-slate-205' 
+                                : 'bg-orange-50 text-orange-600 border border-orange-200'
+                            }`}>
+                              {ord.released === true ? 'Cleared' : 'Active'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans">
+                          <div>
+                            <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wide font-mono">
+                              Guest details
+                            </p>
+                            <p className="font-extrabold text-slate-800 mt-0.5">{ord.userName}</p>
+                            <p className="text-slate-500 font-mono text-[10px]">{ord.userPhone}</p>
+                            <span className="text-[9px] text-slate-400 font-bold block mt-1.5">
+                              Ordered: {new Date(ord.createdAt).toLocaleString()}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wide font-mono">
+                              Dishes ordered
+                            </p>
+                            <div className="mt-1 space-y-1">
+                              {ord.items.map((it, idx) => (
+                                <div key={idx} className="flex justify-between font-bold text-slate-700">
+                                  <span>{it.quantity}x {it.name}</span>
+                                  <span>₹{(it.price * it.quantity).toFixed(2)}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="pt-1.5 mt-1.5 border-t border-dashed border-slate-200 flex justify-between font-black text-slate-900">
+                              <span>Total Net amount:</span>
+                              <span>₹{ord.totalAmount.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>
       )}
+
+        </div>
+
+        {/* Persistent Right Side Panel: Live Guest Service Buzzers */}
+        <div className="lg:col-span-1 space-y-4 lg:sticky lg:top-24 bg-gradient-to-b from-rose-50 to-amber-50/60 border border-amber-200 p-4 rounded-3xl shadow-sm order-1 lg:order-2 w-full">
+          <div className="flex items-center justify-between border-b border-amber-200/50 pb-2.5">
+            <div className="flex items-center gap-1.5">
+              <span className="flex h-2.0 w-2.0 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+              </span>
+              <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-1">
+                <Bell size={12} className="text-rose-500 animate-bounce" /> Floor Buzzers
+              </h3>
+            </div>
+            <span className="bg-rose-600 text-white font-black text-[9px] uppercase font-mono px-2 py-0.5 rounded-full shadow-xs">
+              {pendingBuzzers.length} Active
+            </span>
+          </div>
+
+          <div className="space-y-3 lg:overflow-y-auto lg:max-h-[550px] pr-1">
+            {pendingBuzzers.length === 0 ? (
+              <div className="text-center py-6 px-3 bg-white/50 rounded-2xl border border-dashed border-amber-150">
+                <p className="text-[11px] text-slate-400 italic">
+                  🎉 No active table chimes. All guests are dining peacefully!
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-row overflow-x-auto gap-2 lg:flex-col pb-2 lg:pb-0 scrollbar-none snap-x">
+                {pendingBuzzers.map((b) => (
+                  <div key={b.id} className="bg-white border border-amber-200/80 hover:border-amber-400/80 hover:shadow-xs rounded-2xl p-2 md:p-3 flex flex-none w-[190px] sm:w-[220px] lg:w-full flex-col justify-between transition snap-start">
+                    <div className="space-y-1.5 md:space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[8px] md:text-[9px] font-black uppercase bg-indigo-50 text-indigo-750 px-1.5 md:px-2 py-0.5 rounded-full font-mono border border-indigo-100">
+                          Table #{b.tableNumber}
+                        </span>
+                        <span className="text-[7px] md:text-[8px] font-mono text-slate-400">
+                          {new Date(b.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-start gap-1 md:gap-1.5 pt-0.5 text-slate-800">
+                        <div className="w-4 h-4 md:w-5 md:h-5 flex items-center justify-center bg-amber-50 text-amber-600 rounded-full flex-shrink-0 border border-amber-100">
+                          <Bell size={8} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-[9px] md:text-[10px] font-black text-slate-900 uppercase tracking-wide truncate">
+                            {b.requestType === 'Request Table Service' ? '🤵 Table' : 
+                             b.requestType === 'Bring Extra Water' ? '🥛 Water' : 
+                             b.requestType === 'Table Clean Up' ? '🧹 Clean' : 
+                             '🧾 Bill'}
+                          </h4>
+                          <p className="text-[8px] md:text-[9px] text-slate-500 italic leading-snug truncate">
+                            "{b.requestType}"
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-1.5 border-t border-slate-100 mt-1.5 md:mt-2.5">
+                      <button
+                        type="button"
+                        onClick={() => handleDismissBuzzer(b.id)}
+                        className="w-full bg-slate-900 hover:bg-rose-600 text-white font-extrabold uppercase text-[7px] md:text-[8px] py-1 rounded-md md:rounded-lg transition shadow-xs flex items-center justify-center gap-0.5 cursor-pointer"
+                      >
+                        <Check size={7} className="stroke-[3]" />
+                        <span>Resolve ✔</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* DETAILED GROSS SALES ACCOUNTING LEDGER MODAL */}
       {isSalesLedgerOpen && (
@@ -1408,14 +2206,33 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
             </div>
 
             <div className="relative mb-3 flex-shrink-0">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-              <input 
-                type="text" 
-                placeholder="Search ledger entries..."
-                value={ledgerSearch}
-                onChange={(e) => setLedgerSearch(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 pl-9 pr-4 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800"
-              />
+              <div className="text-[10px] font-bold text-slate-500 mb-1">Hold Him Home - Operational Ledger</div>
+              <div className="flex gap-2">
+                <Search className="text-slate-400 mt-2 ml-2" size={14} />
+                <input 
+                  type="text" 
+                  placeholder="Search ledger entries..."
+                  value={ledgerSearch}
+                  onChange={(e) => setLedgerSearch(e.target.value)}
+                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl py-2 pl-7 pr-4 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800"
+                />
+                <input 
+                  type="date" 
+                  value={ledgerFromDate}
+                  onChange={(e) => setLedgerFromDate(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 text-xs font-semibold text-slate-800"
+                />
+                <input 
+                  type="date" 
+                  value={ledgerToDate}
+                  onChange={(e) => setLedgerToDate(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 text-xs font-semibold text-slate-800"
+                />
+                <button 
+                 onClick={() => { setLedgerFromDate(''); setLedgerToDate(''); }}
+                 className="bg-slate-900 text-white rounded-xl px-3 py-1 text-xs font-bold"
+                >Clear</button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto min-h-0 border border-slate-150 rounded-2xl">
@@ -1851,6 +2668,70 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* EXPLICIT TABLE SETTLE & RELEASE OPTIONS CHOOSER MODAL */}
+      {releasingTableNum !== null && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-6 border border-slate-150 space-y-5">
+            <div className="flex justify-between items-center border-b border-slate-150 pb-3">
+              <h4 className="text-base font-black text-slate-900 flex items-center gap-2">
+                <ArrowLeftRight size={18} className="text-indigo-600" />
+                Settle & Release Table #{releasingTableNum}
+              </h4>
+              <button onClick={() => setReleasingTableNum(null)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Choose how you want to settle any outstanding tickets or orders for <strong className="text-slate-900">Table #{releasingTableNum}</strong> prior to discharging the customer and clearing the table.
+              </p>
+              
+              {(() => {
+                const tableData = floorTableData.find(t => t.tableNum === releasingTableNum);
+                if (!tableData) return null;
+                return (
+                  <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl space-y-1 text-xs text-slate-800">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Patron Summary</p>
+                    <p className="font-extrabold">👤 {tableData.occupantName} ({tableData.occupantPhone})</p>
+                    <p className="font-semibold text-slate-500">{tableData.ordersCount} tickets pending settle / delivery</p>
+                    <p className="font-black text-indigo-600 text-sm mt-1">Total Bill: ₹{tableData.billTotal.toFixed(2)}</p>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="grid grid-cols-1 gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => handlePrepareAndRelease(releasingTableNum)}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold py-3.5 px-4 rounded-2xl text-[11px] uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
+              >
+                <CheckCircle size={15} />
+                Prepare and Release
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => handleCancelAndRelease(releasingTableNum)}
+                className="w-full bg-rose-600 hover:bg-rose-700 text-white font-extrabold py-3.5 px-4 rounded-2xl text-[11px] uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+              >
+                <X size={15} />
+                Cancel and Release
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReleasingTableNum(null)}
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold py-2.5 px-4 rounded-2xl text-[10px] uppercase tracking-wider transition cursor-pointer text-center"
+              >
+                Keep Table Seated
+              </button>
+            </div>
           </div>
         </div>
       )}

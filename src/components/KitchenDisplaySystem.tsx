@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ChefHat, Clock, AlertTriangle, Check, X, ClipboardList, Info, ArrowLeftRight } from 'lucide-react';
+import { ChefHat, Clock, AlertTriangle, Check, X, ClipboardList, Info, ArrowLeftRight, AlertOctagon } from 'lucide-react';
 import { Restaurant, Order, Buzzer } from '../types';
 
 interface KdsProps {
@@ -23,8 +23,38 @@ export default function KitchenDisplaySystem({
   restaurants,
   onSelectRestaurant
 }: KdsProps) {
+  if (restaurant?.disableKdsPortal) {
+    return (
+      <div id="kitchen-display-system-blocked" className="max-w-4xl mx-auto my-12 p-8 bg-slate-900 border border-slate-800 rounded-3xl shadow-xl text-center text-slate-100">
+        <div className="w-16 h-16 bg-slate-850 border border-slate-700 rounded-2xl flex items-center justify-center mx-auto text-amber-500 mb-4 animate-pulse">
+          <AlertOctagon size={32} />
+        </div>
+        <h2 className="text-xl font-bold text-slate-100">Chef KDS Terminal Restricted</h2>
+        <p className="text-sm text-slate-400 mt-2 max-w-lg mx-auto leading-relaxed">
+          The Kitchen Display System access for <span className="font-extrabold text-white">{restaurant.name}</span> has been temporarily restricted by the SaaS platform administrator. Contact your administrator for assistance.
+        </p>
+        <div className="mt-6 flex justify-center">
+          <button
+            onClick={() => window.location.href = '/portal'}
+            className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition cursor-pointer"
+          >
+            Go to Portal Gateway
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const activeRestaurantOrders = useMemo(() => {
-    return orders.filter(o => o.restaurantId === restaurant?.id);
+    let filtered = orders.filter(o => o.restaurantId === restaurant?.id && o.released !== true);
+    if (restaurant?.hideHistoryOlderThanOneDay) {
+      const oneDayAgo = new Date().getTime() - (24 * 60 * 60 * 1000);
+      filtered = filtered.filter(o => {
+        const orderTime = new Date(o.createdAt).getTime();
+        return orderTime >= oneDayAgo || o.status === 'pending' || o.status === 'accepted';
+      });
+    }
+    return filtered;
   }, [orders, restaurant]);
 
   const pendingKitchenBuzzers = useMemo(() => {
@@ -34,36 +64,23 @@ export default function KitchenDisplaySystem({
   return (
     <div id="kitchen-display-system-root" className="flex-1 bg-slate-950 text-slate-100 p-4 sm:p-6 lg:p-8 flex flex-col space-y-4">
       
-      {/* Dynamic kitchen selector for chefs */}
-      {restaurants && onSelectRestaurant && restaurants.length > 0 && (
-        <div className="bg-slate-905 bg-slate-900/60 p-2.5 rounded-2xl border border-slate-800 flex items-center justify-between flex-wrap gap-3 text-xs shadow-md">
-          <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-            <span className="text-[11px] uppercase font-mono font-black text-slate-400 tracking-wider">Kitchen Station Monitor:</span>
-            <span className="text-amber-400 font-extrabold uppercase bg-amber-950/40 px-2 py-0.5 rounded border border-amber-900/40">{restaurant?.name || "Unselected"}</span>
+      {/* Static kitchen identifier for chefs */}
+      <div className="bg-slate-900/60 p-4 rounded-2xl border border-slate-800 flex items-center justify-between flex-wrap gap-3 text-xs shadow-md">
+        <div className="flex items-center gap-3">
+          <div className="relative flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
           </div>
-
-          <div className="flex items-center gap-1.5 bg-slate-950/80 p-1 rounded-xl border border-slate-850">
-            {restaurants.map(r => {
-              const isActive = r.id === restaurant?.id;
-              return (
-                <button
-                  key={r.id}
-                  onClick={() => onSelectRestaurant(r.id)}
-                  className={`px-3.5 py-1.5 text-[11px] font-black uppercase rounded-lg transition-all duration-200 cursor-pointer flex items-center gap-2 ${
-                    isActive 
-                      ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/10 font-black' 
-                      : 'text-slate-400 hover:text-white hover:bg-slate-900'
-                  }`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-slate-950' : r.status === 'active' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                  {r.name}
-                </button>
-              );
-            })}
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] uppercase font-mono font-black text-slate-400 tracking-wider">Kitchen Station Monitor:</span>
+            <span className="text-amber-400 font-extrabold uppercase bg-amber-950/40 px-3 py-1 rounded-lg border border-amber-900/40 text-sm">{restaurant?.name || "Unselected"}</span>
           </div>
         </div>
-      )}
+
+        <div className="text-[10px] text-slate-455 font-mono tracking-wide uppercase bg-slate-950/80 px-3.5 py-1.5 rounded-xl border border-slate-850">
+          🔒 Secure Authenticated Workspace
+        </div>
+      </div>
 
       {/* Wireless chimes alerts banner */}
       {pendingKitchenBuzzers.length > 0 && (

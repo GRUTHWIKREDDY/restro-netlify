@@ -3,13 +3,23 @@ import {
   Building2, ChefHat, Store, KeyRound, Lock, ArrowRight, CornerDownRight, ShieldCheck, HelpCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Restaurant } from '../types';
 
 interface StaffPortalLoginProps {
   onLoginSuccess: (mode: 'restadmin' | 'kitchen' | 'superadmin') => void;
   onGoBackToDiner: () => void;
+  restaurants: Restaurant[];
+  selectedRestaurantId: string;
+  onSelectRestaurant: (id: string) => void;
 }
 
-export default function StaffPortalLogin({ onLoginSuccess, onGoBackToDiner }: StaffPortalLoginProps) {
+export default function StaffPortalLogin({ 
+  onLoginSuccess, 
+  onGoBackToDiner,
+  restaurants,
+  selectedRestaurantId,
+  onSelectRestaurant
+}: StaffPortalLoginProps) {
   const [selectedRole, setSelectedRole] = useState<'restadmin' | 'kitchen' | 'superadmin' | null>(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -25,7 +35,7 @@ export default function StaffPortalLogin({ onLoginSuccess, onGoBackToDiner }: St
 
   const handleSelectRole = (role: 'restadmin' | 'kitchen' | 'superadmin') => {
     setSelectedRole(role);
-    setUsername(defaultCreds[role].user); // Pre-fill username for smooth testing
+    setUsername(role === 'superadmin' ? 'superadmin' : '');
     setPassword('');
     setErrorMessage('');
     setTerminalLogs([]);
@@ -53,12 +63,39 @@ export default function StaffPortalLogin({ onLoginSuccess, onGoBackToDiner }: St
     e.preventDefault();
     if (!selectedRole) return;
 
-    const credentials = defaultCreds[selectedRole];
-    
-    if (username.trim() === credentials.user && password === credentials.pass) {
+    if (selectedRole === 'superadmin') {
+      const credentials = defaultCreds['superadmin'];
+      if (username.trim() === credentials.user && password === credentials.pass) {
+        executeSecurityHandshake(selectedRole);
+      } else {
+        setErrorMessage(`Invalid credentials for ${credentials.label}. (Try user: "${credentials.user}" / pass: "${credentials.pass}")`);
+      }
+      return;
+    }
+
+    const restaurant = restaurants.find(r => r.id === selectedRestaurantId);
+    if (!restaurant) {
+      setErrorMessage("Please select a restaurant location first.");
+      return;
+    }
+
+    let validUser = '';
+    let validPass = '';
+    let label = '';
+    if (selectedRole === 'restadmin') {
+      validUser = restaurant.adminUsername || 'admin';
+      validPass = restaurant.adminPassword || 'password';
+      label = defaultCreds.restadmin.label;
+    } else if (selectedRole === 'kitchen') {
+      validUser = restaurant.chefUsername || 'chef';
+      validPass = restaurant.chefPassword || 'password';
+      label = defaultCreds.kitchen.label;
+    }
+
+    if (username.trim() === validUser && password === validPass) {
       executeSecurityHandshake(selectedRole);
     } else {
-      setErrorMessage(`Invalid credentials for ${credentials.label}. (Try user: "${credentials.user}" / pass: "${credentials.pass}")`);
+      setErrorMessage(`Invalid credentials for ${label}. If you forgot your login, please contact SaaS Admin.`);
     }
   };
 
@@ -233,6 +270,24 @@ export default function StaffPortalLogin({ onLoginSuccess, onGoBackToDiner }: St
                 </div>
 
                 <form onSubmit={handleLoginSubmit} className="space-y-4">
+                  {(selectedRole === 'restadmin' || selectedRole === 'kitchen') && restaurants.length > 0 && (
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] text-slate-405 font-bold ml-1 uppercase text-indigo-400">Select Restaurant Station / Location</label>
+                      <select 
+                        value={selectedRestaurantId} 
+                        onChange={(e) => onSelectRestaurant(e.target.value)}
+                        className="w-full bg-[#06080e] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                        disabled={isAuthenticating}
+                      >
+                        {[...restaurants].sort((a, b) => a.name.localeCompare(b.name)).map(r => (
+                          <option key={r.id} value={r.id} className="bg-slate-950 text-slate-200">
+                            {r.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   <div className="space-y-1.5">
                     <label className="block text-[10px] text-slate-450 font-bold ml-1 uppercase">Portal ID</label>
                     <div className="relative">
@@ -303,7 +358,7 @@ export default function StaffPortalLogin({ onLoginSuccess, onGoBackToDiner }: St
                 <div className="bg-slate-900/40 p-3 rounded-xl border border-slate-850 flex gap-2">
                   <HelpCircle size={14} className="text-slate-450 shrink-0 mt-0.5" />
                   <p className="text-[9px] text-slate-400 leading-relaxed font-medium">
-                    We maintain isolated sandboxes. Feel free to use credentials <code className="text-indigo-400 font-bold font-mono">"{defaultCreds[selectedRole].user}"</code> with security key <code className="text-indigo-400 font-bold font-mono">"password"</code> to test this system module seamlessly.
+                    Please use the credentials assigned by the Super Admin during onboarding. If passwords were left blank, defaults (<code className="text-indigo-400 font-bold font-mono">"{defaultCreds[selectedRole]?.user || 'admin'}"</code> / <code className="text-indigo-400 font-bold font-mono">"password"</code>) may apply.
                   </p>
                 </div>
 

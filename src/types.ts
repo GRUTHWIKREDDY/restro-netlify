@@ -1,13 +1,33 @@
+export interface FloorDef {
+  name: string;
+  seats: number;
+}
+
 export interface Restaurant {
   id: string;
   name: string;
   logoUrl: string;
   status: "active" | "inactive";
   lockedBySuperAdmin: boolean;
-  totalTables: number;
+  totalTables: number; // For backward compatibility, can equal sum of floors
+  floors?: FloorDef[];
   latitude?: number;
   longitude?: number;
   geofenceRadiusMeters?: number;
+  verificationPin?: string;
+  
+  // Credentials
+  adminUsername?: string;
+  adminPassword?: string;
+  chefUsername?: string;
+  chefPassword?: string;
+
+  // Custom SLA Admin Capability Rules
+  lockAllItems?: boolean;
+  disableQrGeneration?: boolean;
+  hideHistoryOlderThanOneDay?: boolean;
+  disableAdminPortal?: boolean;
+  disableKdsPortal?: boolean;
 }
 
 export interface MenuItem {
@@ -74,6 +94,7 @@ export interface DineInUser {
   phone: string;
   name: string;
   globalOrderHistory: string[];
+  ratedDishes?: string[];
 }
 
 export interface ChatMessage {
