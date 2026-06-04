@@ -8,6 +8,7 @@ import {
 import { Restaurant, MenuItem, Order, Buzzer, FloorDef } from '../types';
 import { db } from '../firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
+import html2canvas from 'html2canvas';
 
 interface AdminProps {
   restaurant: Restaurant;
@@ -729,6 +730,25 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
 
   return (
     <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6 text-slate-800">
+      
+      {/* PRINT-ONLY STYLES - hide all admin chrome during print */}
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          #print-qr-flyer-area, #print-qr-flyer-area * { visibility: visible !important; }
+          #print-qr-flyer-area {
+            position: fixed !important;
+            top: 0 !important; left: 0 !important;
+            width: 100vw !important; height: 100vh !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            z-index: 9999 !important;
+            background: white !important;
+          }
+          @page { margin: 0; size: auto; }
+        }
+      `}</style>
       
       {/* Upper branding header & active toggle holds */}
       <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1485,29 +1505,30 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                       </button>
                       <button
                         onClick={async () => {
+                          const flyerEl = document.getElementById('print-qr-flyer-area');
+                          if (!flyerEl) return;
                           try {
-                            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=0f172a&data=${encodeURIComponent(`${activeQRBaseUrl}/r/${restaurant.id}/t/${selectedQRTable}`)}`;
-                            const response = await fetch(qrUrl);
-                            const blob = await response.blob();
-                            const blobUrl = URL.createObjectURL(blob);
+                            const canvas = await html2canvas(flyerEl, {
+                              scale: 2,
+                              backgroundColor: null,
+                              useCORS: true,
+                            });
                             const link = document.createElement('a');
-                            link.href = blobUrl;
-                            link.download = `${restaurant.name.toLowerCase().replace(/\s+/g, '-')}-table-${selectedQRTable}-qr.png`;
-                            document.body.appendChild(link);
+                            link.download = `${restaurant.name.toLowerCase().replace(/\s+/g, '-')}-table-${selectedQRTable}-flyer.png`;
+                            link.href = canvas.toDataURL('image/png');
                             link.click();
-                            document.body.removeChild(link);
-                            URL.revokeObjectURL(blobUrl);
                           } catch (err) {
+                            // Fallback: download raw QR if canvas fails
+                            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=0f172a&data=${encodeURIComponent(`${activeQRBaseUrl}/r/${restaurant.id}/t/${selectedQRTable}`)}`;
                             const link = document.createElement('a');
-                            link.href = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=0f172a&data=${encodeURIComponent(`${activeQRBaseUrl}/r/${restaurant.id}/t/${selectedQRTable}`)}`;
-                            link.target = '_self';
-                            link.download = `table-${selectedQRTable}-qr-code.png`;
+                            link.href = qrUrl;
+                            link.download = `${restaurant.name.toLowerCase().replace(/\s+/g, '-')}-table-${selectedQRTable}-qr.png`;
                             link.click();
                           }
                         }}
                         className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-extrabold px-3 py-2 rounded-xl text-xs transition cursor-pointer"
                       >
-                        ↓ Get QR Image
+                        ↓ Download Flyer Image
                       </button>
                     </div>
                   </div>
