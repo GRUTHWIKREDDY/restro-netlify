@@ -7,6 +7,7 @@ import {
 import { Restaurant, MenuItem, Order } from '../types';
 import { db } from '../firebase';
 import { doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import AnalyticsDashboard from './analytics/AnalyticsDashboard';
 
 interface SuperAdminProps {
   restaurants: Restaurant[];
@@ -1807,7 +1808,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
       {/* ANALYTICS DASHBOARD OVERLAY */}
       {overlayTab === 'analytics' && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 flex flex-col">
+          <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200">
             <div className="sticky top-0 bg-white z-10 flex items-center justify-between p-4 border-b border-slate-200 rounded-t-3xl">
               <div>
                 <h3 className="text-sm font-black text-slate-900">📊 SaaS Analytics Suite</h3>
@@ -1817,56 +1818,8 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                 Close
               </button>
             </div>
-
-            <div className="p-4 space-y-6">
-              {/* Summary Cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-gradient-to-br from-indigo-50 to-indigo-100/50 rounded-2xl p-4 border border-indigo-100">
-                  <span className="text-[9px] font-black text-indigo-500 uppercase tracking-wider">Gross Revenue</span>
-                  <p className="text-xl font-black text-indigo-900 mt-1">₹{globalAnalytics.totalRevenue.toFixed(2)}</p>
-                </div>
-                <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-2xl p-4 border border-emerald-100">
-                  <span className="text-[9px] font-black text-emerald-500 uppercase tracking-wider">Total Orders</span>
-                  <p className="text-xl font-black text-emerald-900 mt-1">{globalAnalytics.totalOrders}</p>
-                </div>
-                <div className="bg-gradient-to-br from-amber-50 to-amber-100/50 rounded-2xl p-4 border border-amber-100">
-                  <span className="text-[9px] font-black text-amber-500 uppercase tracking-wider">Active Brands</span>
-                  <p className="text-xl font-black text-amber-900 mt-1">{globalAnalytics.activeBrands} / {globalAnalytics.totalBrands}</p>
-                </div>
-                <div className="bg-gradient-to-br from-rose-50 to-rose-100/50 rounded-2xl p-4 border border-rose-100">
-                  <span className="text-[9px] font-black text-rose-500 uppercase tracking-wider">Total Tables</span>
-                  <p className="text-xl font-black text-rose-900 mt-1">{globalAnalytics.totalTables}</p>
-                </div>
-              </div>
-
-              {/* Revenue by Restaurant */}
-              <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4">
-                <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3">Revenue by Restaurant</h4>
-                <div className="space-y-2">
-                  {restaurants.map(r => {
-                    const rev = orders.filter(o => o.restaurantId === r.id && o.status !== 'rejected').reduce((s, o) => s + o.totalAmount, 0);
-                    const ordCount = orders.filter(o => o.restaurantId === r.id).length;
-                    return (
-                      <div key={r.id} className="flex items-center justify-between bg-white rounded-xl px-3 py-2 border border-slate-100">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className={`w-2 h-2 rounded-full ${r.status === 'active' ? 'bg-emerald-500' : 'bg-red-400'}`} />
-                          <span className="text-xs font-bold text-slate-800 truncate">{r.name}</span>
-                        </div>
-                        <div className="flex items-center gap-4 shrink-0">
-                          <span className="text-[10px] font-bold text-slate-500">{ordCount} orders</span>
-                          <span className="text-xs font-black text-slate-900">₹{rev.toFixed(0)}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Placeholder for detailed analytics */}
-              <div className="bg-slate-50 rounded-2xl border border-dashed border-slate-200 p-8 text-center">
-                <p className="text-sm font-bold text-slate-400">📈 Detailed charts coming soon</p>
-                <p className="text-xs text-slate-400 mt-1">Peak hours, item popularity, revenue trends — data from <code className="font-mono bg-slate-200 px-1 rounded">/api/analytics/*</code></p>
-              </div>
+            <div className="p-4">
+              <AnalyticsDashboard restaurantId="all" restaurantName="All Tenants" />
             </div>
           </div>
         </div>
