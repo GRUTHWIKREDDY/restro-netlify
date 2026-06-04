@@ -89,7 +89,7 @@ export default function DineInCustomerUI({
   const [isAiConciergeOpen, setIsAiConciergeOpen] = useState(false);
   const [aiInputMessage, setAiInputMessage] = useState('');
   const [aiChatHistory, setAiChatHistory] = useState<ChatMessage[]>([
-    { role: 'assistant', text: `Namaste! I am your AI Khansama & Maitre D' today at ${restaurant?.name || "The Royal Clay Oven"}. 🙏 Please let me know what flavor profile you are craving today—whether you prefer mild buttery comforting gravies, sizzling tandoori spices, or gluten-free, pure-vegetarian options!` }
+    { role: 'assistant', text: `Namaste! I am your AI Khansama & Aarudy D' today at ${restaurant?.name || "The Royal Clay Oven"}. 🙏 Please let me know what flavor profile you are craving today—whether you prefer mild buttery comforting gravies, sizzling tandoori spices, or gluten-free, pure-vegetarian options!` }
   ]);
   const [isAiTyping, setIsAiTyping] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
@@ -112,12 +112,12 @@ export default function DineInCustomerUI({
         limitedPromo: m.isLimitedTimeOffer ? m.offerDetails : null
       }));
 
-      const res = await fetch("/api/gemini/chat", {
+      const res = await fetch("/api/deepseek/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userPrompt: promptText,
-          systemInstruction: `You are the expert, polite Indian "Khansama & Maitre D'" AI Assistant for the prestigious restaurant "${restaurant.name}".
+          systemInstruction: `You are the expert, polite Indian "Khansama & Aarudy D'" AI Assistant for the prestigious restaurant "${restaurant.name}".
 Client seating context: Table #${tableNumber}, Guest Name: ${customerSession?.name || "Ji"}.
 Speak with extreme warmth and absolute hospitality (referring to guests with respect, utilizing phrases like "Ji", and honoring Indian culinary nuances).
 Always recommend items from this real-time localized menu options:
@@ -230,7 +230,7 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
   // Adjust conversation greetings if restaurant changes
   useEffect(() => {
     setAiChatHistory([
-      { role: 'assistant', text: `Namaste! I am your AI Khansama & Maitre D' today at ${restaurant?.name || "The Royal Clay Oven"}. 🙏 Please let me know what flavor profile you are craving today—whether you prefer mild buttery comforting gravies, sizzling tandoori spices, or gluten-free, pure-vegetarian options!` }
+      { role: 'assistant', text: `Namaste! I am your AI Khansama & Aarudy D' today at ${restaurant?.name || "The Royal Clay Oven"}. 🙏 Please let me know what flavor profile you are craving today—whether you prefer mild buttery comforting gravies, sizzling tandoori spices, or gluten-free, pure-vegetarian options!` }
     ]);
   }, [restaurant]);
 
@@ -552,12 +552,12 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
         limitedPromo: m.isLimitedTimeOffer ? m.offerDetails : null
       }));
 
-      const res = await fetch("/api/gemini/chat", {
+      const res = await fetch("/api/deepseek/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userPrompt: userMsg,
-          systemInstruction: `You are the expert, polite Indian "Khansama & Maitre D'" AI Assistant for the prestigious restaurant "${restaurant.name}".
+          systemInstruction: `You are the expert, polite Indian "Khansama & Aarudy D'" AI Assistant for the prestigious restaurant "${restaurant.name}".
 Client seating context: Table #${tableNumber}, Guest Name: ${customerSession?.name || "Ji"}.
 Speak with extreme warmth and absolute hospitality (referring to guests with respect, utilizing phrases like "Ji", and honoring Indian culinary nuances).
 Always structure suggestions gracefully:
@@ -900,7 +900,7 @@ ${JSON.stringify(liveMenuContext)}
                 )}
               </button>
 
-              {/* Floating AI Maitre D' chat button */}
+              {/* Floating AI Aarudy D' chat button */}
               <button
                 onClick={() => setIsAiConciergeOpen(!isAiConciergeOpen)}
                 className="p-2 bg-amber-500 text-slate-950 rounded-sm hover:bg-amber-600 transition shadow-md relative group flex items-center justify-center border border-amber-400"
@@ -1019,7 +1019,7 @@ ${JSON.stringify(liveMenuContext)}
                   <span className="text-[9px] font-mono tracking-widest uppercase text-indigo-400 font-bold block mb-1">LIVE AT TABLE {tableNumber}</span>
                   <p className="text-sm font-extrabold uppercase tracking-wider text-white">Enjoy dining, {customerSession.name}!</p>
                   <p className="text-[11px] text-slate-300 leading-relaxed pt-0.5">
-                    Tap the ✨ gold button on the header to ask our Gemini AI Maitre D' for customized culinary pairings & ingredient origins.
+                    Tap the ✨ gold button on the header to ask our DeepSeek AI Aarudy D' for customized culinary pairings & ingredient origins.
                   </p>
                 </div>
               </div>
@@ -1484,7 +1484,7 @@ ${JSON.stringify(liveMenuContext)}
                   <Sparkles size={14} className="sparkle-shiver -rotate-45" />
                 </div>
                 <div>
-                  <h4 className="text-white font-extrabold text-xs uppercase tracking-wider leading-none">AI Maitre D' Concierge</h4>
+                  <h4 className="text-white font-extrabold text-xs uppercase tracking-wider leading-none">AI Aarudy D' Concierge</h4>
                   <p className="text-[9px] text-slate-400 mt-1 uppercase tracking-widest font-mono">Hospitality specialist</p>
                 </div>
               </div>

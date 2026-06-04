@@ -343,13 +343,13 @@ export default function RestaurantAdminPanel({
 
   const handleAiWriteDescription = async () => {
     if (!menuForm.name) {
-      triggerAppAlert("Parameters Required", "Please specify a Dish Title to allow Gemini to analyze gourmet descriptors.", "error");
+      triggerAppAlert("Parameters Required", "Please specify a Dish Title to allow DeepSeek to analyze gourmet descriptors.", "error");
       return;
     }
 
     setIsAiWritingDescription(true);
     try {
-      const res = await fetch("/api/gemini/chat", {
+      const res = await fetch("/api/deepseek/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -375,7 +375,7 @@ export default function RestaurantAdminPanel({
     setAiReportOutput('');
 
     try {
-      const res = await fetch("/api/gemini/report", {
+      const res = await fetch("/api/deepseek/report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -442,7 +442,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
         rustic: "Rustic Tavern (Warm wooden table, sizzling hot-coal smoke glow, iron skillet plated, home-cooked comfort styling)"
       }[selectedStudioLighting];
 
-      const res = await fetch("/api/gemini/chat", {
+      const res = await fetch("/api/deepseek/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2351,7 +2351,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                   </div>
                   <textarea
                     rows={2}
-                    placeholder="Enter details or let Gemini write copy..."
+                    placeholder="Enter details or let DeepSeek write copy..."
                     value={menuForm.description}
                     onChange={(e) => setMenuForm({ ...menuForm, description: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-205 rounded-xl px-3 py-2 font-semibold text-slate-850"
@@ -2539,7 +2539,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                         </button>
                       </div>
 
-                      {/* Live Generated Prompt Draft by Director Gemini */}
+                      {/* Live Generated Prompt Draft by Director DeepSeek */}
                       {aiCustomPromptDraft && (
                         <div className="bg-slate-900 text-slate-100 p-2 text-[9px] leading-relaxed border border-slate-800 rounded-lg font-mono space-y-1">
                           <span className="text-[8px] uppercase tracking-wider text-indigo-400 font-bold block">🎥 Director's Master Camera Instruction</span>
