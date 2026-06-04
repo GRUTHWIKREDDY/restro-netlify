@@ -867,93 +867,656 @@ async function startServer() {
 
   // === ANALYTICS API ENDPOINTS ===
 
-  app.get("/api/analytics/revenue", async (req, res) => {
+  // --- Daily Summaries Aggregation ---
+  // Called after order lifecycle changes to update daily rollups
+  app.post("/api/analytics/aggregate-daily-summaries", async (req, res) => {
     try {
-      const qSnap = await getDocs(collection(db, "orders"));
-      const orders = qSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
-      const totalRevenue = orders.filter((o: any) => o.status !== 'rejected').reduce((s: number, o: any) => s + (o.totalAmount || 0), 0);
-      const ordersToday = orders.filter((o: any) => new Date(o.createdAt).toDateString() === new Date().toDateString());
-      res.json({
-        totalRevenue,
-        totalOrders: orders.length,
-        ordersToday: ordersToday.length,
-        todayRevenue: ordersToday.filter((o: any) => o.status !== 'rejected').reduce((s: number, o: any) => s + (o.totalAmount || 0), 0),
-        statusBreakdown: {
-          pending: orders.filter((o: any) => o.status === 'pending').length,
-          accepted: orders.filter((o: any) => o.status === 'accepted').length,
-          completed: orders.filter((o: any) => o.status === 'completed').length,
-          rejected: orders.filter((o: any) => o.status === 'rejected').length,
+      const { restaurantId } = req.body;
+      const today = new Date().toISOString().split('T')[0];
+      let targetRestaurants: string[] = [];
+
+      if (restaurantId) {
+        targetRestaurants = [restaurantId];
+      } else {
+        const rSnap = await getDocs(collection(db, "restaurants"));
+        targetRestaurants = rSnap.docs.map(d => d.id);
+      }
+
+      for (const rid of targetRestaurants) {
+        const ordSnap = await getDocs(collection(db, "orders"));
+        const orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }))
+          .filter((o: any) => o.restaurantId === rid);
+
+        const completedOrders = orders.filter((o: any) => o.status === 'completed');
+        const totalRevenue = completedOrders.reduce((s: number, o: any) => s + (o.totalAmount || 0), 0);
+        const totalDiscount = completedOrders.reduce((s: number, o: any) =>
+          s + (o.items || []).reduce((si: number, it: any) => si + (it.promoValue || 0) * (it.quantity || 0), 0), 0);
+
+        const itemMap: Record<string, { name: string; quantity: number; revenue: number }> = {};
+        for (const o of orders) {
+          for (const item of (o.items || [])) {
+            if (!itemMap[item.menuId]) itemMap[item.menuId] = { name: item.name, quantity: 0, revenue: 0 };
+            itemMap[item.menuId].quantity += item.quantity || 0;
+            itemMap[item.menuId].revenue += (item.price || 0) * (item.quantity || 0);
+          }
         }
-      });
+        const topItems = Object.entries(itemMap)
+          .map(([menuId, data]) => ({ menuId, ...data }))
+          .sort((a, b) => b.quantity - a.quantity)
+          .slice(0, 10);
+
+        const ordersByHour: Record<number, number> = {};
+        for (const o of orders) {
+          const h = new Date(o.createdAt).getHours();
+          ordersByHour[h] = (ordersByHour[h] || 0) + 1;
+        }
+
+        const summary = {
+          restaurantId: rid,
+          date: today,
+          totalRevenue,
+          totalOrders: completedOrders.length,
+          avgTicketSize: completedOrders.length > 0 ? totalRevenue / completedOrders.length : 0,
+          totalDiscount,
+          discountPercent: totalRevenue > 0 ? (totalDiscount / totalRevenue) * 100 : 0,
+          topItems,
+          laborCost: 0,
+          ordersByHour,
+          ordersByStatus: {
+            pending: orders.filter((o: any) => o.status === 'pending').length,
+            accepted: orders.filter((o: any) => o.status === 'accepted').length,
+            completed: orders.filter((o: any) => o.status === 'completed').length,
+            rejected: orders.filter((o: any) => o.status === 'rejected').length,
+          },
+          paymentBreakdown: { upi: 0, card: 0, cash: 0, wallet: 0 },
+          createdAt: new Date().toISOString(),
+        };
+
+        await setDoc(doc(db, "dailySummaries", `${rid}_${today}`), summary);
+      }
+
+      res.json({ success: true, message: `Aggregated ${targetRestaurants.length} restaurant(s) for ${today}` });
     } catch (err: any) {
-      console.error("GET /api/analytics/revenue error:", err);
+      console.error("POST /api/analytics/aggregate-daily-summaries error:", err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.get("/api/analytics/per-restaurant", async (req, res) => {
+  // --- Daily Summaries Read (history range) ---
+  app.get("/api/analytics/daily-summaries", async (req, res) => {
     try {
-      const [resSnap, ordSnap] = await Promise.all([
+      const { restaurantId, startDate, endDate } = req.query;
+      const qSnap = await getDocs(collection(db, "dailySummaries"));
+      let summaries = qSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      if (restaurantId) summaries = summaries.filter((s: any) => s.restaurantId === restaurantId);
+      if (startDate) summaries = summaries.filter((s: any) => s.date >= startDate);
+      if (endDate) summaries = summaries.filter((s: any) => s.date <= endDate);
+
+      summaries.sort((a: any, b: any) => a.date.localeCompare(b.date));
+      res.json(summaries);
+    } catch (err: any) {
+      console.error("GET /api/analytics/daily-summaries error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- MODULE 1: Sales Analytics ---
+  app.get("/api/:restaurantId/analytics/sales", async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+      const range = (req.query.range as string) || '7d';
+      const ordSnap = await getDocs(collection(db, "orders"));
+      let orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      if (restaurantId !== 'all') orders = orders.filter((o: any) => o.restaurantId === restaurantId);
+
+      // Date filtering
+      const now = new Date();
+      let rangeStart = new Date(now);
+      if (range === '7d') rangeStart.setDate(now.getDate() - 7);
+      else if (range === '30d') rangeStart.setDate(now.getDate() - 30);
+      else if (range === '90d') rangeStart.setDate(now.getDate() - 90);
+      else if (range === 'custom' && req.query.startDate) rangeStart = new Date(req.query.startDate as string);
+
+      orders = orders.filter((o: any) => new Date(o.createdAt) >= rangeStart);
+
+      const completed = orders.filter((o: any) => o.status !== 'rejected');
+      const totalRevenue = completed.reduce((s: number, o: any) => s + (o.totalAmount || 0), 0);
+      const totalDiscount = completed.reduce((s: number, o: any) =>
+        s + (o.items || []).reduce((si: number, it: any) => si + (it.promoValue || 0) * (it.quantity || 0), 0), 0);
+
+      // Daily breakdown
+      const dailyMap: Record<string, { revenue: number; orders: number; discount: number }> = {};
+      for (const o of completed) {
+        const d = new Date(o.createdAt).toISOString().split('T')[0];
+        if (!dailyMap[d]) dailyMap[d] = { revenue: 0, orders: 0, discount: 0 };
+        dailyMap[d].revenue += o.totalAmount || 0;
+        dailyMap[d].orders += 1;
+        dailyMap[d].discount += (o.items || []).reduce((s: number, it: any) => s + (it.promoValue || 0) * (it.quantity || 0), 0);
+      }
+
+      // Hour × Weekday heatmap
+      const heatmap: Record<string, number> = {};
+      for (const o of completed) {
+        const dt = new Date(o.createdAt);
+        const key = `${dt.getDay()}_${dt.getHours()}`;
+        heatmap[key] = (heatmap[key] || 0) + o.totalAmount;
+      }
+
+      // Day of week
+      const dow: Record<string, { revenue: number; orders: number }> = {};
+      for (const o of completed) {
+        const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(o.createdAt).getDay()];
+        if (!dow[day]) dow[day] = { revenue: 0, orders: 0 };
+        dow[day].revenue += o.totalAmount || 0;
+        dow[day].orders += 1;
+      }
+
+      // Top items
+      const itemMap: Record<string, { name: string; quantity: number; revenue: number }> = {};
+      for (const o of orders) {
+        for (const item of (o.items || [])) {
+          if (!itemMap[item.menuId]) itemMap[item.menuId] = { name: item.name, quantity: 0, revenue: 0 };
+          itemMap[item.menuId].quantity += item.quantity || 0;
+          itemMap[item.menuId].revenue += (item.price || 0) * (item.quantity || 0);
+        }
+      }
+      const topItems = Object.entries(itemMap).map(([menuId, d]) => ({ menuId, ...d }))
+        .sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+
+      res.json({
+        totalRevenue,
+        totalOrders: completed.length,
+        avgOrderValue: completed.length > 0 ? totalRevenue / completed.length : 0,
+        totalDiscount,
+        discountPercent: totalRevenue > 0 ? (totalDiscount / totalRevenue) * 100 : 0,
+        dailySales: Object.entries(dailyMap).map(([date, data]) => ({ date, ...data })).sort((a, b) => a.date.localeCompare(b.date)),
+        heatmap: Object.entries(heatmap).map(([key, value]) => ({ key, value })),
+        dayOfWeek: Object.entries(dow).map(([day, data]) => ({ day, ...data })),
+        topItems,
+        hourlyOrders: (() => {
+          const h: Record<number, number> = {};
+          for (const o of completed) {
+            const hour = new Date(o.createdAt).getHours();
+            h[hour] = (h[hour] || 0) + 1;
+          }
+          return Object.entries(h).map(([hour, count]) => ({ hour: parseInt(hour), count })).sort((a, b) => a.hour - b.hour);
+        })(),
+      });
+    } catch (err: any) {
+      console.error(`GET /api/${req.params.restaurantId}/analytics/sales error:`, err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- MODULE 2: Menu Analytics ---
+  app.get("/api/:restaurantId/analytics/menu", async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+      const [ordSnap, menuSnap] = await Promise.all([
+        getDocs(collection(db, "orders")),
+        getDocs(collection(db, "menus")),
+      ]);
+      let orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      if (restaurantId !== 'all') orders = orders.filter((o: any) => o.restaurantId === restaurantId);
+      const menus = menuSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter((m: any) => restaurantId === 'all' || m.restaurantId === restaurantId);
+
+      // Per-item aggregation
+      const itemData: Record<string, { name: string; category: string; quantity: number; revenue: number; discount: number; orders: number; price: number; isVeg?: boolean; isLimitedTimeOffer: boolean; ratingsCount?: number; avgRating?: number }> = {};
+      for (const m of menus) {
+        const mi = m as any;
+        itemData[mi.id] = { name: mi.name, category: mi.category, quantity: 0, revenue: 0, discount: 0, orders: 0, price: mi.price || 0, isVeg: mi.isVeg, isLimitedTimeOffer: mi.isLimitedTimeOffer || false, ratingsCount: mi.ratingsCount, avgRating: mi.avgRating };
+      }
+      for (const o of orders) {
+        for (const item of (o.items || [])) {
+          if (!itemData[item.menuId]) continue;
+          itemData[item.menuId].quantity += item.quantity || 0;
+          itemData[item.menuId].revenue += (item.price || 0) * (item.quantity || 0);
+          itemData[item.menuId].discount += (item.promoValue || 0) * (item.quantity || 0);
+          itemData[item.menuId].orders += 1;
+        }
+      }
+
+      const items = Object.entries(itemData).map(([menuId, d]) => ({ menuId, ...d }));
+      const totalRevenue = items.reduce((s, i) => s + i.revenue, 0);
+      const avgPrice = items.length > 0 ? items.reduce((s, i) => s + i.price, 0) / items.length : 0;
+
+      // Menu engineering matrix
+      const categorize = (item: typeof items[0]) => {
+        const margin = item.price - (item.price * 0.35); // foodCost estimated at 35%
+        const highMargin = margin > avgPrice * 0.4;
+        const highOrders = item.orders > items.reduce((s, i) => s + i.orders, 0) / Math.max(items.length, 1);
+        if (highMargin && highOrders) return 'star';
+        if (!highMargin && highOrders) return 'plowhorse';
+        if (highMargin && !highOrders) return 'puzzle';
+        return 'dog';
+      };
+
+      const matrix = { star: 0, plowhorse: 0, puzzle: 0, dog: 0 };
+      for (const item of items) {
+        matrix[categorize(item) as keyof typeof matrix]++;
+      }
+
+      res.json({
+        items: items.sort((a, b) => b.revenue - a.revenue),
+        totalItems: items.length,
+        totalRevenue,
+        matrix,
+        matrixPercent: {
+          star: items.length > 0 ? (matrix.star / items.length) * 100 : 0,
+          dog: items.length > 0 ? (matrix.dog / items.length) * 100 : 0,
+        },
+        seasonalRevenue: items.filter(i => i.isLimitedTimeOffer).reduce((s, i) => s + i.revenue, 0),
+        permanentRevenue: items.filter(i => !i.isLimitedTimeOffer).reduce((s, i) => s + i.revenue, 0),
+        avgRating: items.reduce((s, i) => s + (i.avgRating || 0), 0) / Math.max(items.filter(i => i.avgRating).length, 1),
+      });
+    } catch (err: any) {
+      console.error(`GET /api/${req.params.restaurantId}/analytics/menu error:`, err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- MODULE 3: Labor Analytics ---
+  app.get("/api/:restaurantId/analytics/labor", async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+      const range = (req.query.range as string) || '7d';
+
+      // Read shifts + orders
+      const [shiftSnap, ordSnap] = await Promise.all([
+        getDocs(collection(db, "staffShifts")),
+        getDocs(collection(db, "orders")),
+      ]);
+      let shifts = shiftSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      let orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      if (restaurantId !== 'all') {
+        shifts = shifts.filter((s: any) => s.restaurantId === restaurantId);
+        orders = orders.filter((o: any) => o.restaurantId === restaurantId);
+      }
+
+      const now = new Date();
+      let rangeStart = new Date(now);
+      if (range === '7d') rangeStart.setDate(now.getDate() - 7);
+      else if (range === '30d') rangeStart.setDate(now.getDate() - 30);
+      else if (range === '90d') rangeStart.setDate(now.getDate() - 90);
+      shifts = shifts.filter((s: any) => new Date(s.shiftStart) >= rangeStart);
+      orders = orders.filter((o: any) => new Date(o.createdAt) >= rangeStart);
+
+      const completedOrders = orders.filter((o: any) => o.status !== 'rejected');
+      const totalRevenue = completedOrders.reduce((s: number, o: any) => s + (o.totalAmount || 0), 0);
+      const totalHours = shifts.reduce((s: number, sh: any) => s + (sh.totalHours || 0), 0);
+      const totalWages = shifts.reduce((s: number, sh: any) => s + ((sh.totalHours || 0) * (sh.hourlyRate || 0)), 0);
+      const salesPerLaborHour = totalHours > 0 ? totalRevenue / totalHours : 0;
+      const laborCostPercent = totalRevenue > 0 ? (totalWages / totalRevenue) * 100 : 0;
+
+      // Shift slot performance
+      const slotMap: Record<string, { revenue: number; orders: number; hours: number }> = {};
+      const getSlot = (h: number) => h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
+      for (const o of completedOrders) {
+        const slot = getSlot(new Date(o.createdAt).getHours());
+        if (!slotMap[slot]) slotMap[slot] = { revenue: 0, orders: 0, hours: 0 };
+        slotMap[slot].revenue += o.totalAmount || 0;
+        slotMap[slot].orders += 1;
+      }
+      for (const sh of shifts) {
+        const slot = getSlot(new Date(sh.shiftStart).getHours());
+        if (!slotMap[slot]) slotMap[slot] = { revenue: 0, orders: 0, hours: 0 };
+        slotMap[slot].hours += sh.totalHours || 0;
+      }
+
+      res.json({
+        totalHours,
+        totalWages,
+        totalRevenue,
+        salesPerLaborHour,
+        laborCostPercent,
+        ordersHandled: completedOrders.length,
+        ordersPerStaffHour: totalHours > 0 ? completedOrders.length / totalHours : 0,
+        shiftCount: shifts.length,
+        shifts,
+        slotPerformance: Object.entries(slotMap).map(([slot, data]) => ({ slot, ...data })),
+      });
+    } catch (err: any) {
+      console.error(`GET /api/${req.params.restaurantId}/analytics/labor error:`, err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- MODULE 4: Inventory Analytics ---
+  app.get("/api/:restaurantId/analytics/inventory", async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+      const [invSnap, wasteSnap, recipeSnap] = await Promise.all([
+        getDocs(collection(db, "inventory")),
+        getDocs(collection(db, "wasteLogs")),
+        getDocs(collection(db, "recipes")),
+      ]);
+      let inventory = invSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      let wasteLogs = wasteSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      let recipes = recipeSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      if (restaurantId !== 'all') {
+        inventory = inventory.filter((i: any) => i.restaurantId === restaurantId);
+        wasteLogs = wasteLogs.filter((w: any) => w.restaurantId === restaurantId);
+        recipes = recipes.filter((r: any) => r.restaurantId === restaurantId);
+      }
+
+      const totalWasteCost = wasteLogs.reduce((s: number, w: any) => s + (w.cost || 0), 0);
+      const totalInventoryValue = inventory.reduce((s: number, i: any) => s + ((i.currentStock || 0) * (i.costPerUnit || 0)), 0);
+      const lowStockItems = inventory.filter((i: any) => (i.currentStock || 0) <= (i.parLevel || 0));
+
+      res.json({
+        inventory: inventory.sort((a: any, b: any) => ((a.currentStock || 0) / Math.max(a.parLevel || 1, 1)) - ((b.currentStock || 0) / Math.max(b.parLevel || 1, 1))),
+        totalItems: inventory.length,
+        totalInventoryValue,
+        lowStockItems: lowStockItems.length,
+        lowStockList: lowStockItems,
+        totalWasteCost,
+        wasteLogs: wasteLogs.sort((a: any, b: any) => new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime()).slice(0, 50),
+        recipes,
+        spoilagePercent: totalInventoryValue > 0 ? (totalWasteCost / totalInventoryValue) * 100 : 0,
+      });
+    } catch (err: any) {
+      console.error(`GET /api/${req.params.restaurantId}/analytics/inventory error:`, err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- MODULE 5: Customer Analytics ---
+  app.get("/api/:restaurantId/analytics/customers", async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+      const range = (req.query.range as string) || '30d';
+      const [custSnap, ordSnap] = await Promise.all([
+        getDocs(collection(db, "customers")),
+        getDocs(collection(db, "orders")),
+      ]);
+      let customers = custSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      let orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      if (restaurantId !== 'all') {
+        customers = customers.filter((c: any) => c.restaurantId === restaurantId);
+        orders = orders.filter((o: any) => o.restaurantId === restaurantId);
+      }
+
+      const now = new Date();
+      let rangeStart = new Date(now);
+      if (range === '7d') rangeStart.setDate(now.getDate() - 7);
+      else if (range === '30d') rangeStart.setDate(now.getDate() - 30);
+      else if (range === '90d') rangeStart.setDate(now.getDate() - 90);
+
+      const recentCustomers = customers.filter((c: any) => new Date(c.lastVisit) >= rangeStart);
+
+      // Visit frequency
+      const freqDist = { '1x': 0, '2-3x': 0, '4-6x': 0, '7x+': 0 };
+      for (const c of recentCustomers) {
+        if (c.visitCount === 1) freqDist['1x']++;
+        else if (c.visitCount <= 3) freqDist['2-3x']++;
+        else if (c.visitCount <= 6) freqDist['4-6x']++;
+        else freqDist['7x+']++;
+      }
+
+      const newCustomers = recentCustomers.filter((c: any) => c.visitCount === 1).length;
+      const returningCustomers = recentCustomers.length - newCustomers;
+      const aov = orders.filter((o: any) => o.status !== 'rejected').reduce((s: number, o: any) => s + (o.totalAmount || 0), 0) /
+        Math.max(orders.filter((o: any) => o.status !== 'rejected').length, 1);
+
+      res.json({
+        totalCustomers: customers.length,
+        recentCustomers: recentCustomers.length,
+        newCustomers,
+        returningCustomers,
+        repeatRate: recentCustomers.length > 0 ? (returningCustomers / recentCustomers.length) * 100 : 0,
+        avgOrderValue: aov,
+        visitFrequency: freqDist,
+        churnCandidates: recentCustomers.filter((c: any) => {
+          const daysSinceLastVisit = (now.getTime() - new Date(c.lastVisit).getTime()) / (1000 * 60 * 60 * 24);
+          return c.visitCount >= 2 && daysSinceLastVisit >= 45;
+        }).length,
+        estimatedCLV: aov * 3.5 * 6, // AOV × avg freq × retention months (rough estimate)
+      });
+    } catch (err: any) {
+      console.error(`GET /api/${req.params.restaurantId}/analytics/customers error:`, err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- MODULE 6: Feedback Analytics ---
+  app.get("/api/:restaurantId/analytics/feedback", async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+      const range = (req.query.range as string) || '30d';
+      const fbSnap = await getDocs(collection(db, "feedbackResponses"));
+      let feedback = fbSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      if (restaurantId !== 'all') feedback = feedback.filter((f: any) => f.restaurantId === restaurantId);
+
+      const now = new Date();
+      let rangeStart = new Date(now);
+      if (range === '7d') rangeStart.setDate(now.getDate() - 7);
+      else if (range === '30d') rangeStart.setDate(now.getDate() - 30);
+      else if (range === '90d') rangeStart.setDate(now.getDate() - 90);
+      feedback = feedback.filter((f: any) => new Date(f.createdAt) >= rangeStart);
+
+      const avgRating = feedback.length > 0
+        ? feedback.reduce((s: number, f: any) => s + (f.rating || 0), 0) / feedback.length
+        : 0;
+      const sentimentBreakdown = {
+        positive: feedback.filter((f: any) => f.sentimentLabel === 'positive').length,
+        neutral: feedback.filter((f: any) => f.sentimentLabel === 'neutral').length,
+        negative: feedback.filter((f: any) => f.sentimentLabel === 'negative').length,
+      };
+
+      // Theme breakdown
+      const themeMap: Record<string, number> = {};
+      for (const f of feedback) {
+        for (const tag of (f.themeTags || [])) {
+          themeMap[tag] = (themeMap[tag] || 0) + 1;
+        }
+      }
+
+      res.json({
+        total: feedback.length,
+        avgRating,
+        sentimentBreakdown,
+        themeBreakdown: Object.entries(themeMap).map(([theme, count]) => ({ theme, count })).sort((a, b) => b.count - a.count),
+        actionableCount: feedback.filter((f: any) => f.actionable).length,
+        recentFeedback: feedback.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 20),
+      });
+    } catch (err: any) {
+      console.error(`GET /api/${req.params.restaurantId}/analytics/feedback error:`, err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- MODULE 7: Operational Analytics ---
+  app.get("/api/:restaurantId/analytics/operations", async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+      const [ordSnap, kdsSnap] = await Promise.all([
+        getDocs(collection(db, "orders")),
+        getDocs(collection(db, "kdsEvents")),
+      ]);
+      let orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      let kdsEvents = kdsSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      if (restaurantId !== 'all') {
+        orders = orders.filter((o: any) => o.restaurantId === restaurantId);
+        kdsEvents = kdsEvents.filter((e: any) => e.restaurantId === restaurantId);
+      }
+
+      const completed = orders.filter((o: any) => o.status === 'completed');
+      const avgTicketTimeMinutes = completed.length > 0
+        ? completed.reduce((s: number, o: any) => {
+            const created = new Date(o.createdAt).getTime();
+            const now = Date.now();
+            return s + (now - created) / (1000 * 60);
+          }, 0) / completed.length
+        : 0;
+
+      // Ticket time estimate from KDS events
+      let avgKdsTicketTime = 0;
+      let kdsCount = 0;
+      for (const o of orders) {
+        const orderEvents = kdsEvents.filter((e: any) => e.orderId === o.id);
+        const received = orderEvents.find((e: any) => e.eventType === 'received');
+        const sent = orderEvents.find((e: any) => e.eventType === 'sent');
+        if (received && sent) {
+          avgKdsTicketTime += (new Date(sent.timestamp).getTime() - new Date(received.timestamp).getTime()) / (1000 * 60);
+          kdsCount++;
+        }
+      }
+      if (kdsCount > 0) avgKdsTicketTime /= kdsCount;
+
+      // Peak vs off-peak
+      const peakOrders = orders.filter((o: any) => {
+        const h = new Date(o.createdAt).getHours();
+        return h >= 12 && h <= 14 || h >= 19 && h <= 21;
+      });
+      const offPeakOrders = orders.filter((o: any) => {
+        const h = new Date(o.createdAt).getHours();
+        return !(h >= 12 && h <= 14 || h >= 19 && h <= 21);
+      });
+
+      res.json({
+        totalOrders: orders.length,
+        completedOrders: completed.length,
+        avgTicketTimeMinutes,
+        avgKdsTicketTimeMinutes: avgKdsTicketTime,
+        peakOrdersPerHour: peakOrders.length > 0 ? peakOrders.length / 6 : 0, // ~6 peak hours/day
+        offPeakOrdersPerHour: offPeakOrders.length > 0 ? offPeakOrders.length / 12 : 0,
+        discountRate: orders.filter((o: any) => (o.items || []).some((i: any) => (i.promoValue || 0) > 0)).length / Math.max(orders.length, 1),
+        multiOutlet: false, // placeholder - true when multiple restaurants selected
+      });
+    } catch (err: any) {
+      console.error(`GET /api/${req.params.restaurantId}/analytics/operations error:`, err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- Unit Economics Scorecard ---
+  app.get("/api/:restaurantId/analytics/scorecard", async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+      const [salesRes, menuRes, laborRes, opsRes] = await Promise.all([
+        fetch(`${req.protocol}://${req.get('host')}/api/${restaurantId}/analytics/sales?range=30d`).then(r => r.json()),
+        fetch(`${req.protocol}://${req.get('host')}/api/${restaurantId}/analytics/menu`).then(r => r.json()),
+        fetch(`${req.protocol}://${req.get('host')}/api/${restaurantId}/analytics/labor?range=30d`).then(r => r.json()),
+        fetch(`${req.protocol}://${req.get('host')}/api/${restaurantId}/analytics/operations`).then(r => r.json()),
+      ]);
+
+      const scorecard = {
+        revenuePerLaborHour: { value: laborRes.salesPerLaborHour || 0, target: 1000, unit: '₹', green: (laborRes.salesPerLaborHour || 0) >= 800 },
+        laborCostPercent: { value: laborRes.laborCostPercent || 0, target: 22, unit: '%', green: (laborRes.laborCostPercent || 0) <= 25 },
+        avgTicketTime: { value: opsRes.avgTicketTimeMinutes || 0, target: 20, unit: 'min', green: (opsRes.avgTicketTimeMinutes || 0) <= 25 },
+        avgOrderValue: { value: salesRes.avgOrderValue || 0, target: 500, unit: '₹', green: (salesRes.avgOrderValue || 0) >= 400 },
+        discountRate: { value: (salesRes.discountPercent || 0), target: 10, unit: '%', green: (salesRes.discountPercent || 0) <= 10 },
+        menuStarsPercent: { value: menuRes.matrixPercent?.star || 0, target: 40, unit: '%', green: (menuRes.matrixPercent?.star || 0) >= 40 },
+        menuDogsPercent: { value: menuRes.matrixPercent?.dog || 0, target: 15, unit: '%', green: (menuRes.matrixPercent?.dog || 0) <= 15 },
+        customerSatisfaction: { value: menuRes.avgRating || 0, target: 4.0, unit: '★', green: (menuRes.avgRating || 0) >= 3.5 },
+      };
+
+      const greenCount = Object.values(scorecard).filter((s: any) => s.green).length;
+      const totalMetrics = Object.keys(scorecard).length;
+
+      res.json({
+        scorecard,
+        greenCount,
+        totalMetrics,
+        passThreshold: greenCount >= 6,
+        allGreen: greenCount === totalMetrics,
+        scorePercent: (greenCount / totalMetrics) * 100,
+        recommendation: greenCount >= 6
+          ? 'Ready for expansion — consistent green across 6+ metrics for 8 weeks'
+          : `${8 - greenCount} metric(s) below target — address before next outlet`,
+      });
+    } catch (err: any) {
+      console.error(`GET /api/${req.params.restaurantId}/analytics/scorecard error:`, err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // --- SuperAdmin: Cross-tenant Platform Analytics ---
+  app.get("/api/superadmin/analytics/platform", async (req, res) => {
+    try {
+      const [rSnap, ordSnap] = await Promise.all([
         getDocs(collection(db, "restaurants")),
         getDocs(collection(db, "orders")),
       ]);
-      const restaurants = resSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      const restaurants = rSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const allOrders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+
+      const revenue = allOrders.filter((o: any) => o.status !== 'rejected').reduce((s: number, o: any) => s + (o.totalAmount || 0), 0);
+      const avgOrderValue = allOrders.filter((o: any) => o.status !== 'rejected').length > 0
+        ? revenue / allOrders.filter((o: any) => o.status !== 'rejected').length : 0;
+
       const perRestaurant = restaurants.map((r: any) => {
-        const rOrders = orders.filter((o: any) => o.restaurantId === r.id);
+        const rOrders = allOrders.filter((o: any) => o.restaurantId === r.id);
+        const completed = rOrders.filter((o: any) => o.status === 'completed');
         return {
-          restaurantId: r.id,
+          id: r.id,
           name: r.name,
           totalOrders: rOrders.length,
-          revenue: rOrders.filter((o: any) => o.status !== 'rejected').reduce((s: number, o: any) => s + (o.totalAmount || 0), 0),
-          pendingOrders: rOrders.filter((o: any) => o.status === 'pending').length,
+          completedOrders: completed.length,
+          revenue: completed.reduce((s: number, o: any) => s + (o.totalAmount || 0), 0),
+          avgOrderValue: completed.length > 0
+            ? completed.reduce((s: number, o: any) => s + (o.totalAmount || 0), 0) / completed.length : 0,
+          status: r.status,
         };
       });
-      res.json(perRestaurant);
+
+      res.json({
+        totalRestaurants: restaurants.length,
+        activeRestaurants: restaurants.filter((r: any) => r.status === 'active').length,
+        totalOrders: allOrders.length,
+        totalRevenue: revenue,
+        avgOrderValue,
+        perRestaurant: perRestaurant.sort((a: any, b: any) => b.revenue - a.revenue),
+      });
     } catch (err: any) {
-      console.error("GET /api/analytics/per-restaurant error:", err);
+      console.error("GET /api/superadmin/analytics/platform error:", err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.get("/api/analytics/popular-items", async (req, res) => {
+  // --- Write: Post Feedback ---
+  app.post("/api/:restaurantId/feedback", async (req, res) => {
     try {
-      const ordSnap = await getDocs(collection(db, "orders"));
-      const orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
-      const itemCount: Record<string, { name: string; quantity: number; revenue: number }> = {};
-      for (const o of orders) {
-        for (const item of (o.items || [])) {
-          if (!itemCount[item.menuId]) itemCount[item.menuId] = { name: item.name, quantity: 0, revenue: 0 };
-          itemCount[item.menuId].quantity += item.quantity || 0;
-          itemCount[item.menuId].revenue += (item.price || 0) * (item.quantity || 0);
-        }
+      const { restaurantId } = req.params;
+      const { orderId, rating, comment } = req.body;
+      if (!orderId || !rating) {
+        return res.status(400).json({ error: "orderId and rating are required" });
       }
-      const sorted = Object.entries(itemCount)
-        .map(([menuId, data]) => ({ menuId, ...data }))
-        .sort((a, b) => b.quantity - a.quantity)
-        .slice(0, 20);
-      res.json(sorted);
+      const id = `fb_${restaurantId}_${orderId}_${Date.now()}`;
+      const feedback = {
+        id,
+        orderId,
+        restaurantId,
+        rating,
+        comment: comment || '',
+        sentimentLabel: rating >= 4 ? 'positive' : rating === 3 ? 'neutral' : 'negative',
+        themeTags: [] as string[],
+        actionable: rating <= 2,
+        createdAt: new Date().toISOString(),
+      };
+      await setDoc(doc(db, "feedbackResponses", id), feedback);
+      res.json({ success: true, id });
     } catch (err: any) {
-      console.error("GET /api/analytics/popular-items error:", err);
+      console.error(`POST /api/${req.params.restaurantId}/feedback error:`, err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.get("/api/analytics/peak-hours", async (req, res) => {
+  // --- Write: Post Waste Log ---
+  app.post("/api/:restaurantId/waste-log", async (req, res) => {
     try {
-      const ordSnap = await getDocs(collection(db, "orders"));
-      const orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
-      const hourlyBuckets: Record<number, number> = {};
-      for (const o of orders) {
-        const hour = new Date(o.createdAt).getHours();
-        hourlyBuckets[hour] = (hourlyBuckets[hour] || 0) + 1;
-      }
-      const peakHours = Object.entries(hourlyBuckets)
-        .map(([hour, count]) => ({ hour: parseInt(hour), count }))
-        .sort((a, b) => a.hour - b.hour);
-      res.json(peakHours);
+      const { restaurantId } = req.params;
+      const log = {
+        id: `waste_${restaurantId}_${Date.now()}`,
+        restaurantId,
+        ...req.body,
+        loggedAt: new Date().toISOString(),
+      };
+      await setDoc(doc(db, "wasteLogs", log.id), log);
+      res.json({ success: true, id: log.id });
     } catch (err: any) {
-      console.error("GET /api/analytics/peak-hours error:", err);
+      console.error(`POST /api/${req.params.restaurantId}/waste-log error:`, err);
       res.status(500).json({ error: err.message });
     }
   });
