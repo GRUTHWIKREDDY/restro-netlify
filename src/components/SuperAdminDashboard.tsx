@@ -5,8 +5,7 @@ import {
   Trash2, RefreshCw, Sliders, Lock, Unlock, Settings2, FileText
 } from 'lucide-react';
 import { Restaurant, MenuItem, Order } from '../types';
-import { db } from '../firebase';
-import { doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { supabase, toSnake } from '../supabase';
 import AnalyticsDashboard from './analytics/AnalyticsDashboard';
 
 interface SuperAdminProps {
@@ -372,7 +371,7 @@ export default function SuperAdminDashboard({
 
     try {
       // 1. Direct Firestore write
-      await setDoc(doc(db, "restaurants", selectedManageTenant.id), updatedTenant);
+      await supabase.from('restaurants').upsert(toSnake(updatedTenant), { onConflict: 'id' });
 
       // 2. Post node update to sync in-memory databases
       await fetch("/api/restaurants", {
@@ -429,7 +428,7 @@ export default function SuperAdminDashboard({
 
     try {
       // Direct Firestore write for high robustness and instant sync
-      await setDoc(doc(db, "restaurants", updatedTenant.id), updatedTenant);
+      await supabase.from('restaurants').upsert(toSnake(updatedTenant), { onConflict: 'id' });
 
       // REST backup
       const res = await fetch("/api/restaurants", {
@@ -529,7 +528,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
     setIsOnboarding(true);
     try {
       // 1. Direct Firestore write for restaurant document
-      await setDoc(doc(db, "restaurants", newTenant.id), newTenant);
+      await supabase.from('restaurants').upsert(toSnake(newTenant), { onConflict: 'id' });
 
       // 2. Direct Firestore write for 3 delightful starter menu items to ensure KDS, Admin, and Diner menus work out-of-the-box!
       const starterMenus = [
@@ -580,7 +579,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
       ];
 
       for (const m of starterMenus) {
-        await setDoc(doc(db, "menus", m.id), m);
+        await supabase.from('menu_items').upsert(toSnake(m), { onConflict: 'id' });
       }
 
       // REST backend proxy sync
@@ -636,12 +635,12 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
 
     try {
       // 1. Delete restaurant document from Firestore
-      await deleteDoc(doc(db, "restaurants", id));
+      await supabase.from('restaurants').delete().eq('id', id);
 
       // 2. Clean up its menu catalog to avoid indexing orphans
       const associatedMenus = menus.filter(m => m.restaurantId === id);
       for (const m of associatedMenus) {
-        await deleteDoc(doc(db, "menus", m.id));
+        await supabase.from('menu_items').delete().eq('id', m.id);
       }
 
       triggerAppAlert("Tenant Brand Deleted", `Successfully removed ${name} from our live distributed SaaS database nodes.`, "success");
@@ -663,7 +662,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
 
     try {
       // Direct Firestore write
-      await setDoc(doc(db, "restaurants", id), updatedTenant);
+      await supabase.from('restaurants').upsert(toSnake(updatedTenant), { onConflict: 'id' });
 
       const res = await fetch("/api/restaurants", {
         method: "POST",
@@ -682,7 +681,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
       let clearedCount = 0;
       for (const order of completedOrders) {
         try {
-          await updateDoc(doc(db, "orders", order.id), { released: true });
+          await supabase.from('orders').update({ released: true }).eq('id', order.id);
           clearedCount++;
         } catch (err) {
           console.error("Failed to update order to released state during status transition:", err);
@@ -715,7 +714,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
 
     try {
       // Direct Firestore write
-      await setDoc(doc(db, "restaurants", id), updatedTenant);
+      await supabase.from('restaurants').upsert(toSnake(updatedTenant), { onConflict: 'id' });
 
       const res = await fetch("/api/restaurants", {
         method: "POST",

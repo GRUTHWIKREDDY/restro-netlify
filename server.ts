@@ -4,21 +4,30 @@ import { createServer as createViteServer } from "vite";
 import * as dotenv from "dotenv";
 dotenv.config();
 // DeepSeek replaces GoogleGenAI — uses OpenAI-compatible API via native fetch
-import { initializeApp } from "firebase/app";
-import {
-  getFirestore,
-  doc,
-  setDoc,
-  getDoc,
-  getDocs,
-  collection,
-  deleteDoc
-} from "firebase/firestore";
-import firebaseConfig from "./firebase-applet-config.json";
+import { supabaseAdmin } from "./src/supabase-server";
 
-// Initialize Firebase Client SDK
-const fApp = initializeApp(firebaseConfig);
-const db = getFirestore(fApp, firebaseConfig.firestoreDatabaseId);
+// Supabase admin client (service role)
+const db = supabaseAdmin;
+
+// Utility: convert camelCase object keys to snake_case for DB
+function toSnake(obj: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+    result[snakeKey] = value;
+  }
+  return result;
+}
+
+// Utility: convert snake_case DB row keys to camelCase for API responses
+function toCamel(row: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(row)) {
+    const camelKey = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    result[camelKey] = value;
+  }
+  return result;
+}
 
 // Standard Starting Data for seeding
 const INITIAL_RESTAURANTS = [
@@ -557,49 +566,54 @@ const INITIAL_USERS = [
 // Seeding engine
 async function seedDatabaseIfEmpty() {
   try {
-    const qSnap = await getDocs(collection(db, "restaurants"));
-    const oSnap = await getDocs(collection(db, "orders"));
+    // Check if data already exists
+    const { data: existingRestaurants } = await db.from('restaurants').select('id');
+    const { data: existingOrders } = await db.from('orders').select('id');
     
-    // Check if empty, or old 'ord-101' exists, or our mandatory new 'ord-214' order is missing, or one of the new restaurants is missing
-    let needsUpgrade = qSnap.empty;
+    let needsUpgrade = !existingRestaurants || existingRestaurants.length === 0;
     if (!needsUpgrade) {
-      const rIds = qSnap.docs.map(doc => doc.id);
-      const ids = oSnap.docs.map(doc => doc.id);
+      const rIds = existingRestaurants.map((r: any) => r.id);
+      const ids = existingOrders.map((o: any) => o.id);
       if (ids.includes("ord-101") || !ids.includes("ord-214") || !rIds.includes("rest-4")) {
         needsUpgrade = true;
       }
     }
 
     if (needsUpgrade) {
-      console.log("Firestore database is empty or has stale data. Seeding rich multi-outlet Indian analytics...");
+      console.log("Database is empty or has stale data. Seeding multi-outlet Indian analytics data...");
       
-      // Force wipe existing to prevent collisions and mix-ups
-      const colls = ["restaurants", "menus", "orders", "users", "buzzers"];
-      for (const collName of colls) {
-        const snap = await getDocs(collection(db, collName));
-        for (const d of snap.docs) {
-          await deleteDoc(d.ref);
-        }
+      // Wipe all existing data
+      const tables = ['restaurants', 'menu_items', 'orders', 'buzzers'];
+      for (const table of tables) {
+        const { error } = await db.from(table).delete().neq('id', '__nonexistent__');
+        if (error) console.error(`Error clearing ${table}:`, error);
       }
+      // dine_in_users has 'phone' as PK, not 'id'
+      const { error: delUsers } = await db.from('dine_in_users').delete().neq('phone', '__nonexistent__');
+      if (delUsers) console.error('Error clearing dine_in_users:', delUsers);
 
       for (const r of INITIAL_RESTAURANTS) {
-        await setDoc(doc(db, "restaurants", r.id), r);
+        const { error } = await db.from('restaurants').upsert(toSnake(r), { onConflict: 'id' });
+        if (error) console.error('Seed error restaurants:', error);
       }
       for (const m of INITIAL_MENUS) {
-        await setDoc(doc(db, "menus", m.id), m);
+        const { error } = await db.from('menu_items').upsert(toSnake(m), { onConflict: 'id' });
+        if (error) console.error('Seed error menu_items:', error);
       }
       for (const o of INITIAL_ORDERS) {
-        await setDoc(doc(db, "orders", o.id), o);
+        const { error } = await db.from('orders').upsert(toSnake(o), { onConflict: 'id' });
+        if (error) console.error('Seed error orders:', error);
       }
       for (const u of INITIAL_USERS) {
-        await setDoc(doc(db, "users", u.phone), u);
+        const { error } = await db.from('dine_in_users').upsert(toSnake(u), { onConflict: 'phone' });
+        if (error) console.error('Seed error dine_in_users:', error);
       }
-      console.log("Firestore database seeding successfully completed.");
+      console.log("Supabase database seeding successfully completed.");
     } else {
-      console.log("Firestore database already populated with full Indian establishment profiles.");
+      console.log("Database already populated with full Indian establishment profiles.");
     }
   } catch (err) {
-    console.error("Friction checking or seeding Firestore on boot:", err);
+    console.error("Friction checking or seeding Supabase on boot:", err);
   }
 }
 
@@ -654,9 +668,9 @@ async function startServer() {
 
   app.get("/api/restaurants", async (req, res) => {
     try {
-      const qSnap = await getDocs(collection(db, "restaurants"));
-      const list = qSnap.docs.map(d => d.data());
-      res.json(list);
+      const { data, error } = await db.from('restaurants').select('*');
+      if (error) throw error;
+      res.json((data || []).map(toCamel));
     } catch (err: any) {
       console.error("GET /api/restaurants error:", err);
       res.status(500).json({ error: err.message });
@@ -669,15 +683,16 @@ async function startServer() {
       if (Array.isArray(updated)) {
         for (const r of updated) {
           if (r && r.id) {
-            await setDoc(doc(db, "restaurants", r.id), r);
+            const { error } = await db.from('restaurants').upsert(toSnake(r), { onConflict: 'id' });
+            if (error) throw error;
           }
         }
       } else if (updated && updated.id) {
-        await setDoc(doc(db, "restaurants", updated.id), updated);
+        const { error } = await db.from('restaurants').upsert(toSnake(updated), { onConflict: 'id' });
+        if (error) throw error;
       }
-      const qSnap = await getDocs(collection(db, "restaurants"));
-      const list = qSnap.docs.map(d => d.data());
-      res.json({ success: true, restaurants: list });
+      const { data } = await db.from('restaurants').select('*');
+      res.json({ success: true, restaurants: (data || []).map(toCamel) });
     } catch (err: any) {
       console.error("POST /api/restaurants error:", err);
       res.status(500).json({ error: err.message });
@@ -686,9 +701,9 @@ async function startServer() {
 
   app.get("/api/menus", async (req, res) => {
     try {
-      const qSnap = await getDocs(collection(db, "menus"));
-      const list = qSnap.docs.map(d => d.data());
-      res.json(list);
+      const { data, error } = await db.from('menu_items').select('*');
+      if (error) throw error;
+      res.json((data || []).map(toCamel));
     } catch (err: any) {
       console.error("GET /api/menus error:", err);
       res.status(500).json({ error: err.message });
@@ -700,21 +715,20 @@ async function startServer() {
       const updated = req.body;
       if (Array.isArray(updated)) {
         // Drop existing and overwrite completely
-        const qSnap = await getDocs(collection(db, "menus"));
-        for (const d of qSnap.docs) {
-          await deleteDoc(d.ref);
-        }
+        const { error: delErr } = await db.from('menu_items').delete().neq('id', '__nonexistent__');
+        if (delErr) throw delErr;
         for (const m of updated) {
           if (m && m.id) {
-            await setDoc(doc(db, "menus", m.id), m);
+            const { error } = await db.from('menu_items').upsert(toSnake(m), { onConflict: 'id' });
+            if (error) throw error;
           }
         }
       } else if (updated && updated.id) {
-        await setDoc(doc(db, "menus", updated.id), updated);
+        const { error } = await db.from('menu_items').upsert(toSnake(updated), { onConflict: 'phone' });
+        if (error) throw error;
       }
-      const qSnapNew = await getDocs(collection(db, "menus"));
-      const list = qSnapNew.docs.map(d => d.data());
-      res.json({ success: true, menus: list });
+      const { data } = await db.from('menu_items').select('*');
+      res.json({ success: true, menus: (data || []).map(toCamel) });
     } catch (err: any) {
       console.error("POST /api/menus error:", err);
       res.status(500).json({ error: err.message });
@@ -723,8 +737,9 @@ async function startServer() {
 
   app.get("/api/orders", async (req, res) => {
     try {
-      const qSnap = await getDocs(collection(db, "orders"));
-      const list = qSnap.docs.map(d => d.data());
+      const { data, error } = await db.from('orders').select('*');
+      if (error) throw error;
+      const list = (data || []).map(toCamel);
       list.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       res.json(list);
     } catch (err: any) {
@@ -737,20 +752,20 @@ async function startServer() {
     try {
       const updated = req.body;
       if (Array.isArray(updated)) {
-        const qSnap = await getDocs(collection(db, "orders"));
-        for (const d of qSnap.docs) {
-          await deleteDoc(d.ref);
-        }
+        const { error: delErr } = await db.from('orders').delete().neq('id', '__nonexistent__');
+        if (delErr) throw delErr;
         for (const o of updated) {
           if (o && o.id) {
-            await setDoc(doc(db, "orders", o.id), o);
+            const { error } = await db.from('orders').upsert(toSnake(o), { onConflict: 'id' });
+            if (error) throw error;
           }
         }
       } else if (updated && updated.id) {
-        await setDoc(doc(db, "orders", updated.id), updated);
+        const { error } = await db.from('orders').upsert(toSnake(updated), { onConflict: 'id' });
+        if (error) throw error;
       }
-      const qSnapNew = await getDocs(collection(db, "orders"));
-      const list = qSnapNew.docs.map(d => d.data());
+      const { data } = await db.from('orders').select('*');
+      const list = (data || []).map(toCamel);
       list.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       res.json({ success: true, orders: list });
     } catch (err: any) {
@@ -761,9 +776,9 @@ async function startServer() {
 
   app.get("/api/users", async (req, res) => {
     try {
-      const qSnap = await getDocs(collection(db, "users"));
-      const list = qSnap.docs.map(d => d.data());
-      res.json(list);
+      const { data, error } = await db.from('dine_in_users').select('*');
+      if (error) throw error;
+      res.json((data || []).map(toCamel));
     } catch (err: any) {
       console.error("GET /api/users error:", err);
       res.status(500).json({ error: err.message });
@@ -774,21 +789,20 @@ async function startServer() {
     try {
       const updated = req.body;
       if (Array.isArray(updated)) {
-        const qSnap = await getDocs(collection(db, "users"));
-        for (const d of qSnap.docs) {
-          await deleteDoc(d.ref);
-        }
+        const { error: delErr } = await db.from('dine_in_users').delete().neq('phone', '__nonexistent__');
+        if (delErr) throw delErr;
         for (const u of updated) {
           if (u && u.phone) {
-            await setDoc(doc(db, "users", u.phone), u);
+            const { error } = await db.from('dine_in_users').upsert(toSnake(u), { onConflict: 'phone' });
+            if (error) throw error;
           }
         }
       } else if (updated && updated.phone) {
-        await setDoc(doc(db, "users", updated.phone), updated);
+        const { error } = await db.from('dine_in_users').upsert(toSnake(updated), { onConflict: 'phone' });
+        if (error) throw error;
       }
-      const qSnapNew = await getDocs(collection(db, "users"));
-      const list = qSnapNew.docs.map(d => d.data());
-      res.json({ success: true, users: list });
+      const { data } = await db.from('dine_in_users').select('*');
+      res.json({ success: true, users: (data || []).map(toCamel) });
     } catch (err: any) {
       console.error("POST /api/users error:", err);
       res.status(500).json({ error: err.message });
@@ -798,9 +812,9 @@ async function startServer() {
   // Get all active buzzer requests
   app.get("/api/buzzers", async (req, res) => {
     try {
-      const qSnap = await getDocs(collection(db, "buzzers"));
-      const list = qSnap.docs.map(d => d.data());
-      res.json(list);
+      const { data, error } = await db.from('buzzers').select('*');
+      if (error) throw error;
+      res.json((data || []).map(toCamel));
     } catch (err: any) {
       console.error("GET /api/buzzers error:", err);
       res.status(500).json({ error: err.message });
@@ -812,11 +826,11 @@ async function startServer() {
     try {
       const bzr = req.body;
       if (bzr && bzr.id) {
-        await setDoc(doc(db, "buzzers", bzr.id), bzr);
+        const { error } = await db.from('buzzers').upsert(toSnake(bzr), { onConflict: 'id' });
+        if (error) throw error;
       }
-      const qSnap = await getDocs(collection(db, "buzzers"));
-      const list = qSnap.docs.map(d => d.data());
-      res.json({ success: true, buzzers: list });
+      const { data } = await db.from('buzzers').select('*');
+      res.json({ success: true, buzzers: (data || []).map(toCamel) });
     } catch (err: any) {
       console.error("POST /api/buzzers error:", err);
       res.status(500).json({ error: err.message });
@@ -828,7 +842,8 @@ async function startServer() {
     try {
       const { id } = req.params;
       if (id) {
-        await deleteDoc(doc(db, "buzzers", id));
+        const { error } = await db.from('buzzers').delete().eq('id', id);
+        if (error) throw error;
       }
       res.json({ success: true });
     } catch (err: any) {
@@ -839,26 +854,25 @@ async function startServer() {
 
   app.post("/api/reset", async (req, res) => {
     try {
-      const colls = ["restaurants", "menus", "orders", "users", "buzzers"];
-      for (const collName of colls) {
-        const qSnap = await getDocs(collection(db, collName));
-        for (const d of qSnap.docs) {
-          await deleteDoc(d.ref);
-        }
+      const tables = ['restaurants', 'menu_items', 'orders', 'buzzers'];
+      for (const table of tables) {
+        const { error } = await db.from(table).delete().neq('id', '__nonexistent__');
+        if (error) console.error(`Error clearing ${table}:`, error);
       }
+      await db.from('dine_in_users').delete().neq('phone', '__nonexistent__');
       for (const r of INITIAL_RESTAURANTS) {
-        await setDoc(doc(db, "restaurants", r.id), r);
+        await db.from('restaurants').upsert(toSnake(r), { onConflict: 'id' });
       }
       for (const m of INITIAL_MENUS) {
-        await setDoc(doc(db, "menus", m.id), m);
+        await db.from('menu_items').upsert(toSnake(m), { onConflict: 'id' });
       }
       for (const o of INITIAL_ORDERS) {
-        await setDoc(doc(db, "orders", o.id), o);
+        await db.from('orders').upsert(toSnake(o), { onConflict: 'id' });
       }
       for (const u of INITIAL_USERS) {
-        await setDoc(doc(db, "users", u.phone), u);
+        await db.from('dine_in_users').upsert(toSnake(u), { onConflict: 'phone' });
       }
-      res.json({ success: true, message: "Firestore database tables reverted successfully to default states." });
+      res.json({ success: true, message: "Database reset successfully to default states." });
     } catch (err: any) {
       console.error("POST /api/reset error:", err);
       res.status(500).json({ error: err.message });
@@ -868,7 +882,6 @@ async function startServer() {
   // === ANALYTICS API ENDPOINTS ===
 
   // --- Daily Summaries Aggregation ---
-  // Called after order lifecycle changes to update daily rollups
   app.post("/api/analytics/aggregate-daily-summaries", async (req, res) => {
     try {
       const { restaurantId } = req.body;
@@ -878,14 +891,13 @@ async function startServer() {
       if (restaurantId) {
         targetRestaurants = [restaurantId];
       } else {
-        const rSnap = await getDocs(collection(db, "restaurants"));
-        targetRestaurants = rSnap.docs.map(d => d.id);
+        const { data: rData } = await db.from('restaurants').select('id');
+        targetRestaurants = (rData || []).map((r: any) => r.id);
       }
 
       for (const rid of targetRestaurants) {
-        const ordSnap = await getDocs(collection(db, "orders"));
-        const orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }))
-          .filter((o: any) => o.restaurantId === rid);
+        const { data: allOrders } = await db.from('orders').select('*');
+        const orders = (allOrders || []).map(toCamel).filter((o: any) => o.restaurantId === rid);
 
         const completedOrders = orders.filter((o: any) => o.status === 'completed');
         const totalRevenue = completedOrders.reduce((s: number, o: any) => s + (o.totalAmount || 0), 0);
@@ -932,7 +944,7 @@ async function startServer() {
           createdAt: new Date().toISOString(),
         };
 
-        await setDoc(doc(db, "dailySummaries", `${rid}_${today}`), summary);
+        await db.from('daily_summaries').upsert(toSnake(summary), { onConflict: 'id' });
       }
 
       res.json({ success: true, message: `Aggregated ${targetRestaurants.length} restaurant(s) for ${today}` });
@@ -946,8 +958,8 @@ async function startServer() {
   app.get("/api/analytics/daily-summaries", async (req, res) => {
     try {
       const { restaurantId, startDate, endDate } = req.query;
-      const qSnap = await getDocs(collection(db, "dailySummaries"));
-      let summaries = qSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const { data: snapData } = await db.from('daily_summaries').select('*');
+      let summaries = (snapData || []).map(toCamel);
 
       if (restaurantId) summaries = summaries.filter((s: any) => s.restaurantId === restaurantId);
       if (startDate) summaries = summaries.filter((s: any) => s.date >= startDate);
@@ -966,8 +978,8 @@ async function startServer() {
     try {
       const { restaurantId } = req.params;
       const range = (req.query.range as string) || '7d';
-      const ordSnap = await getDocs(collection(db, "orders"));
-      let orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      const { data: ordData } = await db.from('orders').select('*');
+      let orders = (ordData || []).map(toCamel);
       if (restaurantId !== 'all') orders = orders.filter((o: any) => o.restaurantId === restaurantId);
 
       // Date filtering
@@ -1068,13 +1080,13 @@ async function startServer() {
   app.get("/api/:restaurantId/analytics/menu", async (req, res) => {
     try {
       const { restaurantId } = req.params;
-      const [ordSnap, menuSnap] = await Promise.all([
-        getDocs(collection(db, "orders")),
-        getDocs(collection(db, "menus")),
+      const [{ data: ordData }, { data: menuData }] = await Promise.all([
+        db.from('orders').select('*'),
+        db.from('menu_items').select('*'),
       ]);
-      let orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      let orders = (ordData || []).map((d: any) => toCamel(d));
       if (restaurantId !== 'all') orders = orders.filter((o: any) => o.restaurantId === restaurantId);
-      const menus = menuSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter((m: any) => restaurantId === 'all' || m.restaurantId === restaurantId);
+      const menus = (menuData || []).map((d: any) => toCamel(d)).filter((m: any) => restaurantId === 'all' || m.restaurantId === restaurantId);
 
       // Per-item aggregation
       const itemData: Record<string, { name: string; category: string; quantity: number; revenue: number; discount: number; orders: number; price: number; isVeg?: boolean; isLimitedTimeOffer: boolean; ratingsCount?: number; avgRating?: number }> = {};
@@ -1138,12 +1150,12 @@ async function startServer() {
       const range = (req.query.range as string) || '7d';
 
       // Read shifts + orders
-      const [shiftSnap, ordSnap] = await Promise.all([
-        getDocs(collection(db, "staffShifts")),
-        getDocs(collection(db, "orders")),
+      const [{ data: shiftData }, { data: ordData }] = await Promise.all([
+        db.from('staff_shifts').select('*'),
+        db.from('orders').select('*'),
       ]);
-      let shifts = shiftSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
-      let orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      let shifts = (shiftData || []).map((d: any) => toCamel(d));
+      let orders = (ordData || []).map((d: any) => toCamel(d));
       if (restaurantId !== 'all') {
         shifts = shifts.filter((s: any) => s.restaurantId === restaurantId);
         orders = orders.filter((o: any) => o.restaurantId === restaurantId);
@@ -1201,14 +1213,14 @@ async function startServer() {
   app.get("/api/:restaurantId/analytics/inventory", async (req, res) => {
     try {
       const { restaurantId } = req.params;
-      const [invSnap, wasteSnap, recipeSnap] = await Promise.all([
-        getDocs(collection(db, "inventory")),
-        getDocs(collection(db, "wasteLogs")),
-        getDocs(collection(db, "recipes")),
+      const [{ data: invData }, { data: wasteData }, { data: recipeData }] = await Promise.all([
+        db.from('inventory').select('*'),
+        db.from('waste_logs').select('*'),
+        db.from('recipes').select('*'),
       ]);
-      let inventory = invSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
-      let wasteLogs = wasteSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
-      let recipes = recipeSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      let inventory = (invData || []).map((d: any) => toCamel(d));
+      let wasteLogs = (wasteData || []).map((d: any) => toCamel(d));
+      let recipes = (recipeData || []).map((d: any) => toCamel(d));
       if (restaurantId !== 'all') {
         inventory = inventory.filter((i: any) => i.restaurantId === restaurantId);
         wasteLogs = wasteLogs.filter((w: any) => w.restaurantId === restaurantId);
@@ -1241,12 +1253,12 @@ async function startServer() {
     try {
       const { restaurantId } = req.params;
       const range = (req.query.range as string) || '30d';
-      const [custSnap, ordSnap] = await Promise.all([
-        getDocs(collection(db, "customers")),
-        getDocs(collection(db, "orders")),
+      const [{ data: custData }, { data: ordData }] = await Promise.all([
+        db.from('customer_profiles').select('*'),
+        db.from('orders').select('*'),
       ]);
-      let customers = custSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
-      let orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      let customers = (custData || []).map((d: any) => toCamel(d));
+      let orders = (ordData || []).map((d: any) => toCamel(d));
       if (restaurantId !== 'all') {
         customers = customers.filter((c: any) => c.restaurantId === restaurantId);
         orders = orders.filter((o: any) => o.restaurantId === restaurantId);
@@ -1299,8 +1311,8 @@ async function startServer() {
     try {
       const { restaurantId } = req.params;
       const range = (req.query.range as string) || '30d';
-      const fbSnap = await getDocs(collection(db, "feedbackResponses"));
-      let feedback = fbSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      const { data: fbData } = await db.from('feedback_responses').select('*');
+      let feedback = (fbData || []).map(toCamel);
       if (restaurantId !== 'all') feedback = feedback.filter((f: any) => f.restaurantId === restaurantId);
 
       const now = new Date();
@@ -1345,12 +1357,12 @@ async function startServer() {
   app.get("/api/:restaurantId/analytics/operations", async (req, res) => {
     try {
       const { restaurantId } = req.params;
-      const [ordSnap, kdsSnap] = await Promise.all([
-        getDocs(collection(db, "orders")),
-        getDocs(collection(db, "kdsEvents")),
+      const [{ data: ordData }, { data: kdsData }] = await Promise.all([
+        db.from('orders').select('*'),
+        db.from('kds_events').select('*'),
       ]);
-      let orders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
-      let kdsEvents = kdsSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      let orders = (ordData || []).map((d: any) => toCamel(d));
+      let kdsEvents = (kdsData || []).map((d: any) => toCamel(d));
       if (restaurantId !== 'all') {
         orders = orders.filter((o: any) => o.restaurantId === restaurantId);
         kdsEvents = kdsEvents.filter((e: any) => e.restaurantId === restaurantId);
@@ -1450,12 +1462,12 @@ async function startServer() {
   // --- SuperAdmin: Cross-tenant Platform Analytics ---
   app.get("/api/superadmin/analytics/platform", async (req, res) => {
     try {
-      const [rSnap, ordSnap] = await Promise.all([
-        getDocs(collection(db, "restaurants")),
-        getDocs(collection(db, "orders")),
+      const [{ data: rData }, { data: ordData }] = await Promise.all([
+        db.from('restaurants').select('*'),
+        db.from('orders').select('*'),
       ]);
-      const restaurants = rSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const allOrders = ordSnap.docs.map(d => ({ id: d.id, ...d.data() as any }));
+      const restaurants = (rData || []).map((d: any) => toCamel(d));
+      const allOrders = (ordData || []).map((d: any) => toCamel(d));
 
       const revenue = allOrders.filter((o: any) => o.status !== 'rejected').reduce((s: number, o: any) => s + (o.totalAmount || 0), 0);
       const avgOrderValue = allOrders.filter((o: any) => o.status !== 'rejected').length > 0
@@ -1510,7 +1522,7 @@ async function startServer() {
         actionable: rating <= 2,
         createdAt: new Date().toISOString(),
       };
-      await setDoc(doc(db, "feedbackResponses", id), feedback);
+      await db.from('feedback_responses').upsert(toSnake(feedback), { onConflict: 'id' });
       res.json({ success: true, id });
     } catch (err: any) {
       console.error(`POST /api/${req.params.restaurantId}/feedback error:`, err);
@@ -1528,7 +1540,7 @@ async function startServer() {
         ...req.body,
         loggedAt: new Date().toISOString(),
       };
-      await setDoc(doc(db, "wasteLogs", log.id), log);
+      await db.from('waste_logs').upsert(toSnake(log), { onConflict: 'id' });
       res.json({ success: true, id: log.id });
     } catch (err: any) {
       console.error(`POST /api/${req.params.restaurantId}/waste-log error:`, err);

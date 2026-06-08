@@ -1,6 +1,0 @@
-{
-  "name": "Digital Menu System",
-  "description": "Multi-tenant digital menu system with real-time checkout, chef kitchen screens, and AI dining assistants.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

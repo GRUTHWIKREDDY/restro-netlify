@@ -12,6 +12,10 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    define: {
+      'import.meta.env.VITE_RESTRO_PROJECT_URL_SUPABASE': JSON.stringify(process.env.RESTRO_PROJECT_URL_SUPABASE || ''),
+      'import.meta.env.VITE_RESTRO_PUBLISHABLE_KEY': JSON.stringify(process.env.RESTRO_PUBLISHABLE_KEY || ''),
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.

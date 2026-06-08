@@ -5,8 +5,7 @@ import {
   ArrowRight, Info, Bell, Calculator, QrCode, Star, Award, Heart, CheckCircle, RefreshCw, Lock, Clock, MapPin
 } from 'lucide-react';
 import { Restaurant, MenuItem, Order, DineInUser, ChatMessage, Buzzer } from '../types';
-import { db } from '../firebase';
-import { doc, setDoc } from 'firebase/firestore';
+import { supabase, toSnake } from '../supabase';
 
 interface DineInProps {
   restaurant: Restaurant;
@@ -150,7 +149,7 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
         createdAt: new Date().toISOString()
       };
 
-      await setDoc(doc(db, "buzzers", bzrId), newBuzzer);
+      await supabase.from('buzzers').upsert({ ...toSnake(newBuzzer), id: bzrId }, { onConflict: 'id' });
       await fetch("/api/buzzers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -193,7 +192,7 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
         };
 
         // Save back to Firestore
-        await setDoc(doc(db, "users", customerSession.phone), userPayload);
+        await supabase.from('dine_in_users').upsert(toSnake(userPayload), { onConflict: 'phone' });
         // Also call backend endpoint to sync
         await fetch("/api/users", {
           method: "POST",
@@ -208,11 +207,12 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
       const newAvg = parseFloat(((prevAvg * prevCount + stars) / newCount).toFixed(1));
 
       // Update local and firestore menu items
-      await setDoc(doc(db, "menus", menuId), {
+      await supabase.from('menu_items').upsert(toSnake({
         ...item,
+        id: menuId,
         avgRating: newAvg,
         ratingsCount: newCount
-      }, { merge: true });
+      }), { onConflict: 'id' });
 
       triggerAppAlert("Feedback Recorded", `Thank you for rating ${item.name} with ${stars} stars!`, "success");
       setRatingItemMenuId(null);
@@ -464,11 +464,12 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
 
   const handleStaffApproveHandshakeLocally = async (orderId: string) => {
     try {
-      await setDoc(doc(db, "orders", orderId), { 
+      await supabase.from('orders').upsert(toSnake({
+        id: orderId,
         handshakeApproved: true,
         requiresHandshake: false,
         status: "accepted"
-      }, { merge: true });
+      }), { onConflict: 'id' });
       triggerAppAlert("Staff Handshake Approved", "Table physical presence verified by waiter. Order is now accepted.", "success");
     } catch (err) {
       triggerAppAlert("Error", "Failed to update handshake ticket status.", "error");

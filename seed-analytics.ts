@@ -8,19 +8,24 @@
  * and generates dailySummaries for historical analytics.
  */
 
-import { initializeApp } from 'firebase/app';
-import {
-  getFirestore,
-  doc,
-  setDoc,
-  getDocs,
-  collection,
-  deleteDoc,
-} from 'firebase/firestore';
-import firebaseConfig from './firebase-applet-config.json';
+import { createClient } from '@supabase/supabase-js';
+import * as dotenv from 'dotenv';
+dotenv.config();
 
-const fApp = initializeApp(firebaseConfig);
-const db = getFirestore(fApp, (firebaseConfig as any).firestoreDatabaseId);
+const supabaseUrl = process.env.RESTRO_PROJECT_URL_SUPABASE || '';
+const supabaseServiceKey = process.env.RESTRO_SUPABASE || '';
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+function toSnake(obj: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+    result[snakeKey] = value;
+  }
+  return result;
+}
+
+const db = supabaseAdmin;
 
 // Menu items by restaurant
 const MENU_ITEMS: Record<string, { id: string; name: string; price: number; category: string; isVeg: boolean }[]> = {
@@ -102,12 +107,11 @@ function getRandomMinute(): number {
 }
 
 async function clearCollections() {
-  for (const coll of ['orders', 'dailySummaries', 'feedbackResponses', 'customers', 'staffShifts']) {
-    const snap = await getDocs(collection(db, coll));
-    for (const d of snap.docs) {
-      await deleteDoc(d.ref);
-    }
-    console.log(`Cleared ${coll}`);
+  const tables = ['orders', 'daily_summaries', 'feedback_responses', 'customer_profiles', 'staff_shifts'];
+  for (const table of tables) {
+    const { error } = await db.from(table).delete().neq('id', '__nonexistent__');
+    if (error) console.error(`Error clearing ${table}:`, error);
+    console.log(`Cleared ${table}`);
   }
 }
 
@@ -241,7 +245,8 @@ async function seed() {
 
       // Write orders
       for (const o of dayOrders) {
-        await setDoc(doc(db, 'orders', o.id), o);
+        const { error } = await db.from('orders').upsert(toSnake(o), { onConflict: 'id' });
+      if (error) console.error('Seed order error:', error);
       }
 
       // Compute daily summary
@@ -290,7 +295,8 @@ async function seed() {
         createdAt: date.toISOString(),
       };
 
-      await setDoc(doc(db, 'dailySummaries', `${restaurantId}_${dateStr}`), summary);
+      const { error: dsErr } = await db.from('daily_summaries').upsert(toSnake(summary), { onConflict: 'id' });
+      if (dsErr) console.error('Seed daily_summaries error:', dsErr);
       totalOrders += dayOrders.length;
     }
 
@@ -302,7 +308,7 @@ async function seed() {
   // Write customer profiles
   console.log('Writing customer profiles...');
   for (const [phone, c] of Object.entries(customerMap)) {
-    await setDoc(doc(db, 'customers', `cust_${c.phone.replace(/\D/g, '')}`), {
+    const { error: cErr } = await db.from('customer_profiles').upsert(toSnake({
       id: `cust_${c.phone.replace(/\D/g, '')}`,
       restaurantId: pickRandom(Object.keys(MENU_ITEMS)),
       phone: c.phone,
@@ -311,7 +317,8 @@ async function seed() {
       lastVisit: c.lastVisit.toISOString(),
       visitCount: c.visits,
       totalSpend: c.spend,
-    });
+    }), { onConflict: 'id' });
+    if (cErr) console.error('Seed customer error:', cErr);
   }
 
   // Write some staff shifts
@@ -325,7 +332,7 @@ async function seed() {
       // Morning shift
       const morningStart = new Date(date);
       morningStart.setHours(9, 0);
-      await setDoc(doc(db, 'staffShifts', `shift_${restaurantId}_${dateStr}_morning`), {
+      await db.from('staff_shifts').upsert(toSnake({
         id: `shift_${restaurantId}_${dateStr}_morning`,
         restaurantId,
         staffId: `staff_${restaurantId}_1`,
@@ -336,12 +343,12 @@ async function seed() {
         hourlyRate: 250,
         totalHours: 9,
         ordersHandled: randomInt(15, 35),
-      });
+      }), { onConflict: 'id' });
 
       // Evening shift
       const eveningStart = new Date(date);
       eveningStart.setHours(14, 0);
-      await setDoc(doc(db, 'staffShifts', `shift_${restaurantId}_${dateStr}_evening`), {
+      await db.from('staff_shifts').upsert(toSnake({
         id: `shift_${restaurantId}_${dateStr}_evening`,
         restaurantId,
         staffId: `staff_${restaurantId}_2`,
@@ -352,7 +359,7 @@ async function seed() {
         hourlyRate: 180,
         totalHours: 10,
         ordersHandled: randomInt(20, 50),
-      });
+      }), { onConflict: 'id' });
     }
   }
 
@@ -363,7 +370,7 @@ async function seed() {
     const date = new Date(now);
     date.setDate(date.getDate() - randomInt(0, 60));
     const rating = randomInt(1, 5);
-    await setDoc(doc(db, 'feedbackResponses', `fb_seed_${i}`), {
+    await db.from('feedback_responses').upsert(toSnake({
       id: `fb_seed_${i}`,
       orderId: `ord_seed_${restaurantId}_${formatDate(date)}_${i}`,
       restaurantId,
@@ -372,13 +379,11 @@ async function seed() {
       sentimentLabel: rating >= 4 ? 'positive' : rating === 3 ? 'neutral' : 'negative',
       themeTags: rating <= 2 ? ['wait_time'] : rating === 3 ? ['staff'] : [],
       actionable: rating <= 2,
-      createdAt: date.toISOString(),
-    });
+      createdAt: new Date().toISOString(),
+    }), { onConflict: 'id' });
   }
 
-  console.log(`\n✅ Seed complete! Generated ${totalOrders} orders across 90 days for ${Object.keys(MENU_ITEMS).length} outlets.`);
-  console.log(`   ${Object.keys(customerMap).length} customer profiles created.`);
-  process.exit(0);
+  console.log('Seed complete!');
 }
 
 seed().catch(err => {

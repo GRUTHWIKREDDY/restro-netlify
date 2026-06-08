@@ -6,8 +6,7 @@ import {
   AlertOctagon, Info, ArrowLeftRight, Bell, Camera, Check, Loader2, Utensils
 } from 'lucide-react';
 import { Restaurant, MenuItem, Order, Buzzer, FloorDef } from '../types';
-import { db } from '../firebase';
-import { doc, deleteDoc } from 'firebase/firestore';
+import { supabase, toSnake } from '../supabase';
 import html2canvas from 'html2canvas';
 import AnalyticsDashboard from './analytics/AnalyticsDashboard';
 
@@ -83,7 +82,7 @@ export default function RestaurantAdminPanel({
 
   const handleDismissBuzzer = async (buzzerId: string) => {
     try {
-      await deleteDoc(doc(db, "buzzers", buzzerId));
+      await supabase.from('buzzers').delete().eq('id', buzzerId);
       triggerAppAlert("Summon Cleared", "Table waiter call has been verified and settled.", "success");
     } catch (e) {
       triggerAppAlert("Buzzer Settle Error", "Could not remove chime signal.", "error");

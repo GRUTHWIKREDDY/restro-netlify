@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Architecture & Structure
 
 ### High-Level Design
-The project is a multi-tenant SaaS for restaurant operations. It uses a unified Node.js/Express server that serves both the API and the React frontend. Real-time data synchronization is handled by Firebase Firestore.
+The project is a multi-tenant SaaS for restaurant operations. It uses a unified Node.js/Express server that serves both the API and the React frontend. Real-time data synchronization is handled by **Supabase Realtime** (PostgreSQL logical replication). The database is **PostgreSQL** managed by Supabase.
 
 ### Key Components & Portals
 The application is split into several role-based interfaces:

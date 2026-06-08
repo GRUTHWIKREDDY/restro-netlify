@@ -4,8 +4,7 @@ import {
   Sliders, CheckCircle, AlertOctagon, Info
 } from 'lucide-react';
 import { Restaurant, MenuItem, Order, DineInUser, Buzzer, FloorDef } from './types';
-import { db } from './firebase';
-import { collection, onSnapshot, doc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { supabase, toCamel } from './supabase';
 
 // Import modular layouts
 import DineInCustomerUI from './components/DineInCustomerUI';
@@ -178,53 +177,93 @@ export default function App() {
     }
   };
 
-  // Set up Firestore client-side real-time onSnapshot listeners
+  // Set up Supabase Realtime subscriptions for live data
   useEffect(() => {
-    const unsubRestaurants = onSnapshot(collection(db, "restaurants"), (snapshot) => {
-      const list = snapshot.docs.map(doc => doc.data() as Restaurant);
-      setRestaurants(list);
-    }, (error) => {
-      console.error("Firestore onSnapshot restaurants error:", error);
+    // Initial fetches
+    supabase.from('restaurants').select('*').then(({ data }) => {
+      if (data) setRestaurants(data.map(toCamel));
+    });
+    supabase.from('menu_items').select('*').then(({ data }) => {
+      if (data) setMenus(data.map(toCamel));
+    });
+    supabase.from('orders').select('*').then(({ data }) => {
+      if (data) {
+        const list = data.map(toCamel) as Order[];
+        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setOrders(list);
+      }
+    });
+    supabase.from('dine_in_users').select('*').then(({ data }) => {
+      if (data) setUsers(data.map(toCamel));
+    });
+    supabase.from('buzzers').select('*').then(({ data }) => {
+      if (data) {
+        const list = data.map(toCamel) as Buzzer[];
+        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setBuzzers(list);
+      }
     });
 
-    const unsubMenus = onSnapshot(collection(db, "menus"), (snapshot) => {
-      const list = snapshot.docs.map(doc => doc.data() as MenuItem);
-      setMenus(list);
-    }, (error) => {
-      console.error("Firestore onSnapshot menus error:", error);
-    });
+    // Realtime subscriptions — re-fetch full list on any change
+    const refreshRestaurants = supabase
+      .channel('restaurants-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'restaurants' }, () => {
+        supabase.from('restaurants').select('*').then(({ data }) => {
+          if (data) setRestaurants(data.map(toCamel));
+        });
+      })
+      .subscribe();
 
-    const unsubOrders = onSnapshot(collection(db, "orders"), (snapshot) => {
-      const list = snapshot.docs.map(doc => doc.data() as Order);
-      // Sort orders descending by createdAt timestamp
-      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      setOrders(list);
-    }, (error) => {
-      console.error("Firestore onSnapshot orders error:", error);
-    });
+    const refreshMenus = supabase
+      .channel('menus-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, () => {
+        supabase.from('menu_items').select('*').then(({ data }) => {
+          if (data) setMenus(data.map(toCamel));
+        });
+      })
+      .subscribe();
 
-    const unsubUsers = onSnapshot(collection(db, "users"), (snapshot) => {
-      const list = snapshot.docs.map(doc => doc.data() as DineInUser);
-      setUsers(list);
-    }, (error) => {
-      console.error("Firestore onSnapshot users error:", error);
-    });
+    const refreshOrders = supabase
+      .channel('orders-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+        supabase.from('orders').select('*').then(({ data }) => {
+          if (data) {
+            const list = data.map(toCamel) as Order[];
+            list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            setOrders(list);
+          }
+        });
+      })
+      .subscribe();
 
-    const unsubBuzzers = onSnapshot(collection(db, "buzzers"), (snapshot) => {
-      const list = snapshot.docs.map(doc => doc.data() as Buzzer);
-      // Sort buzzers descending by createdAt
-      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      setBuzzers(list);
-    }, (error) => {
-      console.error("Firestore onSnapshot buzzers error:", error);
-    });
+    const refreshUsers = supabase
+      .channel('users-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dine_in_users' }, () => {
+        supabase.from('dine_in_users').select('*').then(({ data }) => {
+          if (data) setUsers(data.map(toCamel));
+        });
+      })
+      .subscribe();
+
+    const refreshBuzzers = supabase
+      .channel('buzzers-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'buzzers' }, () => {
+        supabase.from('buzzers').select('*').then(({ data }) => {
+          if (data) {
+            const list = data.map(toCamel) as Buzzer[];
+            list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            setBuzzers(list);
+          }
+        });
+      })
+      .subscribe();
 
     return () => {
-      unsubRestaurants();
-      unsubMenus();
-      unsubOrders();
-      unsubUsers();
-      unsubBuzzers();
+      supabase.removeChannel(refreshRestaurants);
+      supabase.removeChannel(refreshMenus);
+      supabase.removeChannel(refreshOrders);
+      supabase.removeChannel(refreshUsers);
+      supabase.removeChannel(refreshBuzzers);
     };
   }, []);
 
@@ -454,7 +493,7 @@ export default function App() {
       let clearedCount = 0;
       for (const order of completedOrders) {
         try {
-          await updateDoc(doc(db, "orders", order.id), { released: true });
+          await supabase.from('orders').update({ released: true }).eq('id', order.id);
           clearedCount++;
         } catch (err) {
           console.error("Failed to update order to released state during status transition:", err);
