@@ -1151,6 +1151,22 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                             return;
                           }
                           onMenuItemSave({ ...item, isAvailable: !item.isAvailable }, true);
+                          // If marking as sold out, cancel pending orders with this item
+                          if (item.isAvailable) {
+                            fetch("/api/menus/sold-out/" + item.id, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ restaurantId: restaurant.id })
+                            }).then(r => r.json()).then(data => {
+                              if (data.affectedOrders?.length > 0) {
+                                triggerAppAlert(
+                                  "Items Auto-Cancelled",
+                                  `Marked "${item.name}" as sold out. ${data.cancelledItems} item(s) auto-cancelled from ${data.affectedOrders.length} order(s).`,
+                                  "info"
+                                );
+                              }
+                            }).catch(() => {});
+                          }
                         }}
                         className={`px-1.5 py-0.5 text-[10px] rounded font-black uppercase ${
                           item.isAvailable ? 'bg-emerald-50 text-emerald-600 border border-emerald-250' :

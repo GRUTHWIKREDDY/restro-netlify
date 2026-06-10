@@ -56,6 +56,7 @@ export interface OrderItem {
   promoValue: number; // Discount applied per unit
   notes?: string; // Spice level / Allergy warning / Prep customizations
   rated?: number; // Rated rating for completed order items
+  cancelledReason?: string; // Why item was removed (e.g. 'sold_out')
 }
 
 export type OrderStatus = "pending" | "accepted" | "rejected" | "completed";

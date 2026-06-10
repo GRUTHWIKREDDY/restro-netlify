@@ -1557,6 +1557,58 @@ async function startServer() {
     }
   });
 
+  // === SOLD-OUT HANDLER: Cancel sold-out items from pending/accepted orders ===
+  app.post("/api/menus/sold-out/:menuId", async (req, res) => {
+    try {
+      const { menuId } = req.params;
+      const { restaurantId } = req.body;
+
+      // Find all pending/accepted orders containing this menu item
+      const { data: allOrders } = await db.from('orders').select('*');
+      if (!allOrders) return res.json({ affectedOrders: [], cancelledItems: 0 });
+
+      const affected: any[] = [];
+      let cancelledCount = 0;
+
+      for (const row of allOrders) {
+        const order = toCamel(row);
+        if (order.restaurantId !== restaurantId) continue;
+        if (order.status !== 'pending' && order.status !== 'accepted') continue;
+
+        const items = order.items || [];
+        const soldOutItems = items.filter((it: any) => it.menuId === menuId);
+        if (soldOutItems.length === 0) continue;
+
+        // Mark items as cancelled with reason
+        const updatedItems = items.map((it: any) =>
+          it.menuId === menuId ? { ...it, cancelledReason: 'sold_out', quantity: 0 } : it
+        ).filter((it: any) => it.quantity > 0);
+
+        cancelledCount += soldOutItems.reduce((s: number, it: any) => s + (it.quantity || 0), 0);
+
+        const newTotal = updatedItems.reduce((s: number, it: any) =>
+          s + (it.price * it.quantity) - (it.promoValue * it.quantity), 0);
+
+        const updatedOrder = {
+          ...order,
+          items: updatedItems,
+          totalAmount: newTotal,
+          status: updatedItems.length === 0 ? 'rejected' : order.status,
+        };
+
+        const { error } = await db.from('orders').upsert(toSnake(updatedOrder), { onConflict: 'id' });
+        if (error) console.error('Sold-out update error:', error);
+
+        affected.push({ orderId: order.id, itemsRemoved: soldOutItems.length, newStatus: updatedOrder.status });
+      }
+
+      res.json({ affectedOrders: affected, cancelledItems: cancelledCount });
+    } catch (err: any) {
+      console.error("POST /api/menus/sold-out error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // === DEEPSEEK AI SECURE BACKEND CONTROLLER ===
 
   app.post("/api/gemini/chat", async (req, res) => {

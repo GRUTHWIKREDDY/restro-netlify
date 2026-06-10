@@ -125,7 +125,7 @@ export default function App() {
   // Enforce correct modes depending on the current URL path
   useEffect(() => {
     if (isPortalRoute) {
-      if (currentPath === '/kcodeit' && isAuthenticated) {
+      if (currentPath === '/kcodeit' && isAuthenticated && activeMode === 'dinein') {
         setActiveMode('superadmin');
       } else if (isAuthenticated && activeMode === 'dinein') {
         setActiveMode('restadmin');
