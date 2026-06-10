@@ -664,6 +664,15 @@ async function startServer() {
   // Proactively run Seeding Check
   await seedDatabaseIfEmpty();
 
+  // SaaS Login API Endpoint
+  app.post("/kcodeit", (req, res) => {
+    const { username, password } = req.body;
+    if (username === "superadmin" && password === "password") {
+      return res.json({ success: true, role: "superadmin" });
+    }
+    return res.status(401).json({ success: false, message: "Invalid credentials for SaaS Super Control." });
+  });
+
   // === DATABASE API ENDPOINTS ===
 
   app.get("/api/restaurants", async (req, res) => {
@@ -724,7 +733,7 @@ async function startServer() {
           }
         }
       } else if (updated && updated.id) {
-        const { error } = await db.from('menu_items').upsert(toSnake(updated), { onConflict: 'phone' });
+        const { error } = await db.from('menu_items').upsert(toSnake(updated), { onConflict: 'id' });
         if (error) throw error;
       }
       const { data } = await db.from('menu_items').select('*');

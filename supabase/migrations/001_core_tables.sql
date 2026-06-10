@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS restaurants (
   hide_history_older_than_one_day BOOLEAN DEFAULT false,
   disable_admin_portal BOOLEAN DEFAULT false,
   disable_kds_portal BOOLEAN DEFAULT false,
+  enable_sla_warning BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -100,3 +101,6 @@ CREATE TABLE IF NOT EXISTS buzzers (
 CREATE INDEX IF NOT EXISTS idx_buzzers_restaurant ON buzzers(restaurant_id);
 CREATE INDEX IF NOT EXISTS idx_buzzers_status ON buzzers(status);
 ALTER PUBLICATION supabase_realtime ADD TABLE buzzers;
+
+-- Alter table to add capability if it doesn't exist yet
+ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS enable_sla_warning BOOLEAN DEFAULT false;

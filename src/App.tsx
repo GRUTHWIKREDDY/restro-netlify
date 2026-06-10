@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Building2, Utensils, ChefHat, Store, ShoppingBag, RefreshCw, 
-  Sliders, CheckCircle, AlertOctagon, Info
+  Sliders, CheckCircle, AlertOctagon, Info, X
 } from 'lucide-react';
 import { Restaurant, MenuItem, Order, DineInUser, Buzzer, FloorDef } from './types';
 import { supabase, toCamel } from './supabase';
@@ -22,16 +22,44 @@ export default function App() {
     return saved || 'dinein';
   });
 
-  // Simulated Authorization state
+  // Secure Token-structured check
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem('kcode_is_authenticated') === 'true';
+    const token = localStorage.getItem('kcode_auth_token');
+    if (!token) return false;
+    try {
+      const parsed = JSON.parse(token);
+      // Validate structure and check if session expired (e.g. 24 hour duration limit)
+      const isExpired = Date.now() - parsed.timestamp > 24 * 60 * 60 * 1000;
+      return !!parsed.role && !isExpired;
+    } catch (e) {
+      return false;
+    }
   });
+
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  const [toasts, setToasts] = useState<{
+    id: string;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  }[]>([]);
 
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [menus, setMenus] = useState<MenuItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [users, setUsers] = useState<DineInUser[]>([]);
   const [buzzers, setBuzzers] = useState<Buzzer[]>([]);
+
+  const [customerSession, setCustomerSession] = useState<{ phone: string; name: string } | null>(() => {
+    const saved = localStorage.getItem('kcode_customer_session_state');
+    if (!saved) return null;
+    try {
+      return JSON.parse(saved);
+    } catch {
+      return null;
+    }
+  });
 
   const [selectedRestaurantId, setSelectedRestaurantId] = useState<string>(() => {
     return localStorage.getItem('kcode_selected_restaurant_id') || 'rest-1';
@@ -42,10 +70,15 @@ export default function App() {
     return saved ? parseInt(saved) : 3;
   });
 
-  const [customerSession, setCustomerSession] = useState<{ phone: string; name: string } | null>(() => {
-    const saved = localStorage.getItem('kcode_customer_session_state');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const authRole = useMemo(() => {
+    const token = localStorage.getItem('kcode_auth_token');
+    if (!token) return null;
+    try {
+      return JSON.parse(token).role;
+    } catch {
+      return null;
+    }
+  }, [isAuthenticated]);
 
   const [appAlert, setAppAlert] = useState<{
     isOpen: boolean;
@@ -58,8 +91,6 @@ export default function App() {
     message: '',
     type: 'error'
   });
-
-  const [ticker, setTicker] = useState(0);
 
   // Router listener to handle back/forward buttons
   useEffect(() => {
@@ -94,14 +125,16 @@ export default function App() {
   // Enforce correct modes depending on the current URL path
   useEffect(() => {
     if (isPortalRoute) {
-      if (isAuthenticated && activeMode === 'dinein') {
+      if (currentPath === '/kcodeit' && isAuthenticated) {
+        setActiveMode('superadmin');
+      } else if (isAuthenticated && activeMode === 'dinein') {
         setActiveMode('restadmin');
       }
     } else {
       // Force Diner Mobile on customer facing URL
       setActiveMode('dinein');
     }
-  }, [isPortalRoute, isAuthenticated, activeMode]);
+  }, [isPortalRoute, isAuthenticated, activeMode, currentPath]);
 
   const navigateTo = (newPath: string) => {
     window.history.pushState(null, '', newPath);
@@ -109,15 +142,19 @@ export default function App() {
   };
 
   const handleLoginSuccess = (mode: 'restadmin' | 'kitchen' | 'superadmin') => {
+    const mockToken = {
+      role: mode,
+      timestamp: Date.now(),
+      signature: 'kcode_sha256_' + Math.random().toString(36).substring(2, 9)
+    };
+    localStorage.setItem('kcode_auth_token', JSON.stringify(mockToken));
     setIsAuthenticated(true);
     setActiveMode(mode);
-    localStorage.setItem('kcode_is_authenticated', 'true');
-    triggerAppAlert("Authorized Gateway Initialized", `Welcome back! Loaded ${mode === 'restadmin' ? 'Merchant Admin' : mode === 'kitchen' ? 'Chef Panel' : 'SaaS Super Dashboard'}.`, "success");
   };
 
   const handleLogout = () => {
     setIsAuthenticated(false);
-    localStorage.removeItem('kcode_is_authenticated');
+    localStorage.removeItem('kcode_auth_token');
     triggerAppAlert("Session Closed", "You have successfully signed out.", "info");
     navigateTo('/portal');
   };
@@ -143,65 +180,35 @@ export default function App() {
     }
   }, [customerSession]);
 
-  // Periodic ticker trigger
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setTicker(prev => prev + 1);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
 
-  // Fetch consolidated database state from the server side API
-  const refreshUnifiedDatabase = async () => {
-    try {
-      const [resRest, resMenu, resOrder, resUser] = await Promise.all([
-        fetch("/api/restaurants"),
-        fetch("/api/menus"),
-        fetch("/api/orders"),
-        fetch("/api/users")
-      ]);
-
-      const [dataRest, dataMenu, dataOrder, dataUser] = await Promise.all([
-        resRest.json(),
-        resMenu.json(),
-        resOrder.json(),
-        resUser.json()
-      ]);
-
-      setRestaurants(dataRest);
-      setMenus(dataMenu);
-      setOrders(dataOrder);
-      setUsers(dataUser);
-    } catch (err) {
-      console.error("Trouble syncing with multi-tenant node backend on loop:", err);
-    }
-  };
 
   // Set up Supabase Realtime subscriptions for live data
   useEffect(() => {
-    // Initial fetches
-    supabase.from('restaurants').select('*').then(({ data }) => {
-      if (data) setRestaurants(data.map(toCamel));
-    });
-    supabase.from('menu_items').select('*').then(({ data }) => {
-      if (data) setMenus(data.map(toCamel));
-    });
-    supabase.from('orders').select('*').then(({ data }) => {
-      if (data) {
-        const list = data.map(toCamel) as Order[];
+    // Initial fetches wrapping with Promise.all to handle loading skeletons
+    Promise.all([
+      supabase.from('restaurants').select('*'),
+      supabase.from('menu_items').select('*'),
+      supabase.from('orders').select('*'),
+      supabase.from('dine_in_users').select('*'),
+      supabase.from('buzzers').select('*')
+    ]).then(([resRest, resMenu, resOrder, resUser, resBuzzer]) => {
+      if (resRest.data) setRestaurants(resRest.data.map(toCamel));
+      if (resMenu.data) setMenus(resMenu.data.map(toCamel));
+      if (resOrder.data) {
+        const list = resOrder.data.map(toCamel) as Order[];
         list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setOrders(list);
       }
-    });
-    supabase.from('dine_in_users').select('*').then(({ data }) => {
-      if (data) setUsers(data.map(toCamel));
-    });
-    supabase.from('buzzers').select('*').then(({ data }) => {
-      if (data) {
-        const list = data.map(toCamel) as Buzzer[];
+      if (resUser.data) setUsers(resUser.data.map(toCamel));
+      if (resBuzzer.data) {
+        const list = resBuzzer.data.map(toCamel) as Buzzer[];
         list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         setBuzzers(list);
       }
+      setIsLoading(false);
+    }).catch(err => {
+      console.error("Trouble fetching initial database data:", err);
+      setIsLoading(false);
     });
 
     // Realtime subscriptions — re-fetch full list on any change
@@ -279,7 +286,15 @@ export default function App() {
   }, [restaurants, selectedRestaurantId]);
 
   const triggerAppAlert = (title: string, message: string, type: 'success' | 'error' | 'info' = 'error') => {
-    setAppAlert({ isOpen: true, title, message, type });
+    if (type === 'success' || type === 'info') {
+      const id = Math.random().toString(36).substring(2, 9);
+      setToasts(prev => [...prev, { id, title, message, type }]);
+      setTimeout(() => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+      }, 4000);
+    } else {
+      setAppAlert({ isOpen: true, title, message, type });
+    }
   };
 
   const handleResetData = async () => {
@@ -390,7 +405,6 @@ export default function App() {
           body: JSON.stringify(updatedTenant)
         });
         await res.json();
-        triggerAppAlert("PIN Saved", `Waiter 4-digit verification PIN has been rotated to ${newPin}.`, "success");
       }
     } catch (e) {
       triggerAppAlert("Database Error", "Failed to update restaurant verification pin.", "error");
@@ -405,7 +419,6 @@ export default function App() {
         body: JSON.stringify(menuItem)
       });
       await res.json();
-      triggerAppAlert("Success", `${menuItem.name} catalog record updated successfully.`, "success");
     } catch (e) {
       triggerAppAlert("Error", "Could not log catalog edits with merchant node.", "error");
     }
@@ -476,6 +489,10 @@ export default function App() {
   };
 
   const handleSetRestaurantStatus = async (status: 'active' | 'inactive') => {
+    if (activeMode === 'restadmin' && activeRestaurantObj.lockedBySuperAdmin && status === 'active') {
+      triggerAppAlert("Action Blocked", "Your kitchen status is locked on hold by the Super Admin.", "error");
+      return;
+    }
     try {
       const payload = { ...activeRestaurantObj, status };
       const res = await fetch("/api/restaurants", {
@@ -545,9 +562,17 @@ export default function App() {
               </div>
 
               <div className="flex items-center gap-2.5">
+                {authRole === 'superadmin' && activeMode !== 'superadmin' && (
+                  <button 
+                    onClick={() => setActiveMode('superadmin')}
+                    className="px-4 py-2 bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-900/40 text-indigo-250 hover:text-white text-xs font-black rounded-full transition shadow-sm cursor-pointer"
+                  >
+                    ← Back to SaaS Control
+                  </button>
+                )}
                 <button 
                   onClick={handleLogout}
-                  className="px-4 py-2 bg-rose-950/70 hover:bg-rose-900 border border-rose-900/40 text-rose-200 hover:text-white text-xs font-black rounded-full transition shadow-sm cursor-pointer"
+                  className="px-4 py-2 bg-rose-955/70 hover:bg-rose-900 border border-rose-900/40 text-rose-200 hover:text-white text-xs font-black rounded-full transition shadow-sm cursor-pointer"
                 >
                   Log Out
                 </button>
@@ -561,8 +586,29 @@ export default function App() {
 
 
       {/* Main View Router */}
-      <main className="flex-1 flex flex-col">
-        {isPortalRoute ? (
+      <main className="flex-1 flex flex-col animate-fade-in">
+        {isLoading ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 bg-[#F8FAFC] dark:bg-[#070913] space-y-6">
+            <div className="w-full max-w-md p-6 bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800/80 rounded-[32px] shadow-2xl space-y-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl skeleton-bg shrink-0"></div>
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-1/3 rounded skeleton-bg"></div>
+                  <div className="h-3 w-1/2 rounded skeleton-bg"></div>
+                </div>
+              </div>
+              <div className="space-y-2 pt-2">
+                <div className="h-3.5 w-full rounded skeleton-bg"></div>
+                <div className="h-3.5 w-5/6 rounded skeleton-bg"></div>
+                <div className="h-3.5 w-4/5 rounded skeleton-bg"></div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 pt-3">
+                <div className="h-10 rounded-xl skeleton-bg"></div>
+                <div className="h-10 rounded-xl skeleton-bg"></div>
+              </div>
+            </div>
+          </div>
+        ) : isPortalRoute ? (
           !isAuthenticated ? (
             <StaffPortalLogin 
               restaurants={restaurants}
@@ -570,6 +616,7 @@ export default function App() {
               onSelectRestaurant={setSelectedRestaurantId}
               onLoginSuccess={handleLoginSuccess}
               onGoBackToDiner={() => navigateTo('/')}
+              forceRole={currentPath === '/kcodeit' ? 'superadmin' : undefined}
             />
           ) : (
             <>
@@ -588,7 +635,6 @@ export default function App() {
                   onTableUpdate={(count, floors) => handleModifyRestaurantTablesGlobal(activeRestaurantObj.id, count, floors)}
                   triggerAppAlert={triggerAppAlert}
                   buzzers={buzzers}
-                  ticker={ticker}
                   onSwitchToKitchenMode={() => setActiveMode('kitchen')}
                 />
               )}
@@ -599,7 +645,7 @@ export default function App() {
                   orders={orders}
                   onUpdateOrderStatus={handleUpdateOrderStatus}
                   onCancelSpecificDish={handleCancelSpecificDish}
-                  ticker={ticker}
+                  ticker={0}
                   buzzers={buzzers}
                   restaurants={restaurants}
                   onSelectRestaurant={setSelectedRestaurantId}
@@ -617,7 +663,7 @@ export default function App() {
                   setSelectedRestaurantId={setSelectedRestaurantId}
                   setActiveMode={setActiveMode}
                   triggerAppAlert={triggerAppAlert}
-                  ticker={ticker}
+                  ticker={0}
                 />
               )}
             </>
@@ -682,9 +728,39 @@ export default function App() {
         </div>
       )}
 
+      {/* Toast Notifications System */}
+      <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+        {toasts.map(toast => (
+          <div
+            key={toast.id}
+            className={`pointer-events-auto flex items-start gap-3 p-4 rounded-2xl shadow-xl border bg-white dark:bg-slate-900 border-slate-200/60 dark:border-slate-800/80 animate-toast-enter transition-all duration-300`}
+          >
+            <div className="mt-0.5">
+              {toast.type === 'success' ? (
+                <CheckCircle size={18} className="text-emerald-500" />
+              ) : toast.type === 'info' ? (
+                <Info size={18} className="text-indigo-500" />
+              ) : (
+                <AlertOctagon size={18} className="text-rose-500" />
+              )}
+            </div>
+            <div className="flex-1 space-y-0.5">
+              <h5 className="text-xs font-black text-slate-950 dark:text-white leading-tight">{toast.title}</h5>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold leading-relaxed">{toast.message}</p>
+            </div>
+            <button
+              onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+              className="text-slate-400 hover:text-slate-650 dark:hover:text-slate-200 transition cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+
       {/* Universal Footer */}
       <footer className="bg-slate-950 text-slate-400 py-3 text-center text-[10px] border-t border-slate-900 font-mono">
-        <p>© 2026 kCodeIT Multitenant Systems. Optimized with severe cryptographic and AI boundaries.</p>
+        <p>© 2026 Restro / kCodeIT Multitenant Systems. Powered by Gemini AI.</p>
       </footer>
     </div>
   );

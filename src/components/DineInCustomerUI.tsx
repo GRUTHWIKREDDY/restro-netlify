@@ -2,10 +2,12 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Utensils, Sparkles, ChevronRight, Search, Tag, 
   ShoppingCart, Send, X, AlertTriangle, Store, User, Phone, 
-  ArrowRight, Info, Bell, Calculator, QrCode, Star, Award, Heart, CheckCircle, RefreshCw, Lock, Clock, MapPin
+  ArrowRight, Info, Bell, Calculator, Star, Award, Heart, CheckCircle, RefreshCw, Lock, Clock, MapPin,
+  FileText, CreditCard
 } from 'lucide-react';
 import { Restaurant, MenuItem, Order, DineInUser, ChatMessage, Buzzer } from '../types';
 import { supabase, toSnake } from '../supabase';
+import { calculateBillSummary } from '../utils/billing';
 
 interface DineInProps {
   restaurant: Restaurant;
@@ -26,6 +28,23 @@ interface DineInProps {
   setSelectedTableNumber?: (num: number) => void;
   users?: DineInUser[];
 }
+
+const getFoodFallbackImage = (name: string, category: string) => {
+  const normCat = (category || '').toLowerCase();
+  if (normCat.includes('drink') || normCat.includes('beverage')) {
+    return 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=200&auto=format&fit=crop&q=80';
+  }
+  if (normCat.includes('dessert') || normCat.includes('sweet')) {
+    return 'https://images.unsplash.com/photo-1551024601-bec78aea704b?w=200&auto=format&fit=crop&q=80';
+  }
+  if (normCat.includes('bread') || normCat.includes('roti') || normCat.includes('naan')) {
+    return 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=200&auto=format&fit=crop&q=80';
+  }
+  if (normCat.includes('starter') || normCat.includes('appetizer')) {
+    return 'https://images.unsplash.com/photo-1541014711125-365ab8b7fb22?w=200&auto=format&fit=crop&q=80';
+  }
+  return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&auto=format&fit=crop&q=80';
+};
 
 export default function DineInCustomerUI({
   restaurant,
@@ -61,6 +80,7 @@ export default function DineInCustomerUI({
 
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'default' | 'priceAsc' | 'priceDesc'>('default');
 
   const [cart, setCart] = useState<{ [menuId: string]: number }>({});
   const [cartNotes, setCartNotes] = useState<{ [menuId: string]: string }>({});
@@ -73,8 +93,34 @@ export default function DineInCustomerUI({
   const [splitCount, setSplitCount] = useState(2);
   const [splitterMode, setSplitterMode] = useState<'equal' | 'by-items'>('equal');
   const [selectedSplitItems, setSelectedSplitItems] = useState<{ [index: number]: boolean }>({});
-  const [showUpiSim, setShowUpiSim] = useState(false);
-  const [customUpiStatus, setCustomUpiStatus] = useState<'idle' | 'scanning' | 'success'>('idle');
+  // Bill summary drawer
+  const [isBillSummaryOpen, setIsBillSummaryOpen] = useState(false);
+
+  // Custom modal PIN handshake state
+  const [activeHandshakeOrderId, setActiveHandshakeOrderId] = useState<string | null>(null);
+  const [handshakePinInput, setHandshakePinInput] = useState('');
+  const [handshakePinError, setHandshakePinError] = useState('');
+
+  // Force light mode on mount
+  useEffect(() => {
+    document.documentElement.classList.remove('dark');
+  }, []);
+
+  useEffect(() => {
+    if (!customerSession) return;
+    const sessionOrders = orders.filter(
+      o => o.restaurantId === restaurant.id &&
+           o.tableNumber === tableNumber &&
+           o.userPhone === customerSession.phone
+    );
+    if (sessionOrders.length > 0) {
+      const activeSessionOrders = sessionOrders.filter(o => o.released !== true);
+      if (activeSessionOrders.length === 0) {
+        setCustomerSession(null);
+        triggerAppAlert("Session Completed", "Your dining session has been released by the restaurant.", "info");
+      }
+    }
+  }, [orders, restaurant.id, tableNumber, customerSession, setCustomerSession]);
 
   // Rating States
   const [ratingItemMenuId, setRatingItemMenuId] = useState<string | null>(null);
@@ -222,7 +268,7 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
   };
 
   useEffect(() => {
-    if (chatBottomRef.current) {
+    if (chatBottomRef.current && typeof chatBottomRef.current.scrollIntoView === 'function') {
       chatBottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [aiChatHistory, isAiConciergeOpen]);
@@ -416,29 +462,7 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
     });
   };
 
-  const calculateBillSummary = (items: { price: number; promoValue: number; quantity: number }[]) => {
-    let originalSubtotal = 0;
-    let totalDeductions = 0;
-    let finalPayable = 0;
 
-    items.forEach(item => {
-      const qty = item.quantity || 1;
-      const finalPrice = item.price || 0;
-      const unitDiscount = item.promoValue || 0;
-      // Net price is represented by finalPrice, base price is net + unitDiscount
-      const originalUnitPrice = finalPrice + unitDiscount;
-
-      originalSubtotal += (originalUnitPrice * qty);
-      totalDeductions += (unitDiscount * qty);
-      finalPayable += (finalPrice * qty);
-    });
-
-    return {
-      originalSubtotal,
-      totalDeductions,
-      finalPayable
-    };
-  };
 
   const cartTotals = useMemo(() => {
     const list: { price: number; promoValue: number; quantity: number }[] = [];
@@ -846,12 +870,12 @@ ${JSON.stringify(liveMenuContext)}
   }
 
   return (
-    <div className="flex-1 bg-slate-50 flex justify-center py-4 px-2 sm:p-6 overflow-y-auto">
-      {/* Visual smartphone device simulator frame: Geometric, crisp Slate border */}
-      <div className="w-full max-w-[430px] bg-slate-50 rounded-2xl shadow-xl border-4 border-slate-800 overflow-hidden flex flex-col min-h-[720px] relative text-slate-800">
+    <div className="flex-1 bg-slate-100 flex justify-center md:py-4 md:px-2 sm:p-6 overflow-y-auto">
+      {/* Visual smartphone device simulator frame */}
+      <div className="w-full md:max-w-[430px] bg-white md:rounded-[40px] md:shadow-2xl md:border-[12px] md:border-slate-900 overflow-hidden flex flex-col min-h-screen md:min-h-[720px] relative text-slate-800">
         
-        {/* Notch speaker */}
-        <div className="absolute top-0 inset-x-0 h-4 bg-slate-800 flex justify-center items-center z-40">
+        {/* Notch speaker - only visible on md and up */}
+        <div className="hidden md:flex absolute top-0 inset-x-0 h-4 bg-slate-800 justify-center items-center z-40">
           <div className="w-20 h-2 bg-slate-900 rounded-b-md flex items-center justify-around px-2">
             <div className="w-8 h-1 bg-slate-705 rounded-full"></div>
             <div className="w-1 h-1 bg-slate-705 rounded-full"></div>
@@ -868,42 +892,56 @@ ${JSON.stringify(liveMenuContext)}
               onError={(e) => { (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=100"; }}
             />
             <div>
-              <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-900 leading-tight">{restaurant.name}</h3>
+              <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-950 leading-tight">{restaurant.name}</h3>
               <span className="text-[10px] font-black text-indigo-650 uppercase tracking-widest bg-indigo-50 px-2.5 py-0.5 rounded-sm inline-block mt-1 border border-indigo-100">
                 Table #{tableNumber}
               </span>
             </div>
           </div>
 
-          {customerSession && (
-            <div className="flex items-center gap-1.5">
-              {/* Shopping Cart Button */}
-              <button
-                onClick={() => setIsCartOpen(true)}
-                className="p-2 bg-indigo-600 text-white rounded-sm hover:bg-indigo-700 transition shadow-md relative flex items-center justify-center border border-indigo-500 cursor-pointer"
-                title="Open basket review"
-              >
-                <ShoppingCart size={14} />
-                {(Object.values(cart) as number[]).reduce((a: number, b: number) => a + b, 0) > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[8px] font-black w-4.5 h-4.5 flex items-center justify-center rounded-full border border-white">
-                    {(Object.values(cart) as number[]).reduce((a: number, b: number) => a + b, 0)}
-                  </span>
-                )}
-              </button>
+          <div className="flex items-center gap-1.5">
 
-              {/* Floating AI Maitre D' chat button */}
-              <button
-                onClick={() => setIsAiConciergeOpen(!isAiConciergeOpen)}
-                className="p-2 bg-amber-500 text-slate-950 rounded-sm hover:bg-amber-600 transition shadow-md relative group flex items-center justify-center border border-amber-400"
-              >
-                <Sparkles size={14} className="sparkle-shiver" />
-              </button>
-            </div>
-          )}
+            {customerSession && (
+              <>
+                {/* Bill Summary Button */}
+                {customerOrders.length > 0 && (
+                  <button
+                    onClick={() => setIsBillSummaryOpen(true)}
+                    className="p-2 bg-emerald-50 text-emerald-700 rounded-xl hover:bg-emerald-100 transition shadow-sm relative flex items-center justify-center border border-emerald-200 cursor-pointer"
+                    title="View bill summary"
+                  >
+                    <FileText size={14} />
+                  </button>
+                )}
+
+                {/* Shopping Cart Button */}
+                <button
+                  onClick={() => setIsCartOpen(true)}
+                  className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition shadow-md relative flex items-center justify-center border border-indigo-500 cursor-pointer"
+                  title="Open basket review"
+                >
+                  <ShoppingCart size={14} />
+                  {(Object.values(cart) as number[]).reduce((a: number, b: number) => a + b, 0) > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[8px] font-black w-4.5 h-4.5 flex items-center justify-center rounded-full border border-white">
+                      {(Object.values(cart) as number[]).reduce((a: number, b: number) => a + b, 0)}
+                    </span>
+                  )}
+                </button>
+
+                {/* AI Maitre D' chat button */}
+                <button
+                  onClick={() => setIsAiConciergeOpen(!isAiConciergeOpen)}
+                  className="p-2 bg-amber-500 text-slate-950 rounded-xl hover:bg-amber-600 transition shadow-md relative group flex items-center justify-center border border-amber-400"
+                >
+                  <Sparkles size={14} className="sparkle-shiver" />
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Dynamic Display Screens */}
-        <div className="flex-1 overflow-y-auto pb-24 scrollbar-none flex flex-col">
+        <div className="flex-1 overflow-y-auto pb-24 scrollbar-none flex flex-col bg-slate-50">
           
           {!customerSession ? (
             /* PHONE SPLASH ENTRY PAGE */
@@ -957,19 +995,45 @@ ${JSON.stringify(liveMenuContext)}
 
                     <div className="space-y-1">
                       <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block">4-Digit Table Access Code *</label>
-                      <div className="relative">
-                        <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-                        <input 
-                          type="text" 
-                          required
-                          maxLength={4}
-                          placeholder="••••"
-                          value={enteredDiningCode}
-                          onChange={(e) => setEnteredDiningCode(e.target.value.replace(/\D/g, ''))}
-                          className="w-full bg-white border border-slate-200 rounded-sm py-2.5 pl-10 pr-4 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all text-slate-800 tracking-[0.4em] font-mono"
-                        />
+                      <div className="flex gap-2.5 justify-center py-2" id="otp-input-container">
+                        {[0, 1, 2, 3].map((index) => (
+                          <input
+                            key={index}
+                            type="text"
+                            maxLength={1}
+                            value={enteredDiningCode[index] || ''}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '');
+                              setEnteredDiningCode(prev => {
+                                let codeArr = prev.split('');
+                                codeArr[index] = val;
+                                return codeArr.join('').slice(0, 4);
+                              });
+                              if (val && index < 3) {
+                                const nextEl = document.getElementById(`otp-input-${index + 1}`);
+                                if (nextEl) (nextEl as HTMLInputElement).focus();
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Backspace' && !e.currentTarget.value && index > 0) {
+                                const prevEl = document.getElementById(`otp-input-${index - 1}`);
+                                if (prevEl) {
+                                  (prevEl as HTMLInputElement).focus();
+                                  setEnteredDiningCode(prev => {
+                                    let codeArr = prev.split('');
+                                    codeArr[index - 1] = '';
+                                    return codeArr.join('');
+                                  });
+                                }
+                              }
+                            }}
+                            id={`otp-input-${index}`}
+                            placeholder="-"
+                            className="w-12 h-12 text-center text-lg font-black bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800"
+                          />
+                        ))}
                       </div>
-                      <p className="text-[10px] text-slate-400 leading-normal mt-0.5">Please ask the restaurant waiter/staff for the 4-digit code to access the menu.</p>
+                      <p className="text-[10px] text-slate-400 leading-normal mt-0.5 text-center">Please ask the restaurant waiter/staff for the 4-digit code to access the menu.</p>
                     </div>
 
                     {loginError && (
@@ -1053,16 +1117,27 @@ ${JSON.stringify(liveMenuContext)}
               )}
 
               {/* Dynamic Categorized Dish Showcase */}
-              <div className="space-y-3.5 sticky top-[66px] bg-slate-50 py-3 z-20">
-                <div className="relative">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
-                  <input 
-                    type="text" 
-                    placeholder="Search menu catalog..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full bg-white border border-slate-200/80 rounded-full py-2.5 pl-10 pr-4 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 transition text-slate-800 shadow-xs"
-                  />
+              <div className="space-y-3.5 sticky top-[66px] bg-slate-50 py-3 z-20 -mx-4 px-4">
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+                    <input 
+                      type="text" 
+                      placeholder="Search menu catalog..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full bg-white border border-slate-200/80 rounded-full py-2.5 pl-10 pr-4 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 transition text-slate-800 shadow-xs"
+                    />
+                  </div>
+                  <select 
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as any)}
+                    className="bg-white border border-slate-200 text-slate-700 text-[11px] rounded-full px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-black shadow-xs cursor-pointer"
+                  >
+                    <option value="default">Sort: Default</option>
+                    <option value="priceAsc">Price: Low to High</option>
+                    <option value="priceDesc">Price: High to Low</option>
+                  </select>
                 </div>
 
                 <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-1">
@@ -1090,10 +1165,16 @@ ${JSON.stringify(liveMenuContext)}
               )}
 
               {/* Menu listings */}
-              <div className="space-y-3">
+              <div className="space-y-3" data-testid="menu-listings">
                 {restaurantMenus
+                  .filter(m => m.isAvailable !== false)
                   .filter(m => selectedCategory === 'All' || m.category === selectedCategory)
                   .filter(m => m.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                  .sort((a, b) => {
+                    if (sortBy === 'priceAsc') return a.price - b.price;
+                    if (sortBy === 'priceDesc') return b.price - a.price;
+                    return 0;
+                  })
                   .map(item => {
                     const quantityInCart = cart[item.id] || 0;
                     return (
@@ -1104,7 +1185,7 @@ ${JSON.stringify(liveMenuContext)}
                         {/* Professional Food Photograph */}
                         <div className="relative w-18 h-18 rounded-xl overflow-hidden bg-slate-50 border border-slate-100 shrink-0 shadow-xs">
                           <img 
-                            src={item.imageUrl || "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=150&auto=format&fit=crop&q=80"} 
+                            src={item.imageUrl || getFoodFallbackImage(item.name, item.category)} 
                             alt={item.name}
                             className="w-full h-full object-cover transition duration-500 hover:scale-115"
                             referrerPolicy="no-referrer"
@@ -1267,13 +1348,10 @@ ${JSON.stringify(liveMenuContext)}
                               </span>
                               <button
                                 type="button"
-                                onClick={async () => {
-                                  const pin = prompt("Enter 4-Digit Waiter Approval PIN (Shown to Chef/Waiter, or override '1234'):");
-                                  if (pin === order.handshakeCode || pin === '1234' || pin === '0000') {
-                                    await handleStaffApproveHandshakeLocally(order.id);
-                                  } else if (pin !== null) {
-                                    alert("PIN mismatch. Please request waiter approval!");
-                                  }
+                                onClick={() => {
+                                  setActiveHandshakeOrderId(order.id);
+                                  setHandshakePinInput('');
+                                  setHandshakePinError('');
                                 }}
                                 className="text-[8.5px] bg-indigo-600 hover:bg-indigo-700 text-white font-black px-2 py-1 rounded transition cursor-pointer"
                               >
@@ -1297,31 +1375,168 @@ ${JSON.stringify(liveMenuContext)}
                       </div>
                     ))}
                   </div>
-
                   {/* Financial calculation exclusions display */}
-                  <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs text-slate-500 leading-none">
+                  <div className="pt-2 border-t border-slate-105 space-y-1.5 text-xs text-slate-500 leading-none transition-colors duration-300">
                     <div className="flex justify-between">
-                      <span>Menu Base Subtotal:</span>
+                      <span>Subtotal:</span>
                       <span className="font-bold text-slate-700">₹{cumulativeBill.originalSubtotal.toFixed(2)}</span>
                     </div>
                     {cumulativeBill.totalDeductions > 0 && (
-                      <div className="flex justify-between text-indigo-600 font-bold">
-                        <span>LTO Promotional Reductions Excluded:</span>
+                      <div className="flex justify-between text-indigo-605 font-bold">
+                        <span>Discount Applied:</span>
                         <span>- ₹{cumulativeBill.totalDeductions.toFixed(2)}</span>
                       </div>
                     )}
-                    <div className="pt-2 flex justify-between border-t border-slate-100 text-slate-950 font-bold text-sm">
-                      <span>Grand Payable Invoice:</span>
-                      <span className="text-indigo-600 text-base font-black">₹{cumulativeBill.finalPayable.toFixed(2)}</span>
+                    <div className="pt-2 flex justify-between border-t border-slate-105 text-slate-950 font-bold text-sm">
+                      <span>Total Amount:</span>
+                      <span className="text-indigo-650 text-base font-black">₹{cumulativeBill.finalPayable.toFixed(2)}</span>
                     </div>
                   </div>
 
-                  <div className="bg-slate-50 border border-slate-200 p-3 rounded-sm text-center">
-                    <p className="text-[10px] text-slate-500 leading-relaxed block">
-                      <span className="font-bold text-slate-800 block mb-0.5">Physical Settlement Ready</span>
-                      Display this invoice summary to your dining coach / waiter. We accept instant **UPI QR Scan (GPay, PhonePe, Paytm)**, Cards, or Cash directly at your table.
-                    </p>
+                  {/* Bill Splitting UI */}
+                  <div className="pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setShowSplitter(!showSplitter)}
+                      className="w-full flex items-center justify-between py-2 text-xs font-bold text-indigo-600 hover:text-indigo-750 transition cursor-pointer font-sans"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Calculator size={14} />
+                        Split This Bill
+                      </span>
+                      <span>{showSplitter ? 'Hide Options' : 'Show Options'}</span>
+                    </button>
+
+                    {showSplitter && (
+                      <div className="mt-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-150/70 space-y-3.5">
+                        {/* Selector mode */}
+                        <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
+                          <button
+                            type="button"
+                            onClick={() => setSplitterMode('equal')}
+                            className={`flex-1 text-center py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition ${splitterMode === 'equal' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-705'}`}
+                          >
+                            Equal Split
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSplitterMode('by-items')}
+                            className={`flex-1 text-center py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition ${splitterMode === 'by-items' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-705'}`}
+                          >
+                            Split by Items
+                          </button>
+                        </div>
+
+                        {splitterMode === 'equal' ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-xs text-slate-700">
+                              <span className="font-semibold">Number of people:</span>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setSplitCount(prev => Math.max(2, prev - 1))}
+                                  className="w-6 h-6 bg-white border border-slate-300 rounded-lg flex items-center justify-center font-bold text-xs text-slate-700 hover:bg-slate-50"
+                                >
+                                  -
+                                </button>
+                                <span className="font-extrabold text-slate-850 text-xs">{splitCount}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setSplitCount(prev => Math.min(20, prev + 1))}
+                                  className="w-6 h-6 bg-white border border-slate-300 rounded-lg flex items-center justify-center font-bold text-xs text-slate-700 hover:bg-slate-50"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                            <div className="pt-2 border-t border-slate-200/60 flex justify-between items-center text-xs font-black text-slate-900">
+                              <span>Per Person:</span>
+                              <span className="text-indigo-600 text-sm">₹{(cumulativeBill.finalPayable / splitCount).toFixed(2)}</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-2.5">
+                            <p className="text-[10px] text-slate-500 font-semibold leading-relaxed">Select items you wish to pay for:</p>
+                            <div className="max-h-[140px] overflow-y-auto space-y-1.5 scrollbar-none">
+                              {(() => {
+                                const allOrderedItems: { name: string; price: number; index: number }[] = [];
+                                let absoluteIdx = 0;
+                                customerOrders.forEach(order => {
+                                  order.items.forEach(it => {
+                                    for (let i = 0; i < it.quantity; i++) {
+                                      allOrderedItems.push({
+                                        name: it.name,
+                                        price: it.price,
+                                        index: absoluteIdx++
+                                      });
+                                    }
+                                  });
+                                });
+
+                                return allOrderedItems.map(item => (
+                                  <label
+                                    key={item.index}
+                                    className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-100 hover:border-slate-200 transition cursor-pointer"
+                                  >
+                                    <div className="flex items-center gap-2 text-xs">
+                                      <input
+                                        type="checkbox"
+                                        checked={!!selectedSplitItems[item.index]}
+                                        onChange={() => {
+                                          setSelectedSplitItems(prev => ({
+                                            ...prev,
+                                            [item.index]: !prev[item.index]
+                                          }));
+                                        }}
+                                        className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                      />
+                                      <span className="font-semibold text-slate-700">{item.name}</span>
+                                    </div>
+                                    <span className="text-xs font-bold text-slate-900">₹{item.price.toFixed(2)}</span>
+                                  </label>
+                                ));
+                              })()}
+                            </div>
+
+                            {/* Itemized total */}
+                            {(() => {
+                              let checkedTotal = 0;
+                              let absoluteIdx = 0;
+                              customerOrders.forEach(order => {
+                                order.items.forEach(it => {
+                                  for (let i = 0; i < it.quantity; i++) {
+                                    if (selectedSplitItems[absoluteIdx++]) {
+                                      checkedTotal += it.price;
+                                    }
+                                  }
+                                });
+                              });
+
+                              return (
+                                <div className="pt-2 border-t border-slate-200/60 flex justify-between items-center text-xs font-black text-slate-950">
+                                  <span>Selected Total:</span>
+                                  <span className="text-indigo-600 text-sm">₹{checkedTotal.toFixed(2)}</span>
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
+
+                  {/* Ready to Pay - sends buzzer to admin */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleCallBuzzer('Ready to Pay - Bill Request');
+                      triggerAppAlert('Bill Requested', 'The restaurant staff has been notified that you are ready to pay.', 'success');
+                    }}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-extrabold text-xs py-3.5 rounded-2xl transition flex items-center justify-center gap-2 uppercase tracking-wider shadow-md cursor-pointer"
+                  >
+                    <CreditCard size={16} />
+                    Ready to Pay — Notify Staff
+                  </button>
                 </div>
               )}
 
@@ -1331,7 +1546,7 @@ ${JSON.stringify(liveMenuContext)}
 
         {/* Floating Cart Sticky Bar */}
         {customerSession && cartTotals.originalSubtotal > 0 && (
-          <div className="absolute bottom-6 inset-x-4 bg-white/95 backdrop-blur border border-slate-200 shadow-xl p-3.5 rounded-sm flex items-center justify-between z-40">
+          <div className="absolute bottom-6 inset-x-4 bg-white/95 backdrop-blur-md border border-slate-200 shadow-xl p-3.5 rounded-2xl flex items-center justify-between z-40">
             <div>
               <p className="text-[9px] text-slate-400 font-extrabold uppercase tracking-widest leading-none">Your Basket</p>
               <h5 className="font-black text-xs text-slate-950 mt-1">
@@ -1344,7 +1559,7 @@ ${JSON.stringify(liveMenuContext)}
 
             <button 
               onClick={() => setIsCartOpen(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-2.5 rounded-sm shadow-md transition flex items-center gap-1.5 uppercase tracking-wider"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-md transition flex items-center gap-1.5 uppercase tracking-wider cursor-pointer"
             >
               <span>Verify Basket</span>
               <ShoppingCart size={13} />
@@ -1371,11 +1586,24 @@ ${JSON.stringify(liveMenuContext)}
               </div>
 
                {/* Basket list */}
-              <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-                {Object.entries(cart).map(([menuId, qtyVal]) => {
-                  const qty = qtyVal as number;
-                  const item = restaurantMenus.find(m => m.id === menuId);
-                  if (!item) return null;
+               <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+                 {Object.keys(cart).length === 0 ? (
+                   <div className="flex flex-col items-center justify-center py-10 text-center space-y-2.5">
+                     <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                       <ShoppingCart size={18} />
+                     </div>
+                     <div>
+                       <h5 className="font-extrabold text-xs text-slate-800">Your basket is empty</h5>
+                       <p className="text-[10px] text-slate-500 mt-1 max-w-[180px] mx-auto leading-relaxed">
+                         Add delicious items from the menu to start your order.
+                       </p>
+                     </div>
+                   </div>
+                 ) : (
+                   Object.entries(cart).map(([menuId, qtyVal]) => {
+                     const qty = qtyVal as number;
+                     const item = restaurantMenus.find(m => m.id === menuId);
+                     if (!item) return null;
                   return (
                     <div key={menuId} className="flex flex-col py-2 border-b border-slate-100 gap-1.5 text-xs">
                       <div className="flex items-center justify-between">
@@ -1388,15 +1616,15 @@ ${JSON.stringify(liveMenuContext)}
                           <button 
                             type="button"
                             onClick={() => updateCartQty(menuId, -1)}
-                            className="w-6 h-6 bg-slate-100 hover:bg-slate-200 rounded-sm flex items-center justify-center font-bold text-xs"
+                            className="w-7 h-7 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg flex items-center justify-center font-bold text-sm border border-slate-300 cursor-pointer"
                           >
                             -
                           </button>
-                          <span className="font-extrabold text-slate-900 w-4 text-center">{qty}</span>
+                          <span className="font-extrabold text-slate-900 w-5 text-center">{qty}</span>
                           <button 
                             type="button"
                             onClick={() => updateCartQty(menuId, 1)}
-                            className="w-6 h-6 bg-slate-100 hover:bg-slate-200 rounded-sm flex items-center justify-center font-bold text-xs"
+                            className="w-7 h-7 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center justify-center font-bold text-sm border border-indigo-500 cursor-pointer"
                           >
                             +
                           </button>
@@ -1413,15 +1641,16 @@ ${JSON.stringify(liveMenuContext)}
                         placeholder="🍳 Add kitchen request (e.g. extra spicy, no onion)"
                         value={cartNotes[menuId] || ''}
                         onChange={(e) => setCartNotes(prev => ({ ...prev, [menuId]: e.target.value }))}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-sm px-2.5 py-1 text-[10px] font-medium text-slate-750 focus:outline-none focus:border-indigo-400 placeholder:italic"
+                        className="w-full bg-white border-2 border-slate-300 rounded-lg px-3 py-1.5 text-[11px] font-medium text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder:italic placeholder:text-slate-400"
                       />
                     </div>
                   );
-                })}
-              </div>
+                })
+              )}
+            </div>
 
               {/* Cost invoice list showing explicit exclusions */}
-              <div className="space-y-2 pt-3 border-t border-slate-100">
+              <div className="space-y-2 pt-3 border-t border-slate-100" data-testid="cart-totals">
                 <div className="flex justify-between text-xs text-slate-500">
                   <span>Standard Subtotal</span>
                   <span className="font-bold">₹{cartTotals.originalSubtotal.toFixed(2)}</span>
@@ -1533,6 +1762,8 @@ ${JSON.stringify(liveMenuContext)}
               <button 
                 type="submit"
                 disabled={isAiTyping || !aiInputMessage.trim()}
+                title="Send message"
+                aria-label="Send message"
                 className="p-2.5 bg-amber-500 text-slate-950 font-bold rounded-sm hover:bg-amber-600 disabled:opacity-45 transition flex items-center justify-center"
               >
                 <Send size={15} />
@@ -1635,10 +1866,162 @@ ${JSON.stringify(liveMenuContext)}
           </div>
         )}
 
+        {/* Custom Waiter PIN Modal */}
+        {activeHandshakeOrderId && (
+          <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-[28px] w-full max-w-xs shadow-2xl p-5 border border-slate-100 text-center space-y-4 text-slate-900">
+              <div className="mx-auto w-11 h-11 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center border border-indigo-200 shadow-inner">
+                <Lock size={18} />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-xs font-black tracking-tight uppercase">Waiter PIN Handshake</h4>
+                <p className="text-[10px] text-slate-500 font-semibold leading-relaxed">
+                  Ask staff to enter their 4-digit approval PIN to unlock your order.
+                </p>
+              </div>
+              <input
+                type="password"
+                maxLength={4}
+                value={handshakePinInput}
+                onChange={e => {
+                  const val = e.target.value.replace(/\D/g, '');
+                  setHandshakePinInput(val);
+                  setHandshakePinError('');
+                }}
+                placeholder="••••"
+                className="w-full text-center tracking-widest text-lg font-black bg-slate-50 border border-slate-200 rounded-xl py-2 focus:outline-none focus:border-indigo-500 text-slate-800"
+              />
+              {handshakePinError && (
+                <p className="text-[9px] text-rose-500 font-bold">{handshakePinError}</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveHandshakeOrderId(null);
+                    setHandshakePinInput('');
+                    setHandshakePinError('');
+                  }}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-650 font-black text-[10px] py-2.5 rounded-xl transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const order = orders.find(o => o.id === activeHandshakeOrderId);
+                    if (!order) return;
+                    if (handshakePinInput === order.handshakeCode || handshakePinInput === '1234' || handshakePinInput === '0000') {
+                      const targetOrder = orders.find(o => o.id === activeHandshakeOrderId);
+                      if (targetOrder) {
+                        const updatedOrder = { 
+                          ...targetOrder, 
+                          handshakeApproved: true 
+                        };
+                        await fetch("/api/orders", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify(updatedOrder)
+                        });
+                      }
+                      setActiveHandshakeOrderId(null);
+                      setHandshakePinInput('');
+                      triggerAppAlert("Order Unlocked", "Staff handshake approved successfully.", "success");
+                    } else {
+                      setHandshakePinError("Incorrect PIN. Please try again.");
+                    }
+                  }}
+                  className="flex-1 bg-slate-950 hover:bg-slate-800 text-white font-black text-[10px] py-2.5 rounded-xl transition cursor-pointer"
+                >
+                  Approve
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bill Summary Drawer */}
+        {isBillSummaryOpen && (
+          <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm z-50 flex flex-col justify-end">
+            <div 
+              className="bg-white rounded-t-[28px] w-full max-h-[80%] shadow-2xl border-t border-slate-200 flex flex-col overflow-hidden"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100 shrink-0">
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">Bill Summary</h3>
+                  <p className="text-[10px] text-slate-500 font-semibold mt-0.5">Table #{tableNumber} • {restaurant.name}</p>
+                </div>
+                <button 
+                  type="button"
+                  onClick={() => setIsBillSummaryOpen(false)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 scrollbar-none">
+                {customerOrders.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-xs text-slate-400 font-semibold">No orders placed yet.</p>
+                  </div>
+                ) : (
+                  <>
+                    {customerOrders.map((order, idx) => (
+                      <div key={order.id} className="bg-slate-50 rounded-xl border border-slate-100 p-3.5 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Order #{idx + 1}</span>
+                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                            order.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
+                            order.status === 'accepted' ? 'bg-blue-100 text-blue-700' :
+                            order.status === 'rejected' ? 'bg-rose-100 text-rose-700' :
+                            'bg-amber-100 text-amber-700'
+                          }`}>
+                            {order.status}
+                          </span>
+                        </div>
+                        {order.items.map((item, iIdx) => (
+                          <div key={iIdx} className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-slate-700">{item.name}</span>
+                              <span className="text-slate-400 text-[10px]">×{item.quantity}</span>
+                            </div>
+                            <span className="font-bold text-slate-900">₹{(item.price * item.quantity).toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+
+                    {/* Totals */}
+                    <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 space-y-2.5">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-600 font-semibold">Subtotal</span>
+                        <span className="font-bold text-slate-900">₹{cumulativeBill.originalSubtotal.toFixed(2)}</span>
+                      </div>
+                      {cumulativeBill.totalDeductions > 0 && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-emerald-600 font-semibold">Promo Savings</span>
+                          <span className="font-bold text-emerald-600">-₹{cumulativeBill.totalDeductions.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-sm pt-2 border-t border-indigo-200">
+                        <span className="font-extrabold text-slate-900">Total Payable</span>
+                        <span className="font-extrabold text-indigo-600">₹{cumulativeBill.finalPayable.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Subtle Brand Footer */}
-        <div className="mt-12 pt-6 border-t border-slate-100 flex flex-col items-center gap-3 pb-8 text-center px-4">
+        <div className="mt-12 pt-6 border-t border-slate-105 flex flex-col items-center gap-3 pb-8 text-center px-4">
           <div className="flex flex-wrap items-center justify-center gap-2 text-[10px] text-slate-400 font-semibold mb-1">
-            <span>Powered by kCodeIT Systems</span>
+            <span>Powered by Restro / kCodeIT Systems</span>
           </div>
         </div>
       </div>

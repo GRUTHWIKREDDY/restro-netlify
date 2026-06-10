@@ -95,9 +95,44 @@ export default function AnalyticsDashboard({ restaurantId, restaurantName }: Ana
   const handleExportCsv = () => {
     const d = data[activeTab];
     if (!d) return;
-    const headers = Object.keys(d).join(',');
-    const values = Object.values(d).map(v => typeof v === 'object' ? JSON.stringify(v) : v).join(',');
-    const blob = new Blob([[headers, values].join('\n')], { type: 'text/csv' });
+
+    let csvContent = "";
+    
+    if (activeTab === 'sales') {
+      csvContent += "DAILY SALES REPORT\n";
+      csvContent += "Date,Orders,Revenue,Discount,Avg Order Value\n";
+      if (d.dailySales && Array.isArray(d.dailySales)) {
+        d.dailySales.forEach((day: any) => {
+          csvContent += `${day.date},${day.orders},${day.revenue.toFixed(2)},${day.discount.toFixed(2)},${day.orders ? (day.revenue / day.orders).toFixed(2) : 0}\n`;
+        });
+      }
+      csvContent += "\nTOP SELLING ITEMS\n";
+      csvContent += "Item Name,Quantity Sold,Revenue Generated\n";
+      if (d.topItems && Array.isArray(d.topItems)) {
+        d.topItems.forEach((item: any) => {
+          csvContent += `"${item.name}",${item.quantity},${item.revenue.toFixed(2)}\n`;
+        });
+      }
+    } else if (activeTab === 'menu') {
+      csvContent += "MENU SALES REPORT\n";
+      csvContent += "Category,Item Name,Total Sold,Total Revenue\n";
+      if (d.salesByCategory && Array.isArray(d.salesByCategory)) {
+        d.salesByCategory.forEach((cat: any) => {
+          if (cat.items && Array.isArray(cat.items)) {
+            cat.items.forEach((item: any) => {
+              csvContent += `"${cat.category}","${item.name}",${item.sold},${item.revenue.toFixed(2)}\n`;
+            });
+          }
+        });
+      }
+    } else {
+      // General flat backup formatting
+      const headers = Object.keys(d).filter(k => typeof d[k] !== 'object').join(',');
+      const values = Object.keys(d).filter(k => typeof d[k] !== 'object').map(k => d[k]).join(',');
+      csvContent = `${headers}\n${values}`;
+    }
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -198,6 +233,118 @@ function KpiCard({ label, value, sub, color = 'indigo' }: { label: string; value
   );
 }
 
+function DailySalesChart({ salesData }: { salesData: { date: string; revenue: number }[] }) {
+  if (!salesData || salesData.length === 0) return null;
+  const items = salesData.slice(-14);
+  const width = 500;
+  const height = 180;
+  const padding = 40;
+  
+  const maxVal = Math.max(...items.map(d => d.revenue), 100);
+  const minVal = 0;
+  const range = maxVal - minVal;
+  
+  const getX = (index: number) => padding + (index * (width - padding * 2)) / (items.length - 1);
+  const getY = (value: number) => height - padding - ((value - minVal) * (height - padding * 2)) / range;
+
+  let points = '';
+  let areaPoints = '';
+  items.forEach((d, idx) => {
+    const x = getX(idx);
+    const y = getY(d.revenue);
+    if (idx === 0) {
+      points += `M ${x} ${y}`;
+      areaPoints += `M ${x} ${height - padding} L ${x} ${y}`;
+    } else {
+      points += ` L ${x} ${y}`;
+      areaPoints += ` L ${x} ${y}`;
+    }
+    if (idx === items.length - 1) {
+      areaPoints += ` L ${x} ${height - padding} Z`;
+    }
+  });
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+      <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-4">Daily Sales Trend</h4>
+      <div className="w-full">
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto overflow-visible">
+          <defs>
+            <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.2" />
+              <stop offset="100%" stopColor="#4f46e5" stopOpacity="0.0" />
+            </linearGradient>
+          </defs>
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+            const val = minVal + ratio * range;
+            const y = getY(val);
+            return (
+              <g key={ratio} className="opacity-40">
+                <line x1={padding} y1={y} x2={width - padding} y2={y} stroke="#cbd5e1" strokeWidth="0.5" strokeDasharray="3 3" />
+                <text x={padding - 8} y={y + 3} textAnchor="end" className="text-[8px] font-mono fill-slate-400 font-bold">
+                  ₹{Math.round(val).toLocaleString('en-IN')}
+                </text>
+              </g>
+            );
+          })}
+          {points && <path d={areaPoints} fill="url(#areaGrad)" />}
+          {points && <path d={points} fill="none" stroke="#4f46e5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+          {items.map((d, idx) => (
+            <g key={idx} className="group cursor-pointer">
+              <circle cx={getX(idx)} cy={getY(d.revenue)} r="3.5" className="fill-indigo-650 hover:fill-indigo-500 transition animate-pulse" />
+              <title>{`${d.date}: ₹${d.revenue.toFixed(0)}`}</title>
+            </g>
+          ))}
+          {items.map((d, idx) => {
+            if (idx % 2 !== 0 && idx !== items.length - 1) return null;
+            const x = getX(idx);
+            const shortDate = d.date.split('-').slice(1).join('/');
+            return (
+              <text key={idx} x={x} y={height - 10} textAnchor="middle" className="text-[8px] font-mono fill-slate-400 font-bold">
+                {shortDate}
+              </text>
+            );
+          })}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function DayOfWeekChart({ dayData }: { dayData: { day: string; revenue: number }[] }) {
+  if (!dayData || dayData.length === 0) return null;
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const maxRev = Math.max(...dayData.map(x => x.revenue), 105);
+  
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+      <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-4">Sales by Day of Week</h4>
+      <div className="flex justify-between items-end h-32 pt-6">
+        {days.map(day => {
+          const d = dayData.find(x => x.day === day);
+          const val = d ? d.revenue : 0;
+          const pct = Math.max(5, (val / maxRev) * 100);
+          return (
+            <div key={day} className="flex-1 flex flex-col items-center group relative px-1">
+              <span className="opacity-0 group-hover:opacity-100 transition duration-200 absolute -top-5 text-[8px] bg-slate-900 text-white px-1.5 py-0.5 rounded font-mono font-bold shadow z-10">
+                ₹{val.toFixed(0)}
+              </span>
+              <div className="w-full max-w-[20px] bg-slate-100 rounded-xl h-24 flex items-end overflow-hidden">
+                <div 
+                  style={{ height: `${pct}%` }} 
+                  className="w-full bg-gradient-to-t from-indigo-600 to-indigo-400 rounded-t-xl transition-all duration-500" 
+                />
+              </div>
+              <span className="text-[9px] font-black text-slate-400 uppercase mt-2">{day}</span>
+              <span className="text-[8.5px] font-bold text-slate-705 mt-0.5">₹{Math.round(val / 1000)}k</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function SalesView({ data }: { data: any }) {
   if (!data || typeof data.totalRevenue !== 'number') return <EmptyState />;
   return (
@@ -209,54 +356,13 @@ function SalesView({ data }: { data: any }) {
         <KpiCard label="Discount %" value={fmtPct(data.discountPercent)} sub={`₹${data.totalDiscount?.toFixed(0)} given`} color="rose" />
       </div>
 
-      {/* Daily Sales Trend */}
-      {data.dailySales?.length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-4">
-          <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3">Daily Sales Trend</h4>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[11px]">
-              <thead><tr className="text-left text-slate-400 font-bold uppercase tracking-wider text-[9px]">
-                <th className="pb-2 pr-3">Date</th>
-                <th className="pb-2 pr-3 text-right">Orders</th>
-                <th className="pb-2 pr-3 text-right">Revenue</th>
-                <th className="pb-2 text-right">Discount</th>
-              </tr></thead>
-              <tbody>
-                {data.dailySales.slice(-14).map((d: any, i: number) => (
-                  <tr key={i} className="border-t border-slate-100">
-                    <td className="py-1.5 pr-3 font-bold text-slate-700">{d.date}</td>
-                    <td className="py-1.5 pr-3 text-right font-semibold">{d.orders}</td>
-                    <td className="py-1.5 pr-3 text-right font-black text-emerald-700">{fmt(d.revenue)}</td>
-                    <td className="py-1.5 text-right text-rose-600 font-semibold">{fmt(d.discount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Daily Sales Trend Chart */}
+        <DailySalesChart salesData={data.dailySales} />
 
-      {/* Day of Week */}
-      {data.dayOfWeek?.length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-4">
-          <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3">Sales by Day of Week</h4>
-          <div className="grid grid-cols-7 gap-2">
-            {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(day => {
-              const d = data.dayOfWeek.find((x: any) => x.day === day);
-              const maxRev = Math.max(...data.dayOfWeek.map((x: any) => x.revenue));
-              return (
-                <div key={day} className="text-center">
-                  <div className="text-[9px] font-black text-slate-400 uppercase mb-1">{day}</div>
-                  <div className="bg-slate-100 rounded-lg h-20 relative overflow-hidden flex items-end">
-                    <div className="w-full bg-indigo-500 rounded-t" style={{ height: d ? `${(d.revenue / maxRev) * 100}%` : '5%' }} />
-                  </div>
-                  <div className="text-[9px] font-bold text-slate-600 mt-1">{d ? fmt(d.revenue) : '—'}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+        {/* Day of Week Chart */}
+        <DayOfWeekChart dayData={data.dayOfWeek} />
+      </div>
 
       {/* Top Items */}
       {data.topItems?.length > 0 && (

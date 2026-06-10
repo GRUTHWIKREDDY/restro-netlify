@@ -11,6 +11,7 @@ interface StaffPortalLoginProps {
   restaurants: Restaurant[];
   selectedRestaurantId: string;
   onSelectRestaurant: (id: string) => void;
+  forceRole?: 'superadmin';
 }
 
 export default function StaffPortalLogin({ 
@@ -18,7 +19,8 @@ export default function StaffPortalLogin({
   onGoBackToDiner,
   restaurants,
   selectedRestaurantId,
-  onSelectRestaurant
+  onSelectRestaurant,
+  forceRole
 }: StaffPortalLoginProps) {
   const [selectedRole, setSelectedRole] = useState<'restadmin' | 'kitchen' | 'superadmin' | null>(null);
   const [username, setUsername] = useState('');
@@ -26,6 +28,12 @@ export default function StaffPortalLogin({
   const [errorMessage, setErrorMessage] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
+
+  React.useEffect(() => {
+    if (forceRole) {
+      handleSelectRole(forceRole);
+    }
+  }, [forceRole]);
 
   const defaultCreds = {
     restadmin: { user: 'admin', pass: 'password', label: 'Admin Portal' },
@@ -42,20 +50,6 @@ export default function StaffPortalLogin({
   };
 
   const executeSecurityHandshake = async (role: 'restadmin' | 'kitchen' | 'superadmin') => {
-    setIsAuthenticating(true);
-    const logs = [
-      "Establishing cryptographic handshake with node cluster...",
-      "Resolving multi-tenant Firestore permissions...",
-      "Verifying credentials against cloud authorization vault...",
-    ];
-
-    for (let i = 0; i < logs.length; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      setTerminalLogs(prev => [...prev, logs[i]]);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    setIsAuthenticating(false);
     onLoginSuccess(role);
   };
 
@@ -64,12 +58,25 @@ export default function StaffPortalLogin({
     if (!selectedRole) return;
 
     if (selectedRole === 'superadmin') {
-      const credentials = defaultCreds['superadmin'];
-      if (username.trim() === credentials.user && password === credentials.pass) {
-        executeSecurityHandshake(selectedRole);
-      } else {
-        setErrorMessage(`Invalid credentials for ${credentials.label}. (Try user: "${credentials.user}" / pass: "${credentials.pass}")`);
-      }
+      setIsAuthenticating(true);
+      fetch("/kcodeit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password })
+      })
+      .then(res => res.json())
+      .then(data => {
+        setIsAuthenticating(false);
+        if (data.success) {
+          executeSecurityHandshake(selectedRole);
+        } else {
+          setErrorMessage(data.message || "Invalid credentials.");
+        }
+      })
+      .catch(() => {
+        setIsAuthenticating(false);
+        setErrorMessage("Network verification failed.");
+      });
       return;
     }
 
@@ -143,12 +150,6 @@ export default function StaffPortalLogin({
           <div className={`${selectedRole ? 'md:col-span-7' : 'md:col-span-12'} space-y-4 transition-all duration-500`}>
             <div className="flex items-center justify-between px-1">
               <span className="text-[11px] font-bold text-indigo-400 tracking-wider uppercase">Select Operational Module</span>
-              <button 
-                onClick={onGoBackToDiner}
-                className="text-[10px] font-black text-slate-450 hover:text-indigo-400 transition flex items-center gap-1 bg-slate-900/60 border border-slate-800 px-3 py-1.5 rounded-full"
-              >
-                <span>← Back to Diner Menu</span>
-              </button>
             </div>
 
             <div className={`grid ${selectedRole ? 'grid-cols-1 gap-3.5' : 'grid-cols-1 sm:grid-cols-3 gap-4.5'}`}>
@@ -215,7 +216,8 @@ export default function StaffPortalLogin({
                 </div>
               </button>
 
-              {/* Card 3: Super Admin */}
+              {/* Card 3: Super Admin - only visible on /kcodeit */}
+              {forceRole === 'superadmin' && (
               <button
                 onClick={() => handleSelectRole('superadmin')}
                 className={`relative p-5 rounded-[24px] border text-left flex flex-col justify-between gap-5 transition-all duration-350 transform hover:-translate-y-1 ${
@@ -245,6 +247,7 @@ export default function StaffPortalLogin({
                   {selectedRole === 'superadmin' && <ArrowRight size={12} className="text-purple-400" />}
                 </div>
               </button>
+              )}
 
             </div>
           </div>
@@ -306,7 +309,6 @@ export default function StaffPortalLogin({
                   <div className="space-y-1.5">
                     <div className="flex justify-between items-center px-1">
                       <label className="block text-[10px] text-slate-450 font-bold uppercase">Authorized Key / Password</label>
-                      <span className="text-[8px] text-slate-400 font-mono">default: "{defaultCreds[selectedRole].pass}"</span>
                     </div>
                     <div className="relative">
                       <input 
@@ -356,9 +358,9 @@ export default function StaffPortalLogin({
                 </form>
 
                 <div className="bg-slate-900/40 p-3 rounded-xl border border-slate-850 flex gap-2">
-                  <HelpCircle size={14} className="text-slate-450 shrink-0 mt-0.5" />
+                  <HelpCircle size={14} className="text-slate-400 shrink-0 mt-0.5" />
                   <p className="text-[9px] text-slate-400 leading-relaxed font-medium">
-                    Please use the credentials assigned by the Super Admin during onboarding. If passwords were left blank, defaults (<code className="text-indigo-400 font-bold font-mono">"{defaultCreds[selectedRole]?.user || 'admin'}"</code> / <code className="text-indigo-400 font-bold font-mono">"password"</code>) may apply.
+                    Please use the credentials assigned by the Super Admin during onboarding. If you need assistance, please contact your restaurant management team.
                   </p>
                 </div>
 

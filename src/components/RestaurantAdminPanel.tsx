@@ -9,6 +9,7 @@ import { Restaurant, MenuItem, Order, Buzzer, FloorDef } from '../types';
 import { supabase, toSnake } from '../supabase';
 import html2canvas from 'html2canvas';
 import AnalyticsDashboard from './analytics/AnalyticsDashboard';
+import { calculateBillSummary } from '../utils/billing';
 
 interface AdminProps {
   restaurant: Restaurant;
@@ -68,6 +69,7 @@ export default function RestaurantAdminPanel({
   }
 
   const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'tables' | 'floor' | 'history' | 'analytics'>('orders');
+  const [menuSearchQuery, setMenuSearchQuery] = useState('');
   const [historySearch, setHistorySearch] = useState('');
   const [selectedHistoryDate, setSelectedHistoryDate] = useState<string>('');
   const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | 'pending' | 'accepted' | 'completed' | 'rejected'>('all');
@@ -273,29 +275,7 @@ export default function RestaurantAdminPanel({
     return menus.filter(m => m.restaurantId === restaurant?.id);
   }, [menus, restaurant]);
 
-  // Exclude discount calculator helper
-  const calculateBillSummary = (items: { price: number; promoValue: number; quantity: number }[]) => {
-    let originalSubtotal = 0;
-    let totalDeductions = 0;
-    let finalPayable = 0;
 
-    items.forEach(item => {
-      const qty = item.quantity || 1;
-      const finalPrice = item.price || 0;
-      const unitDiscount = item.promoValue || 0;
-      const originalUnitPrice = finalPrice + unitDiscount;
-
-      originalSubtotal += (originalUnitPrice * qty);
-      totalDeductions += (unitDiscount * qty);
-      finalPayable += (finalPrice * qty);
-    });
-
-    return {
-      originalSubtotal,
-      totalDeductions,
-      finalPayable
-    };
-  };
 
   const ledgerBreakdown = useMemo(() => {
     const validOrders = tenantOrders.filter(o => {
@@ -1017,39 +997,20 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                           )}
 
                           {o.status === 'accepted' && (
-                            <div className="flex flex-col gap-1.5 w-full">
-                              <div className="flex gap-1 w-full">
-                                <button 
-                                  onClick={() => onUpdateOrderStatus(o.id, 'rejected')}
-                                  className="w-1/2 bg-white hover:bg-rose-50 border border-slate-250 text-rose-550 text-rose-500 px-2 py-1 text-[10px] font-black rounded-lg transition cursor-pointer"
-                                >
-                                  Cancel order
-                                </button>
-                                <button 
-                                  onClick={() => onUpdateOrderStatus(o.id, 'completed')}
-                                  className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 text-[10px] font-black rounded-lg transition shadow-sm cursor-pointer"
-                                >
-                                  Deliver Table
-                                </button>
-                              </div>
+                            <div className="flex gap-1 w-full">
                               <button 
-                                onClick={() => onUpdateOrderStatus(o.id, 'pending')}
-                                className="w-full bg-slate-100 hover:bg-slate-200 border border-slate-250 text-slate-700 py-1 text-[10px] font-black rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer"
+                                onClick={() => onUpdateOrderStatus(o.id, 'rejected')}
+                                className="w-1/2 bg-white hover:bg-rose-50 border border-slate-250 text-rose-550 text-rose-500 px-2 py-1 text-[10px] font-black rounded-lg transition cursor-pointer"
                               >
-                                <ArrowLeftRight size={11} className="text-slate-500" />
-                                <span>Return to Incoming Queue</span>
+                                Cancel order
+                              </button>
+                              <button 
+                                onClick={() => onUpdateOrderStatus(o.id, 'completed')}
+                                className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 text-[10px] font-black rounded-lg transition shadow-sm cursor-pointer"
+                              >
+                                Deliver Table
                               </button>
                             </div>
-                          )}
-
-                          {(o.status === 'completed' || o.status === 'rejected') && (
-                            <button
-                              onClick={() => onUpdateOrderStatus(o.id, 'accepted')}
-                              className="w-full bg-slate-900 hover:bg-slate-800 text-slate-100 text-[10px] font-black flex items-center justify-center gap-1 py-1.5 rounded-lg transition uppercase tracking-wider"
-                            >
-                              <ArrowLeftRight size={12} />
-                              Revert to Preparing
-                            </button>
                           )}
                         </div>
                       </div>
@@ -1103,9 +1064,21 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
             </button>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Search Bar */}
+          <div className="relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+            <input
+              type="text"
+              placeholder="Search menu items by name, category, or description..."
+              value={menuSearchQuery}
+              onChange={(e) => setMenuSearchQuery(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+            />
+          </div>
+
+          <div className="overflow-x-auto max-h-[520px] overflow-y-auto rounded-xl border border-slate-100">
             <table className="w-full text-left border-collapse text-xs">
-              <thead>
+              <thead className="sticky top-0 bg-white z-10">
                 <tr className="border-b border-slate-150 text-slate-400 font-black uppercase hover:bg-transparent">
                   <th className="py-2.5 px-1.5">Recipe Info</th>
                   <th className="py-2.5 px-1.5">Category</th>
@@ -1116,7 +1089,11 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {currentRestaurantMenus.map(item => (
+                {currentRestaurantMenus.filter(item => {
+                  if (!menuSearchQuery.trim()) return true;
+                  const q = menuSearchQuery.toLowerCase();
+                  return item.name.toLowerCase().includes(q) || item.category.toLowerCase().includes(q) || (item.description || '').toLowerCase().includes(q);
+                }).map(item => (
                   <tr key={item.id} className="hover:bg-slate-50/50 transition duration-100">
                     <td className="py-3 px-1.5 max-w-sm">
                       <div className="flex items-center gap-2.5">
@@ -1249,200 +1226,203 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-            {/* Control Column */}
-            <div className="xl:col-span-5 bg-slate-50 p-5 rounded-2xl border border-slate-205 space-y-5">
-              <h4 className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400">QR Suite Settings</h4>
-              
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-700 block">1. Allocate Tables Quantity</label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only peer" 
-                      checked={useFloors}
-                      onChange={(e) => setUseFloors(e.target.checked)}
-                      disabled={!!restaurant.disableQrGeneration}
-                    />
-                    <div className="w-7 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600 relative"></div>
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Use Floors Layout</span>
-                  </label>
-                </div>
+            <div className="xl:col-span-5 space-y-6">
+              {/* Card 1: QR Settings */}
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-5">
+                <h4 className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-650">QR Suite Settings</h4>
                 
-                {!useFloors ? (
-                  <div className="flex gap-2">
-                    <input 
-                      type="number" 
-                      min="1"
-                      max="200"
-                      disabled={!!restaurant.disableQrGeneration}
-                      value={tempTableCount}
-                      onChange={(e) => setTempTableCount(e.target.value)}
-                      className={`w-20 bg-white border border-slate-300 rounded-xl text-center px-2 py-1.5 font-black text-slate-800 ${
-                        restaurant.disableQrGeneration ? 'opacity-50 bg-slate-100 cursor-not-allowed border-slate-200' : ''
-                      }`}
-                    />
-                    <button 
-                      onClick={handleCommitTableCount}
-                      disabled={!!restaurant.disableQrGeneration}
-                      className={`flex-1 py-1.5 px-3 rounded-xl font-bold transition text-xs shadow-xs ${
-                        restaurant.disableQrGeneration 
-                          ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300' 
-                          : 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer'
-                      }`}
-                    >
-                      Set Global Table Count
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-2 border border-slate-200 rounded-xl p-3 bg-white">
-                    {floorsData.map((floor, index) => (
-                      <div key={index} className="flex gap-2 items-center">
-                        <input 
-                          type="text" 
-                          placeholder="Floor Name"
-                          value={floor.name}
-                          onChange={(e) => {
-                            const nd = [...floorsData];
-                            nd[index].name = e.target.value;
-                            setFloorsData(nd);
-                          }}
-                          disabled={!!restaurant.disableQrGeneration}
-                          className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800"
-                        />
-                        <input 
-                          type="number" 
-                          min="1" max="100"
-                          value={floor.seats}
-                          onChange={(e) => {
-                            const nd = [...floorsData];
-                            nd[index].seats = parseInt(e.target.value) || 0;
-                            setFloorsData(nd);
-                          }}
-                          disabled={!!restaurant.disableQrGeneration}
-                          className="w-16 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 text-center"
-                        />
-                        <button 
-                          onClick={() => {
-                            if (floorsData.length > 1) {
-                              setFloorsData(floorsData.filter((_, i) => i !== index));
-                            }
-                          }}
-                          disabled={!!restaurant.disableQrGeneration || floorsData.length === 1}
-                          className="p-1.5 text-red-400 hover:bg-red-50 rounded"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    ))}
-                    <div className="flex gap-2 mt-2 pt-2 border-t border-slate-100">
-                      <button 
-                        onClick={() => setFloorsData([...floorsData, { name: `Floor ${floorsData.length + 1}`, seats: 10 }])}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700 block">1. Allocate Tables Quantity</label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only peer" 
+                        checked={useFloors}
+                        onChange={(e) => setUseFloors(e.target.checked)}
                         disabled={!!restaurant.disableQrGeneration}
-                        className="flex-1 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-black uppercase rounded-lg transition"
-                      >
-                        + Add Floor
-                      </button>
+                      />
+                      <div className="w-7 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600 relative"></div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Use Floors Layout</span>
+                    </label>
+                  </div>
+                  
+                  {!useFloors ? (
+                    <div className="flex gap-2">
+                      <input 
+                        type="number" 
+                        min="1"
+                        max="200"
+                        disabled={!!restaurant.disableQrGeneration}
+                        value={tempTableCount}
+                        onChange={(e) => setTempTableCount(e.target.value)}
+                        className={`w-20 bg-white border border-slate-300 rounded-xl text-center px-2 py-1.5 font-black text-slate-800 ${
+                          restaurant.disableQrGeneration ? 'opacity-50 bg-slate-100 cursor-not-allowed border-slate-200' : ''
+                        }`}
+                      />
                       <button 
                         onClick={handleCommitTableCount}
                         disabled={!!restaurant.disableQrGeneration}
-                        className="flex-1 py-1.5 px-3 rounded-lg font-bold transition text-[10px] uppercase shadow-xs bg-slate-900 hover:bg-slate-800 text-white cursor-pointer"
+                        className={`flex-1 py-1.5 px-3 rounded-xl font-bold transition text-xs shadow-xs ${
+                          restaurant.disableQrGeneration 
+                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300' 
+                            : 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer'
+                        }`}
                       >
-                        Commit Setup ({floorsData.reduce((a,c) => a + c.seats, 0)} Total)
+                        Set Global Table Count
                       </button>
                     </div>
-                  </div>
-                )}
-                <p className="text-[9.5px] text-slate-400 leading-normal">
-                  Scale your physical seats dynamically. Max: 200. Code routes are created live.
-                </p>
-              </div>
-
-              <div className="pt-3 border-t border-slate-200 space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 block text-left">2. Choose Seat Showcase</label>
-                <select
-                  value={selectedQRTable}
-                  onChange={(e) => setSelectedQRTable(parseInt(e.target.value))}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-2 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-500 cursor-pointer"
-                >
-                  {restaurant.floors && restaurant.floors.length > 0 ? (() => {
-                    let acc = 0;
-                    return restaurant.floors.map((floor, fIdx) => {
-                      const start = acc + 1;
-                      const end = acc + floor.seats;
-                      acc += floor.seats;
-                      if (floor.seats === 0) return null;
-                      return (
-                        <optgroup key={fIdx} label={`${floor.name} (Seats ${start}-${end})`}>
-                          {Array.from({ length: floor.seats }, (_, idx) => start + idx).map(num => (
-                            <option key={num} value={num}>Desk Standing Card — Table #{num}</option>
-                          ))}
-                        </optgroup>
-                      );
-                    });
-                  })() : Array.from({ length: restaurant.totalTables }, (_, idx) => idx + 1).map(num => (
-                    <option key={num} value={num}>Desk Standing Card — Table #{num}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="pt-3 border-t border-slate-200 space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 block text-left">3. QR Public URL Target Address</label>
-                <div className="grid grid-cols-2 gap-1.5 bg-white p-1 rounded-xl border">
-                  <button
-                    type="button"
-                    onClick={() => setQrBaseUrlOption('auto')}
-                    className={`text-[9px] font-black uppercase py-1 px-1.5 rounded-lg transition-all ${qrBaseUrlOption === 'auto' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-805'}`}
-                  >
-                    Auto-Detect
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setQrBaseUrlOption('custom')}
-                    className={`text-[9px] font-black uppercase py-1 px-1.5 rounded-lg transition-all ${qrBaseUrlOption === 'custom' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-805'}`}
-                  >
-                    Custom URL
-                  </button>
-                </div>
-                {qrBaseUrlOption === 'custom' ? (
-                  <div className="space-y-1">
-                    <input 
-                      type="url" 
-                      placeholder="e.g. https://ais-pre-..."
-                      value={qrCustomBaseUrl}
-                      onChange={(e) => setQrCustomBaseUrl(e.target.value)}
-                      className="w-full bg-white border border-slate-350 rounded-xl px-2.5 py-1.5 text-[10.5px] font-mono font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                    />
-                    <p className="text-[9px] text-amber-600 leading-normal font-semibold">
-                      ⚠️ Paste your Shared App URL or Live Deployment domain so scanning works perfectly on your external mobile phone!
-                    </p>
-                  </div>
-                ) : (
-                  <p className="text-[9px] text-slate-400 leading-normal">
-                    Currently utilizing frame host origin: <span className="font-mono text-[9px] font-bold text-slate-500 bg-slate-100 px-1 rounded">{window.location.origin}</span>
+                  ) : (
+                    <div className="space-y-2 border border-slate-200 rounded-xl p-3 bg-white">
+                      {floorsData.map((floor, index) => (
+                        <div key={index} className="flex gap-2 items-center">
+                          <input 
+                            type="text" 
+                            placeholder="Floor Name"
+                            value={floor.name}
+                            onChange={(e) => {
+                              const nd = [...floorsData];
+                              nd[index].name = e.target.value;
+                              setFloorsData(nd);
+                            }}
+                            disabled={!!restaurant.disableQrGeneration}
+                            className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800"
+                          />
+                          <input 
+                            type="number" 
+                            min="1" max="100"
+                            value={floor.seats}
+                            onChange={(e) => {
+                              const nd = [...floorsData];
+                              nd[index].seats = parseInt(e.target.value) || 0;
+                              setFloorsData(nd);
+                            }}
+                            disabled={!!restaurant.disableQrGeneration}
+                            className="w-16 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 text-center"
+                          />
+                          <button 
+                            onClick={() => {
+                              if (floorsData.length > 1) {
+                                setFloorsData(floorsData.filter((_, i) => i !== index));
+                              }
+                            }}
+                            disabled={!!restaurant.disableQrGeneration || floorsData.length === 1}
+                            className="p-1.5 text-red-400 hover:bg-red-50 rounded"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      ))}
+                      <div className="flex gap-2 mt-2 pt-2 border-t border-slate-100">
+                        <button 
+                          onClick={() => setFloorsData([...floorsData, { name: `Floor ${floorsData.length + 1}`, seats: 10 }])}
+                          disabled={!!restaurant.disableQrGeneration}
+                          className="flex-1 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-black uppercase rounded-lg transition"
+                        >
+                          + Add Floor
+                        </button>
+                        <button 
+                          onClick={handleCommitTableCount}
+                          disabled={!!restaurant.disableQrGeneration}
+                          className="flex-1 py-1.5 px-3 rounded-lg font-bold transition text-[10px] uppercase shadow-xs bg-slate-900 hover:bg-slate-800 text-white cursor-pointer"
+                        >
+                          Commit Setup ({floorsData.reduce((a,c) => a + c.seats, 0)} Total)
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <p className="text-[9.5px] text-slate-400 leading-normal">
+                    Scale your physical seats dynamically. Max: 200. Code routes are created live.
                   </p>
-                )}
+                </div>
+
+                <div className="pt-3 border-t border-slate-200 space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 block text-left">2. Choose Seat Showcase</label>
+                  <select
+                    value={selectedQRTable}
+                    onChange={(e) => setSelectedQRTable(parseInt(e.target.value))}
+                    className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-2 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-500 cursor-pointer"
+                  >
+                    {useFloors ? (() => {
+                      let acc = 0;
+                      return floorsData.map((floor, fIdx) => {
+                        const start = acc + 1;
+                        const end = acc + floor.seats;
+                        acc += floor.seats;
+                        if (floor.seats === 0) return null;
+                        return (
+                          <optgroup key={fIdx} label={`${floor.name} (Seats ${start}-${end})`}>
+                            {Array.from({ length: floor.seats }, (_, idx) => start + idx).map(num => (
+                              <option key={num} value={num}>Desk Standing Card — Table #{num}</option>
+                            ))}
+                          </optgroup>
+                        );
+                      });
+                    })() : Array.from({ length: restaurant.totalTables }, (_, idx) => idx + 1).map(num => (
+                      <option key={num} value={num}>Desk Standing Card — Table #{num}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="pt-3 border-t border-slate-200 space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 block text-left">3. QR Public URL Target Address</label>
+                  <div className="grid grid-cols-2 gap-1.5 bg-white p-1 rounded-xl border">
+                    <button
+                      type="button"
+                      onClick={() => setQrBaseUrlOption('auto')}
+                      className={`text-[9px] font-black uppercase py-1 px-1.5 rounded-lg transition-all ${qrBaseUrlOption === 'auto' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-805'}`}
+                    >
+                      Auto-Detect
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQrBaseUrlOption('custom')}
+                      className={`text-[9px] font-black uppercase py-1 px-1.5 rounded-lg transition-all ${qrBaseUrlOption === 'custom' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-805'}`}
+                    >
+                      Custom URL
+                    </button>
+                  </div>
+                  {qrBaseUrlOption === 'custom' ? (
+                    <div className="space-y-1">
+                      <input 
+                        type="url" 
+                        placeholder="e.g. https://ais-pre-..."
+                        value={qrCustomBaseUrl}
+                        onChange={(e) => setQrCustomBaseUrl(e.target.value)}
+                        className="w-full bg-white border border-slate-350 rounded-xl px-2.5 py-1.5 text-[10.5px] font-mono font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                      />
+                      <p className="text-[9px] text-amber-600 leading-normal font-semibold">
+                        ⚠️ Paste your Shared App URL or Live Deployment domain so scanning works perfectly on your external mobile phone!
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-[9px] text-slate-400 leading-normal">
+                      Currently utilizing frame host origin: <span className="font-mono text-[9px] font-bold text-slate-500 bg-slate-100 px-1 rounded">{window.location.origin}</span>
+                    </p>
+                  )}
+                </div>
+
+                <div className="pt-4 border-t border-slate-200 text-xs text-slate-505 space-y-2">
+                  <p className="font-extrabold text-slate-705 uppercase text-[9px] tracking-wider">Device Test Link</p>
+                  <p className="text-[10px] leading-relaxed text-slate-400">
+                    Click below to open the digital customer ordering page for <b className="text-slate-600 font-bold">Table #{selectedQRTable}</b> in a new browser tab to try seating:
+                  </p>
+                  <a
+                    href={`${activeQRBaseUrl}/r/${restaurant.id}/t/${selectedQRTable}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold py-2 px-3 rounded-xl text-[10.5px] uppercase tracking-wider block text-center border border-indigo-100 transition shadow-2xs animate-pulse-slow-once"
+                  >
+                    📱 Test Guest Portal (Table #{selectedQRTable})
+                  </a>
+                </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-200 text-xs text-slate-505 space-y-2">
-                <p className="font-extrabold text-slate-700 uppercase text-[9px] tracking-wider">Device Test Link</p>
-                <p className="text-[10px] leading-relaxed text-slate-400">
-                  Click below to open the digital customer ordering page for <b className="text-slate-600 font-bold">Table #{selectedQRTable}</b> in a new browser tab to try seating:
-                </p>
-                <a
-                  href={`${activeQRBaseUrl}/r/${restaurant.id}/t/${selectedQRTable}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold py-2 px-3 rounded-xl text-[10.5px] uppercase tracking-wider block text-center border border-indigo-100 transition shadow-2xs animate-pulse-slow-once"
-                >
-                  📱 Test Guest Portal (Table #{selectedQRTable})
-                </a>
-              </div>
-
-              <div className="pt-4 border-t border-slate-200 text-xs space-y-2 text-left">
+              {/* Card 2: Waiter Validation PIN */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm text-xs space-y-3 text-left">
                 <div className="flex items-center justify-between">
-                  <p className="font-extrabold text-slate-700 uppercase text-[9px] tracking-wider">Waiter Validation PIN</p>
-                  <span className="font-mono text-[9px] bg-slate-100 border border-slate-200 px-1 py-0.2 rounded text-slate-500 font-extrabold">GATEWAY KEY</span>
+                  <p className="font-extrabold text-slate-705 uppercase text-[9px] tracking-wider">Waiter Validation PIN</p>
+                  <span className="font-mono text-[9px] bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-500 font-extrabold">GATEWAY KEY</span>
                 </div>
                 <p className="text-[10px] leading-relaxed text-slate-400">
                   Update code or auto-generate digits. Waiters share this code with diners when physical device GPS checks fail.
@@ -1464,7 +1444,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                   </button>
                   <button 
                     onClick={handleRandomizeWaiterPin}
-                    title="Generate Random Code"
+                    title="Rotate Waiter PIN"
                     className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 text-indigo-700 text-[11px] py-1.5 px-2 rounded-xl font-extrabold transition flex items-center justify-center gap-1 cursor-pointer"
                   >
                     <RefreshCw size={11} className="shrink-0" />
@@ -2484,7 +2464,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                   <div>
                     <label className="block font-bold text-slate-450 uppercase mb-1">Menu Category</label>
                     <select
-                      value={menuForm.category}
+                      value={['Starters', 'Mains', 'Desserts', 'Drinks'].includes(menuForm.category) ? menuForm.category : 'Custom...'}
                       onChange={(e) => setMenuForm({ ...menuForm, category: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-205 rounded-xl px-2 py-2 font-bold text-slate-705"
                     >
@@ -2492,9 +2472,24 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                       <option value="Mains">Mains</option>
                       <option value="Desserts">Desserts</option>
                       <option value="Drinks">Drinks</option>
+                      <option value="Custom...">Custom...</option>
                     </select>
                   </div>
                 </div>
+
+                {(!['Starters', 'Mains', 'Desserts', 'Drinks'].includes(menuForm.category) || menuForm.category === 'Custom...') && (
+                  <div className="mt-2.5">
+                    <label className="block font-bold text-slate-450 uppercase mb-1">Custom Category Name *</label>
+                    <input 
+                      type="text" 
+                      required
+                      placeholder="e.g. Breads"
+                      value={menuForm.category === 'Custom...' ? '' : menuForm.category}
+                      onChange={(e) => setMenuForm({ ...menuForm, category: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-205 rounded-xl px-3 py-2 font-bold text-slate-850"
+                    />
+                  </div>
+                )}
 
                 {/* Visual Food Photography & AI Shoot Studio */}
                 <div className="pt-2.5 border-t border-slate-100 space-y-2 relative overflow-hidden">
@@ -2710,15 +2705,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                   />
                 </div>
 
-                <div className="pt-2 border-t border-slate-100 flex justify-between items-center">
-                  <span className="font-extrabold text-slate-700">Set Instantly Available?</span>
-                  <input 
-                    type="checkbox" 
-                    checked={menuForm.isAvailable}
-                    onChange={(e) => setMenuForm({ ...menuForm, isAvailable: e.target.checked })}
-                    className="w-4 h-4 text-emerald-600 rounded"
-                  />
-                </div>
+
 
                 <div className="pt-2 border-t border-slate-100 space-y-2">
                   <div className="flex justify-between items-center">
@@ -2772,9 +2759,9 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                 </button>
                 <button 
                   type="submit"
-                  className="w-1/2 bg-emerald-650 hover:bg-emerald-700 text-white py-2 rounded-xl font-bold shadow transition"
+                  className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-bold shadow transition text-sm"
                 >
-                  Commit changes
+                  {editingItem ? 'Update Item' : 'Add Item'}
                 </button>
               </div>
             </form>

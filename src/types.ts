@@ -15,7 +15,7 @@ export interface Restaurant {
   longitude?: number;
   geofenceRadiusMeters?: number;
   verificationPin?: string;
-  
+
   // Credentials
   adminUsername?: string;
   adminPassword?: string;
@@ -28,6 +28,7 @@ export interface Restaurant {
   hideHistoryOlderThanOneDay?: boolean;
   disableAdminPortal?: boolean;
   disableKdsPortal?: boolean;
+  enableSlaWarning?: boolean;
 }
 
 export interface MenuItem {
@@ -70,7 +71,7 @@ export interface Order {
   createdAt: string;
   totalAmount: number; // Final payable nets
   released?: boolean; // Settle-released state flag
-  
+
   // Geofencing & Handshake fields
   geofenceVerified?: boolean;
   geofenceDistance?: number;

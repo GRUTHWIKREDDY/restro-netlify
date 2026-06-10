@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_RESTRO_PROJECT_URL_SUPABASE || '';
-const supabaseAnonKey = import.meta.env.VITE_RESTRO_PUBLISHABLE_KEY || '';
+const supabaseUrl = (import.meta as any).env.VITE_RESTRO_PROJECT_URL_SUPABASE || '';
+const supabaseAnonKey = (import.meta as any).env.VITE_RESTRO_PUBLISHABLE_KEY || '';
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('Supabase credentials not configured in environment variables.');

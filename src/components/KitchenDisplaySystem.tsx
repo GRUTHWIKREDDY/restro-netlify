@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { ChefHat, Clock, AlertTriangle, Check, X, ClipboardList, Info, ArrowLeftRight, AlertOctagon } from 'lucide-react';
 import { Restaurant, Order, Buzzer } from '../types';
 
@@ -7,7 +7,7 @@ interface KdsProps {
   orders: Order[];
   onUpdateOrderStatus: (id: string, selectStatus: any) => void;
   onCancelSpecificDish: (orderId: string, itemIdx: number) => void;
-  ticker: number;
+  ticker?: number;
   buzzers: Buzzer[];
   restaurants?: Restaurant[];
   onSelectRestaurant?: (id: string) => void;
@@ -60,6 +60,61 @@ export default function KitchenDisplaySystem({
   const pendingKitchenBuzzers = useMemo(() => {
     return (buzzers || []).filter(b => b.restaurantId === restaurant?.id && b.status === 'pending');
   }, [buzzers, restaurant]);
+
+  // Local seconds ticker for ticket duration age calculation
+  const [localTicker, setLocalTicker] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLocalTicker(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Audio system chime alert for incoming pending tickets
+  const prevPendingCount = useRef(0);
+  const pendingOrdersCount = useMemo(() => {
+    return activeRestaurantOrders.filter(o => o.status === 'pending').length;
+  }, [activeRestaurantOrders]);
+
+  useEffect(() => {
+    if (pendingOrdersCount > prevPendingCount.current) {
+      try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        
+        // Ring tone 1 (D5 key chord)
+        const osc1 = audioCtx.createOscillator();
+        const gain1 = audioCtx.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+        gain1.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gain1.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.6);
+        osc1.connect(gain1);
+        gain1.connect(audioCtx.destination);
+        osc1.start();
+        osc1.stop(audioCtx.currentTime + 0.6);
+
+        // Ring tone 2 (A5 chime key chord) delayed by 150ms
+        setTimeout(() => {
+          try {
+            const osc2 = audioCtx.createOscillator();
+            const gain2 = audioCtx.createGain();
+            osc2.type = 'sine';
+            osc2.frequency.setValueAtTime(880.00, audioCtx.currentTime);
+            gain2.gain.setValueAtTime(0.08, audioCtx.currentTime);
+            gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
+            osc2.connect(gain2);
+            gain2.connect(audioCtx.destination);
+            osc2.start();
+            osc2.stop(audioCtx.currentTime + 0.8);
+          } catch (err) {}
+        }, 150);
+      } catch (err) {
+        console.error("Audio API warning:", err);
+      }
+    }
+    prevPendingCount.current = pendingOrdersCount;
+  }, [pendingOrdersCount]);
 
   return (
     <div id="kitchen-display-system-root" className="flex-1 bg-slate-950 text-slate-100 p-4 sm:p-6 lg:p-8 flex flex-col space-y-4">
@@ -161,7 +216,8 @@ export default function KitchenDisplaySystem({
                   order={o}
                   onStatusUpdate={onUpdateOrderStatus}
                   onCancelDish={onCancelSpecificDish}
-                  ticker={ticker}
+                  ticker={localTicker}
+                  enableSlaWarning={restaurant?.enableSlaWarning}
                 />
               ))}
 
@@ -196,7 +252,8 @@ export default function KitchenDisplaySystem({
                   order={o}
                   onStatusUpdate={onUpdateOrderStatus}
                   onCancelDish={onCancelSpecificDish}
-                  ticker={ticker}
+                  ticker={localTicker}
+                  enableSlaWarning={restaurant?.enableSlaWarning}
                 />
               ))}
 
@@ -274,16 +331,17 @@ interface KdsTicketProps {
   onStatusUpdate: (id: string, selectStatus: any) => void;
   onCancelDish: (orderId: string, itemIdx: number) => void;
   ticker: number;
+  enableSlaWarning?: boolean;
 }
 
-function KdsTicketCard({ order, onStatusUpdate, onCancelDish, ticker }: KdsTicketProps) {
+function KdsTicketCard({ order, onStatusUpdate, onCancelDish, ticker, enableSlaWarning }: KdsTicketProps) {
   const elapsedMinutes = useMemo(() => {
     const createdTime = new Date(order.createdAt).getTime();
     const diff = Date.now() - createdTime;
     return Math.floor(diff / (60 * 1000));
   }, [order.createdAt, ticker]);
 
-  const isSlaBreached = elapsedMinutes >= 15;
+  const isSlaBreached = !!enableSlaWarning && elapsedMinutes >= 15;
 
   return (
     <div 
@@ -406,13 +464,6 @@ function KdsTicketCard({ order, onStatusUpdate, onCancelDish, ticker }: KdsTicke
             >
               <Check size={14} className="stroke-[3]" />
               Mark Fulfilled & Served
-            </button>
-            <button
-              onClick={() => onStatusUpdate(order.id, 'pending')}
-              className="w-full bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 py-1.5 text-[9px] font-black uppercase rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <ArrowLeftRight size={11} className="stroke-[2.5]" />
-              <span>Revert to Incoming Queue</span>
             </button>
           </div>
         )}

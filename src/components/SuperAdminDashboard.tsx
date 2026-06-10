@@ -7,6 +7,7 @@ import {
 import { Restaurant, MenuItem, Order } from '../types';
 import { supabase, toSnake } from '../supabase';
 import AnalyticsDashboard from './analytics/AnalyticsDashboard';
+import { calculateBillSummary } from '../utils/billing';
 
 interface SuperAdminProps {
   restaurants: Restaurant[];
@@ -101,6 +102,8 @@ export default function SuperAdminDashboard({
   const [manageAdminPassword, setManageAdminPassword] = useState('');
   const [manageChefUsername, setManageChefUsername] = useState('');
   const [manageChefPassword, setManageChefPassword] = useState('');
+  const [manageEnableSlaWarning, setManageEnableSlaWarning] = useState(false);
+  const [manageModalTab, setManageModalTab] = useState<'capabilities' | 'analytics'>('capabilities');
 
   // SAAS Ledger parameters
   const [isLedgerOpen, setIsLedgerOpen] = useState(false);
@@ -121,29 +124,27 @@ export default function SuperAdminDashboard({
     return { activeBrands, totalBrands, totalTables, totalOrders, totalRevenue };
   }, [restaurants, orders]);
 
-  // Pricing calculation helper
-  const calculateBillSummary = (items: { price: number; promoValue: number; quantity: number }[]) => {
-    let originalSubtotal = 0;
-    let totalDeductions = 0;
-    let finalPayable = 0;
+  const tenantOrders = useMemo(() => {
+    if (!selectedManageTenant) return [];
+    return orders.filter(o => o.restaurantId === selectedManageTenant.id && o.status !== 'rejected');
+  }, [orders, selectedManageTenant]);
 
-    items.forEach(item => {
-      const qty = item.quantity || 1;
-      const finalPrice = item.price || 0;
-      const unitDiscount = item.promoValue || 0;
-      const originalUnitPrice = finalPrice + unitDiscount;
+  const tenantGrossSales = useMemo(() => {
+    return tenantOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+  }, [tenantOrders]);
 
-      originalSubtotal += (originalUnitPrice * qty);
-      totalDeductions += (unitDiscount * qty);
-      finalPayable += (finalPrice * qty);
-    });
+  const tenantOrderCount = tenantOrders.length;
+  const tenantAverageTicket = tenantOrderCount > 0 ? tenantGrossSales / tenantOrderCount : 0;
 
-    return {
-      originalSubtotal,
-      totalDeductions,
-      finalPayable
-    };
-  };
+  const tenantAverageRating = useMemo(() => {
+    if (!selectedManageTenant) return 4.5;
+    const rMenus = menus.filter(m => m.restaurantId === selectedManageTenant.id);
+    const ratedMenus = rMenus.filter(m => m.avgRating !== undefined && m.avgRating > 0);
+    if (ratedMenus.length === 0) return 4.5;
+    return ratedMenus.reduce((sum, m) => sum + (m.avgRating || 0), 0) / ratedMenus.length;
+  }, [menus, selectedManageTenant]);
+
+
 
   const todayFinancials = useMemo(() => {
     const todayStr = new Date().toISOString().split('T')[0];
@@ -222,6 +223,28 @@ export default function SuperAdminDashboard({
     }
   }, [globalDailyHistorySummaries, selectedHistoryDate]);
 
+  useEffect(() => {
+    if (!restaurants || restaurants.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const tenantId = params.get('tenantId');
+    const action = params.get('action');
+    if (tenantId && action) {
+      const tenant = restaurants.find(r => r.id === tenantId);
+      if (tenant) {
+        if (action === 'ledger') {
+          openLedgerLocal(tenant);
+        } else if (action === 'manage') {
+          openManageLocal(tenant);
+        } else if (action === 'edit') {
+          openEditLocal(tenant);
+        }
+        // Clear params from address bar
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+      }
+    }
+  }, [restaurants]);
+
   const filteredGlobalHistoryOrders = useMemo(() => {
     let sourceOrders: Order[] = [];
     if (showAllHistoryDates) {
@@ -292,7 +315,7 @@ export default function SuperAdminDashboard({
     }
   };
 
-  const handleOpenEditTenant = (tenant: Restaurant) => {
+  const openEditLocal = (tenant: Restaurant) => {
     setEditTenantId(tenant.id);
     setEditTenantName(tenant.name);
     setEditTenantLogo(tenant.logoUrl);
@@ -301,6 +324,10 @@ export default function SuperAdminDashboard({
     setEditTenantLongitude((tenant.longitude || 77.2025).toString());
     setEditTenantVerificationPin(tenant.verificationPin || "1234");
     setIsEditTenantOpen(true);
+  };
+
+  const handleOpenEditTenant = (tenant: Restaurant) => {
+    window.open(window.location.origin + window.location.pathname + `?tenantId=${tenant.id}&action=edit`, '_blank');
   };
 
   const selectedTenantLedgerBreakdown = useMemo(() => {
@@ -330,7 +357,7 @@ export default function SuperAdminDashboard({
     return { validOrders: filteredOrders, baseSubtotal, deductions, finalNet };
   }, [selectedLedgerTenant, orders, ledgerFromDate, ledgerToDate, ledgerSearch]);
 
-  const handleOpenLedger = (tenant: Restaurant) => {
+  const openLedgerLocal = (tenant: Restaurant) => {
     setSelectedLedgerTenant(tenant);
     setLedgerFromDate('');
     setLedgerToDate('');
@@ -338,7 +365,11 @@ export default function SuperAdminDashboard({
     setIsLedgerOpen(true);
   };
 
-  const handleOpenManageTenant = (tenant: Restaurant) => {
+  const handleOpenLedger = (tenant: Restaurant) => {
+    window.open(window.location.origin + window.location.pathname + `?tenantId=${tenant.id}&action=ledger`, '_blank');
+  };
+
+  const openManageLocal = (tenant: Restaurant) => {
     setSelectedManageTenant(tenant);
     setManageStatus(tenant.status || "active");
     setManageLockAllItems(!!tenant.lockAllItems);
@@ -346,11 +377,17 @@ export default function SuperAdminDashboard({
     setManageHideHistory(!!tenant.hideHistoryOlderThanOneDay);
     setManageDisableAdmin(!!tenant.disableAdminPortal);
     setManageDisableKds(!!tenant.disableKdsPortal);
+    setManageEnableSlaWarning(!!tenant.enableSlaWarning);
     setManageAdminUsername(tenant.adminUsername || "admin");
     setManageAdminPassword(tenant.adminPassword || "password");
     setManageChefUsername(tenant.chefUsername || "chef");
     setManageChefPassword(tenant.chefPassword || "password");
+    setManageModalTab('capabilities');
     setIsManageTenantOpen(true);
+  };
+
+  const handleOpenManageTenant = (tenant: Restaurant) => {
+    window.open(window.location.origin + window.location.pathname + `?tenantId=${tenant.id}&action=manage`, '_blank');
   };
 
   const handleSaveCapabilities = async () => {
@@ -363,6 +400,7 @@ export default function SuperAdminDashboard({
       hideHistoryOlderThanOneDay: manageHideHistory,
       disableAdminPortal: manageDisableAdmin,
       disableKdsPortal: manageDisableKds,
+      enableSlaWarning: manageEnableSlaWarning,
       adminUsername: manageAdminUsername.trim() || undefined,
       adminPassword: manageAdminPassword.trim() || undefined,
       chefUsername: manageChefUsername.trim() || undefined,
@@ -2168,181 +2206,237 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               </button>
             </div>
 
-            {/* Content body with all toggles */}
-            <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
-              
-              {/* BRAND ACCOUNT STATUS */}
-              <div className="space-y-2">
-                <h5 className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Account Subscription Status</h5>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setManageStatus("active")}
-                    className={`py-3 px-4 rounded-2xl border text-center font-extrabold uppercase text-[10px] tracking-wider transition ${
-                      manageStatus === 'active' 
-                        ? 'bg-emerald-50 border-emerald-300 text-emerald-705 font-black shadow-xs ring-2 ring-emerald-500/10' 
-                        : 'bg-white border-slate-205 text-slate-500 hover:bg-slate-50 hover:text-slate-700'
-                    }`}
-                  >
-                    ● Onboarded & Active
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setManageStatus("inactive")}
-                    className={`py-3 px-4 rounded-2xl border text-center font-extrabold uppercase text-[10px] tracking-wider transition ${
-                      manageStatus === 'inactive' 
-                        ? 'bg-rose-50 border-rose-300 text-rose-705 font-black shadow-xs ring-2 ring-rose-500/10' 
-                        : 'bg-white border-slate-205 text-slate-500 hover:bg-slate-50 hover:text-slate-700'
-                    }`}
-                  >
-                    ■ Suspended / Hold
-                  </button>
-                </div>
-                <p className="text-[9.5px] text-slate-400 font-medium select-none">Setting status to Suspended immediately suspends all guest dine-in displays, halting the live menu and preventing customer order submissions.</p>
-              </div>
-
-              {/* SERVICE CONTROLLER LIMITS */}
-              <div className="space-y-2.5 pt-2 border-t border-slate-100">
-                <h5 className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Operational SLA Rules & Restrictions</h5>
-                
-                {/* Rule: Lock All Items */}
-                <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-205 rounded-2xl hover:bg-slate-100 transition duration-150">
-                  <div className="pr-4 space-y-0.5">
-                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                      <Lock size={13} className="text-purple-600" /> Recipe Catalog Lockdown
-                    </span>
-                    <span className="text-[10.5px] text-slate-450 leading-tight block">Puts this brand under a strict Read-Only mode. Inhibits item updates, adds, or catalog deletes; lets guests view cards but locks ordering checkout.</span>
-                  </div>
-                  <button 
-                    type="button"
-                    onClick={() => setManageLockAllItems(!manageLockAllItems)}
-                    className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 shrink-0 ${manageLockAllItems ? 'bg-indigo-650 bg-indigo-600 justify-end font-normal' : 'bg-slate-300 justify-start font-normal'}`}
-                  >
-                    <span className="bg-white w-4.5 h-4.5 rounded-full shadow-md transform transition-transform duration-200"></span>
-                  </button>
-                </div>
-
-                {/* Rule: Disable QR suite */}
-                <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-205 rounded-2xl hover:bg-slate-100 transition duration-150">
-                  <div className="pr-4 space-y-0.5">
-                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                      <QrCode size={13} className="text-purple-600" /> Block QR Node Scaling
-                    </span>
-                    <span className="text-[10.5px] text-slate-450 leading-tight block">Stops merchants from scaling tables, allocating new routing seats, or custom-pointing system URLs. Limits existing codes.</span>
-                  </div>
-                  <button 
-                    type="button"
-                    onClick={() => setManageDisableQr(!manageDisableQr)}
-                    className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 shrink-0 ${manageDisableQr ? 'bg-indigo-650 bg-indigo-600 justify-end font-normal' : 'bg-slate-300 justify-start font-normal'}`}
-                  >
-                    <span className="bg-white w-4.5 h-4.5 rounded-full shadow-md transform transition-transform duration-200"></span>
-                  </button>
-                </div>
-
-                {/* Rule: Hide History Older Than 1 Day */}
-                <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-205 rounded-2xl hover:bg-slate-100 transition duration-150">
-                  <div className="pr-4 space-y-0.5">
-                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                      <RefreshCw size={13} className="text-purple-600 animate-spin-slow" /> Limit Archive History to 24 Hours
-                    </span>
-                    <span className="text-[10.5px] text-slate-450 leading-tight block">Filters other historic data logs so the merchant and chefs only have active and recent visibility. Logs are kept in DB for Super Admin audit but hidden from tenant.</span>
-                  </div>
-                  <button 
-                    type="button"
-                    onClick={() => setManageHideHistory(!manageHideHistory)}
-                    className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 shrink-0 ${manageHideHistory ? 'bg-indigo-650 bg-indigo-600 justify-end font-normal' : 'bg-slate-300 justify-start font-normal'}`}
-                  >
-                    <span className="bg-white w-4.5 h-4.5 rounded-full shadow-md transform transition-transform duration-200"></span>
-                  </button>
-                </div>
-
-                {/* Rule: Disable Admin Portal Access */}
-                <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-205 rounded-2xl hover:bg-slate-100 transition duration-150">
-                  <div className="pr-4 space-y-0.5">
-                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                      <Building2 size={13} className="text-purple-600" /> Terminate Merchant Admin Access
-                    </span>
-                    <span className="text-[10.5px] text-slate-450 leading-tight block">Completely restricts access to the Administrative Panel. Prevents configuration edits or statistics reporting overlay access.</span>
-                  </div>
-                  <button 
-                    type="button"
-                    onClick={() => setManageDisableAdmin(!manageDisableAdmin)}
-                    className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 shrink-0 ${manageDisableAdmin ? 'bg-indigo-650 bg-indigo-600 justify-end font-normal' : 'bg-slate-300 justify-start font-normal'}`}
-                  >
-                    <span className="bg-white w-4.5 h-4.5 rounded-full shadow-md transform transition-transform duration-200"></span>
-                  </button>
-                </div>
-
-                {/* Rule: Disable KDS Portal Access */}
-                <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-205 rounded-2xl hover:bg-slate-100 transition duration-150">
-                  <div className="pr-4 space-y-0.5">
-                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                      <ClipboardList size={13} className="text-purple-600" /> Terminate Chef KDS Terminal Access
-                    </span>
-                    <span className="text-[10.5px] text-slate-450 leading-tight block">Suspends the Kitchen Display System monitor. Cooking state tracking, cancelling, and ticket status logs are locked for kitchen staff.</span>
-                  </div>
-                  <button 
-                    type="button"
-                    onClick={() => setManageDisableKds(!manageDisableKds)}
-                    className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 shrink-0 ${manageDisableKds ? 'bg-indigo-650 bg-indigo-600 justify-end font-normal' : 'bg-slate-300 justify-start font-normal'}`}
-                  >
-                    <span className="bg-white w-4.5 h-4.5 rounded-full shadow-md transform transition-transform duration-200"></span>
-                  </button>
-                </div>
-
-              </div>
-
-              <div className="mt-4 pt-4 border-t border-slate-150">
-                <h5 className="text-[10px] uppercase font-black tracking-wider text-slate-800 mb-2">Portal Credentials</h5>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide text-[10px]">Admin User</label>
-                    <input 
-                      type="text"
-                      required
-                      value={manageAdminUsername}
-                      onChange={(e) => setManageAdminUsername(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-205 py-1.5 px-2 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-501 font-semibold text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide text-[10px]">Admin Pass</label>
-                    <input 
-                      type="text"
-                      required
-                      value={manageAdminPassword}
-                      onChange={(e) => setManageAdminPassword(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-205 py-1.5 px-2 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-501 font-semibold text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide text-[10px]">Chef User</label>
-                    <input 
-                      type="text"
-                      required
-                      value={manageChefUsername}
-                      onChange={(e) => setManageChefUsername(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-205 py-1.5 px-2 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-501 font-semibold text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide text-[10px]">Chef Pass</label>
-                    <input 
-                      type="text"
-                      required
-                      value={manageChefPassword}
-                      onChange={(e) => setManageChefPassword(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-205 py-1.5 px-2 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-501 font-semibold text-xs"
-                    />
-                  </div>
-                </div>
-              </div>
-
+            {/* Tabs Selector */}
+            <div className="flex border-b border-slate-100">
+              <button
+                type="button"
+                onClick={() => setManageModalTab('capabilities')}
+                className={`flex-1 py-2 text-center text-xs font-black uppercase tracking-wider border-b-2 transition ${
+                  manageModalTab === 'capabilities' 
+                    ? 'border-indigo-600 text-indigo-650' 
+                    : 'border-transparent text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                ⚙️ Capabilities
+              </button>
+              <button
+                type="button"
+                onClick={() => setManageModalTab('analytics')}
+                className={`flex-1 py-2 text-center text-xs font-black uppercase tracking-wider border-b-2 transition ${
+                  manageModalTab === 'analytics' 
+                    ? 'border-indigo-600 text-indigo-650' 
+                    : 'border-transparent text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                📊 Tenant Analytics
+              </button>
             </div>
+
+            {/* Content body based on tab */}
+            {manageModalTab === 'capabilities' ? (
+              <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1">
+                {/* BRAND ACCOUNT STATUS */}
+                <div className="space-y-2">
+                  <h5 className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Account Subscription Status</h5>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setManageStatus("active")}
+                      className={`py-3 px-4 rounded-2xl border text-center font-extrabold uppercase text-[10px] tracking-wider transition ${
+                        manageStatus === 'active' 
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-705 font-black shadow-xs ring-2 ring-emerald-500/10' 
+                          : 'bg-white border-slate-205 text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                      }`}
+                    >
+                      ● Onboarded & Active
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setManageStatus("inactive")}
+                      className={`py-3 px-4 rounded-2xl border text-center font-extrabold uppercase text-[10px] tracking-wider transition ${
+                        manageStatus === 'inactive' 
+                          ? 'bg-rose-50 border-rose-300 text-rose-705 font-black shadow-xs ring-2 ring-rose-500/10' 
+                          : 'bg-white border-slate-205 text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                      }`}
+                    >
+                      ■ Suspended / Hold
+                    </button>
+                  </div>
+                  <p className="text-[9.5px] text-slate-400 font-medium">Setting status to Suspended immediately suspends all guest dine-in displays, halting the live menu and preventing customer order submissions.</p>
+                </div>
+
+                {/* ROLE 1: ADMIN PORTAL */}
+                <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                  <h5 className="text-[10px] uppercase font-black text-slate-500 tracking-wider flex items-center gap-1">🛡️ Admin Portal Capabilities</h5>
+                  <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                    <div className="pr-4 space-y-0.5 text-left">
+                      <span className="text-xs font-bold text-slate-800">Disable Admin Portal Access</span>
+                      <span className="text-[10px] text-slate-450 leading-tight block">Restricts access to the merchant administration console.</span>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setManageDisableAdmin(!manageDisableAdmin)}
+                      className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 shrink-0 ${manageDisableAdmin ? 'bg-indigo-650 justify-end font-normal' : 'bg-slate-300 justify-start font-normal'}`}
+                    >
+                      <span className="bg-white w-4.5 h-4.5 rounded-full shadow-md"></span>
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label className="block font-bold text-slate-450 mb-0.5 uppercase tracking-wide text-[9px]">Admin Username</label>
+                      <input 
+                        type="text"
+                        required
+                        value={manageAdminUsername}
+                        onChange={(e) => setManageAdminUsername(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 py-1.5 px-2 rounded-lg font-semibold text-xs text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-450 mb-0.5 uppercase tracking-wide text-[9px]">Admin Password</label>
+                      <input 
+                        type="text"
+                        required
+                        value={manageAdminPassword}
+                        onChange={(e) => setManageAdminPassword(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 py-1.5 px-2 rounded-lg font-semibold text-xs text-slate-800"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* ROLE 2: CHEF / KITCHEN DISPLAY SYSTEM */}
+                <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                  <h5 className="text-[10px] uppercase font-black text-slate-500 tracking-wider flex items-center gap-1">👨‍🍳 Chef & KDS Terminal</h5>
+                  <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                    <div className="pr-4 space-y-0.5 text-left">
+                      <span className="text-xs font-bold text-slate-800">Disable Chef KDS Monitor</span>
+                      <span className="text-[10px] text-slate-450 leading-tight block">Suspends the Kitchen Display System monitor terminal.</span>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setManageDisableKds(!manageDisableKds)}
+                      className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 shrink-0 ${manageDisableKds ? 'bg-indigo-650 justify-end font-normal' : 'bg-slate-300 justify-start font-normal'}`}
+                    >
+                      <span className="bg-white w-4.5 h-4.5 rounded-full shadow-md"></span>
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                    <div className="pr-4 space-y-0.5 text-left">
+                      <span className="text-xs font-bold text-slate-800">Chef KDS SLA Breach Warnings</span>
+                      <span className="text-[10px] text-slate-450 leading-tight block">Enforce standard visual alerts and red breach triggers for ticket delays.</span>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setManageEnableSlaWarning(!manageEnableSlaWarning)}
+                      className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 shrink-0 ${manageEnableSlaWarning ? 'bg-indigo-650 justify-end font-normal' : 'bg-slate-300 justify-start font-normal'}`}
+                    >
+                      <span className="bg-white w-4.5 h-4.5 rounded-full shadow-md"></span>
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label className="block font-bold text-slate-450 mb-0.5 uppercase tracking-wide text-[9px]">Chef Username</label>
+                      <input 
+                        type="text"
+                        required
+                        value={manageChefUsername}
+                        onChange={(e) => setManageChefUsername(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 py-1.5 px-2 rounded-lg font-semibold text-xs text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-450 mb-0.5 uppercase tracking-wide text-[9px]">Chef Password</label>
+                      <input 
+                        type="text"
+                        required
+                        value={manageChefPassword}
+                        onChange={(e) => setManageChefPassword(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 py-1.5 px-2 rounded-lg font-semibold text-xs text-slate-800"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* ROLE 3: DINING USER MENU RULES */}
+                <div className="pt-3 border-t border-slate-100 space-y-2.5 text-left">
+                  <h5 className="text-[10px] uppercase font-black text-slate-505 tracking-wider flex items-center gap-1">📱 Dining Guest Experience</h5>
+                  {/* Lock All Items */}
+                  <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                    <div className="pr-4 space-y-0.5">
+                      <span className="text-xs font-bold text-slate-800">Recipe Catalog Lockdown</span>
+                      <span className="text-[10px] text-slate-455 leading-tight block">Forces Read-Only access, disabling interactive client checkouts.</span>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setManageLockAllItems(!manageLockAllItems)}
+                      className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 shrink-0 ${manageLockAllItems ? 'bg-indigo-650 justify-end font-normal' : 'bg-slate-300 justify-start font-normal'}`}
+                    >
+                      <span className="bg-white w-4.5 h-4.5 rounded-full shadow-md"></span>
+                    </button>
+                  </div>
+                  {/* Block QR scaling */}
+                  <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                    <div className="pr-4 space-y-0.5">
+                      <span className="text-xs font-bold text-slate-800">Block QR Seating Allocations</span>
+                      <span className="text-[10px] text-slate-455 leading-tight block">Restricts table setup adjustments or URL re-configurations.</span>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setManageDisableQr(!manageDisableQr)}
+                      className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 shrink-0 ${manageDisableQr ? 'bg-indigo-650 justify-end font-normal' : 'bg-slate-300 justify-start font-normal'}`}
+                    >
+                      <span className="bg-white w-4.5 h-4.5 rounded-full shadow-md"></span>
+                    </button>
+                  </div>
+                  {/* Hide older history */}
+                  <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-2xl">
+                    <div className="pr-4 space-y-0.5">
+                      <span className="text-xs font-bold text-slate-800">Limit Dashboard Archive to 24 Hours</span>
+                      <span className="text-[10px] text-slate-455 leading-tight block">Filters other historic data logs so the merchant and chefs only have active and recent visibility.</span>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setManageHideHistory(!manageHideHistory)}
+                      className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 shrink-0 ${manageHideHistory ? 'bg-indigo-650 justify-end font-normal' : 'bg-slate-300 justify-start font-normal'}`}
+                    >
+                      <span className="bg-white w-4.5 h-4.5 rounded-full shadow-md"></span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* TAB 2: TENANT ANALYTICS */
+              <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1">
+                <div className="grid grid-cols-2 gap-3 text-center">
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                    <span className="text-[9px] uppercase tracking-wider text-slate-450 font-bold block">Gross Sales</span>
+                    <span className="text-base font-black text-slate-905 mt-1 block">₹{tenantGrossSales.toFixed(2)}</span>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                    <span className="text-[9px] uppercase tracking-wider text-slate-450 font-bold block">Orders Count</span>
+                    <span className="text-base font-black text-slate-905 mt-1 block">{tenantOrderCount}</span>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                    <span className="text-[9px] uppercase tracking-wider text-slate-450 font-bold block">Avg Ticket</span>
+                    <span className="text-base font-black text-slate-905 mt-1 block">₹{tenantAverageTicket.toFixed(2)}</span>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                    <span className="text-[9px] uppercase tracking-wider text-slate-450 font-bold block">Scorecard Rating</span>
+                    <span className="text-base font-black text-yellow-605 mt-1 block">★ {tenantAverageRating.toFixed(1)} / 5</span>
+                  </div>
+                </div>
+
+                <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100 text-xs text-indigo-900 leading-relaxed text-left">
+                  <h6 className="font-extrabold text-indigo-950 flex items-center gap-1.5 mb-1">📈 Tenant Operational Insights</h6>
+                  <p className="text-[10.5px]">This scorecard combines order volume, gross receipts, and average ratings across active recipe cards to measure customer satisfaction and floor efficiency in real-time.</p>
+                </div>
+              </div>
+            )}
 
             {/* Static policy notice */}
             <div className="bg-purple-50/50 p-3 rounded-2xl border border-purple-100 text-[10px] text-purple-800 font-semibold leading-normal flex gap-2 select-none">
-              <span className="text-purple-600 font-extrabold select-none shrink-0">[SLA DIRECT]</span>
+              <span className="text-purple-600 font-extrabold shrink-0">[SLA DIRECT]</span>
               <span>Modifying these settings alters the brand's database attributes in Firestore. These specifications will be processed immediately by Client-Side state handlers and routing systems globally.</span>
             </div>
 

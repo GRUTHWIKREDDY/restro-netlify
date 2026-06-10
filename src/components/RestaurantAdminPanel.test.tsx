@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import RestaurantAdminPanel from './RestaurantAdminPanel';
 import { Restaurant, MenuItem } from '../types';
@@ -13,19 +13,43 @@ describe('RestaurantAdminPanel - VIGOROUS QA', () => {
   const mockRestaurant: Restaurant = {
     id: 'rest-123',
     name: 'The Royal Clay Oven',
+    logoUrl: 'http://example.com/logo.png',
     status: 'active',
+    lockedBySuperAdmin: false,
+    totalTables: 8,
     verificationPin: '1234',
   };
 
   const mockMenus: MenuItem[] = [
-    { id: 'i1', restaurantId: 'rest-123', name: 'Butter Chicken', price: 450, category: 'Main Course', isAvailable: true },
+    {
+      id: 'i1',
+      restaurantId: 'rest-123',
+      name: 'Butter Chicken',
+      description: 'Rich and creamy',
+      price: 450,
+      category: 'Main Course',
+      isAvailable: true,
+      isLimitedTimeOffer: false,
+      offerDetails: '',
+      promoValue: 0
+    },
   ];
 
   const props = {
     restaurant: mockRestaurant,
+    restaurants: [mockRestaurant],
+    onChangeRestaurantStatus: vi.fn(),
+    onUpdateRestaurantPin: vi.fn(),
     menus: mockMenus,
-    onUpdateMenu: vi.fn(),
-    onUpdateRestaurant: vi.fn(),
+    onMenuItemSave: vi.fn(),
+    onMenuItemDelete: vi.fn(),
+    orders: [],
+    onUpdateOrderStatus: vi.fn(),
+    onCancelSpecificDish: vi.fn(),
+    onTableUpdate: vi.fn(),
+    triggerAppAlert: vi.fn(),
+    buzzers: [],
+    onSwitchToKitchenMode: vi.fn(),
   };
 
   beforeEach(() => {
@@ -34,32 +58,45 @@ describe('RestaurantAdminPanel - VIGOROUS QA', () => {
 
   it('should render the admin dashboard with menu management tools', () => {
     render(<RestaurantAdminPanel {...props} />);
-    expect(screen.getByText(/Menu Management/i)).toBeInTheDocument();
+    
+    // Switch to Menu & Promos tab
+    const menuTabBtn = screen.getAllByRole('button', { name: /Menu & Promos/i })[0];
+    fireEvent.click(menuTabBtn);
+
+    expect(screen.getByText(/Custom Brand Catalog/i)).toBeInTheDocument();
     expect(screen.getByText('Butter Chicken')).toBeInTheDocument();
   });
 
   it('should allow toggling item availability', async () => {
     render(<RestaurantAdminPanel {...props} />);
 
-    // Find the availability toggle for Butter Chicken
-    const itemRow = screen.getByText('Butter Chicken').closest('div');
-    const toggle = itemRow?.querySelector('input[type="checkbox"]');
+    // Switch to Menu & Promos tab
+    const menuTabBtn = screen.getAllByRole('button', { name: /Menu & Promos/i })[0];
+    fireEvent.click(menuTabBtn);
 
-    if (toggle) {
-      fireEvent.click(toggle);
-      expect(props.onUpdateMenu).toHaveBeenCalled();
-    }
+    // Find the availability toggle button for Butter Chicken
+    const toggleBtn = screen.getByRole('button', { name: 'Available' });
+    fireEvent.click(toggleBtn);
+
+    expect(props.onMenuItemSave).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'i1', isAvailable: false }),
+      true
+    );
   });
 
   it('should allow updating the restaurant verification pin', async () => {
     render(<RestaurantAdminPanel {...props} />);
 
-    const pinInput = screen.getByPlaceholderText(/New 4-digit PIN/i);
+    // Switch to QR Code Suite tab
+    const qrTabBtn = screen.getAllByRole('button', { name: /QR Code Suite/i })[0];
+    fireEvent.click(qrTabBtn);
+
+    const pinInput = screen.getByPlaceholderText('1234');
     fireEvent.change(pinInput, { target: { value: '5678' } });
 
-    const saveBtn = screen.getByText(/Save Changes/i);
+    const saveBtn = screen.getByRole('button', { name: 'Save PIN' });
     fireEvent.click(saveBtn);
 
-    expect(props.onUpdateRestaurant).toHaveBeenCalled();
+    expect(props.onUpdateRestaurantPin).toHaveBeenCalledWith('rest-123', '5678');
   });
 });
