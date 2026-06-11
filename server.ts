@@ -655,9 +655,8 @@ async function callDeepSeek(prompt: string, systemInstruction: string): Promise<
   return data.choices?.[0]?.message?.content?.trim() || "";
 }
 
-async function startServer() {
+export async function configureApp(isNetlify = false) {
   const app = express();
-  const PORT = 3001;
 
   app.use(express.json());
 
@@ -1666,25 +1665,32 @@ async function startServer() {
     process.env.DISABLE_HMR = 'true'; // Keep tracking HMR config status
   }
 
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
+  if (!isNetlify) {
+    if (process.env.NODE_ENV !== "production") {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), 'dist');
+      app.use(express.static(distPath));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Full-Stack Server actively running in container on http://localhost:${PORT}`);
-  });
+  return app;
 }
 
-startServer().catch(err => {
-  console.error("Fatal failure on Node start server:", err);
-});
+if (process.env.NETLIFY !== "true") {
+  const PORT = 3001;
+  configureApp().then(app => {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Full-Stack Server actively running in container on http://localhost:${PORT}`);
+    });
+  }).catch(err => {
+    console.error("Fatal failure on Node start server:", err);
+  });
+}
