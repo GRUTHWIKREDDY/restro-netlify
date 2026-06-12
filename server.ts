@@ -664,7 +664,7 @@ export async function configureApp(isNetlify = false) {
   await seedDatabaseIfEmpty();
 
   // SaaS Login API Endpoint
-  app.post("/kcodeit", (req, res) => {
+  app.post("/api/kcodeit", (req, res) => {
     const { username, password } = req.body;
     if (username === "superadmin" && password === "password") {
       return res.json({ success: true, role: "superadmin" });

@@ -59,7 +59,7 @@ export default function StaffPortalLogin({
 
     if (selectedRole === 'superadmin') {
       setIsAuthenticating(true);
-      fetch("/kcodeit", {
+      fetch("/api/kcodeit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password })
