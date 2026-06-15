@@ -160,10 +160,6 @@ export default function App() {
         }
       } else {
         setIsAuthenticated(false);
-        // Only kick them out if they are not a diner
-        if (activeMode !== 'dinein') {
-          navigateTo('/portal');
-        }
       }
     });
 
