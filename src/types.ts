@@ -16,12 +16,6 @@ export interface Restaurant {
   geofenceRadiusMeters?: number;
   verificationPin?: string;
 
-  // Credentials
-  adminUsername?: string;
-  adminPassword?: string;
-  chefUsername?: string;
-  chefPassword?: string;
-
   // Custom SLA Admin Capability Rules
   lockAllItems?: boolean;
   disableQrGeneration?: boolean;

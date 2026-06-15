@@ -22,19 +22,7 @@ export default function App() {
     return saved || 'dinein';
   });
 
-  // Secure Token-structured check
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    const token = localStorage.getItem('kcode_auth_token');
-    if (!token) return false;
-    try {
-      const parsed = JSON.parse(token);
-      // Validate structure and check if session expired (e.g. 24 hour duration limit)
-      const isExpired = Date.now() - parsed.timestamp > 24 * 60 * 60 * 1000;
-      return !!parsed.role && !isExpired;
-    } catch (e) {
-      return false;
-    }
-  });
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -142,22 +130,47 @@ export default function App() {
   };
 
   const handleLoginSuccess = (mode: 'restadmin' | 'kitchen' | 'superadmin') => {
-    const mockToken = {
-      role: mode,
-      timestamp: Date.now(),
-      signature: 'kcode_sha256_' + Math.random().toString(36).substring(2, 9)
-    };
-    localStorage.setItem('kcode_auth_token', JSON.stringify(mockToken));
     setIsAuthenticated(true);
     setActiveMode(mode);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     setIsAuthenticated(false);
-    localStorage.removeItem('kcode_auth_token');
     triggerAppAlert("Session Closed", "You have successfully signed out.", "info");
     navigateTo('/portal');
   };
+
+  // Listen for Supabase auth state changes
+  useEffect(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session) {
+        setIsAuthenticated(true);
+        // We could fetch user_roles here again to set mode, but handleLoginSuccess already sets it
+        // during the login flow. If this is a page refresh, we should fetch it.
+        const { data: roleData } = await supabase
+          .from('user_roles')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .single();
+          
+        if (roleData) {
+          if (roleData.restaurant_id) setSelectedRestaurantId(roleData.restaurant_id);
+          setActiveMode(roleData.role);
+        }
+      } else {
+        setIsAuthenticated(false);
+        // Only kick them out if they are not a diner
+        if (activeMode !== 'dinein') {
+          navigateTo('/portal');
+        }
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
 
   // Synchronize state values to localStorage for persistence across mode transitions
   useEffect(() => {

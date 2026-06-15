@@ -61,9 +61,9 @@ export default function SuperAdminDashboard({
   const [tenantLatitude, setTenantLatitude] = useState('28.5672');
   const [tenantLongitude, setTenantLongitude] = useState('77.2025');
   const [tenantVerificationPin, setTenantVerificationPin] = useState('1234');
-  const [tenantAdminUsername, setTenantAdminUsername] = useState('');
+  const [tenantAdminEmail, setTenantAdminEmail] = useState('');
   const [tenantAdminPassword, setTenantAdminPassword] = useState('');
-  const [tenantChefUsername, setTenantChefUsername] = useState('');
+  const [tenantChefEmail, setTenantChefEmail] = useState('');
   const [tenantChefPassword, setTenantChefPassword] = useState('');
 
   // Tenant creation confirmation overlay
@@ -98,9 +98,9 @@ export default function SuperAdminDashboard({
   const [manageHideHistory, setManageHideHistory] = useState(false);
   const [manageDisableAdmin, setManageDisableAdmin] = useState(false);
   const [manageDisableKds, setManageDisableKds] = useState(false);
-  const [manageAdminUsername, setManageAdminUsername] = useState('');
+  const [manageAdminEmail, setManageAdminEmail] = useState('');
   const [manageAdminPassword, setManageAdminPassword] = useState('');
-  const [manageChefUsername, setManageChefUsername] = useState('');
+  const [manageChefEmail, setManageChefEmail] = useState('');
   const [manageChefPassword, setManageChefPassword] = useState('');
   const [manageEnableSlaWarning, setManageEnableSlaWarning] = useState(false);
   const [manageModalTab, setManageModalTab] = useState<'capabilities' | 'analytics'>('capabilities');
@@ -557,14 +557,40 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
       longitude: lng,
       geofenceRadiusMeters: 150,
       verificationPin: pin,
-      adminUsername: tenantAdminUsername.trim() || "admin",
-      adminPassword: tenantAdminPassword.trim() || "password",
-      chefUsername: tenantChefUsername.trim() || "chef",
-      chefPassword: tenantChefPassword.trim() || "password",
     };
 
     setIsOnboarding(true);
     try {
+      // 1. Create Supabase auth users for admin and chef via backend
+      const createAdminRes = await fetch('/api/admin/create-staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: tenantAdminEmail.trim() || `admin@${nextId}.com`,
+          password: tenantAdminPassword.trim() || "password",
+          role: 'restadmin',
+          restaurantId: nextId
+        })
+      });
+
+      if (!createAdminRes.ok) {
+        throw new Error((await createAdminRes.json()).error || "Failed to create Admin user");
+      }
+
+      const createChefRes = await fetch('/api/admin/create-staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: tenantChefEmail.trim() || `chef@${nextId}.com`,
+          password: tenantChefPassword.trim() || "password",
+          role: 'kitchen',
+          restaurantId: nextId
+        })
+      });
+
+      if (!createChefRes.ok) {
+        throw new Error((await createChefRes.json()).error || "Failed to create Chef user");
+      }
       // 1. Direct Firestore write for restaurant document
       await supabase.from('restaurants').upsert(toSnake(newTenant), { onConflict: 'id' });
 
@@ -638,10 +664,10 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
         id: newTenant.id,
         name: newTenant.name,
         url: `${window.location.origin}/r/${newTenant.id}/t/1`,
-        adminUsername: newTenant.adminUsername || 'admin',
-        adminPassword: newTenant.adminPassword || 'password',
-        chefUsername: newTenant.chefUsername || 'chef',
-        chefPassword: newTenant.chefPassword || 'password',
+        adminEmail: tenantAdminEmail.trim() || `admin@${nextId}.com`,
+        adminPassword: tenantAdminPassword.trim() || 'password',
+        chefEmail: tenantChefEmail.trim() || `chef@${nextId}.com`,
+        chefPassword: tenantChefPassword.trim() || 'password',
         verificationPin: pin,
         totalTables: tQty,
       });
@@ -1951,20 +1977,20 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Admin Portal User</label>
+                  <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Admin Email</label>
                   <input 
-                    type="text"
+                    type="email"
                     required
-                    placeholder="e.g. admin"
-                    value={tenantAdminUsername}
-                    onChange={(e) => setTenantAdminUsername(e.target.value)}
+                    placeholder="e.g. admin@bistro.com"
+                    value={tenantAdminEmail}
+                    onChange={(e) => setTenantAdminEmail(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-205 py-2 px-3 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-501 font-semibold text-xs"
                   />
                 </div>
                 <div>
                   <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Admin Portal Pass</label>
                   <input 
-                    type="text"
+                    type="password"
                     required
                     placeholder="e.g. password"
                     value={tenantAdminPassword}
@@ -1973,20 +1999,20 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Chef KMS User</label>
+                  <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Chef Email</label>
                   <input 
-                    type="text"
+                    type="email"
                     required
-                    placeholder="e.g. chef"
-                    value={tenantChefUsername}
-                    onChange={(e) => setTenantChefUsername(e.target.value)}
+                    placeholder="e.g. chef@bistro.com"
+                    value={tenantChefEmail}
+                    onChange={(e) => setTenantChefEmail(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-205 py-2 px-3 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-501 font-semibold text-xs"
                   />
                 </div>
                 <div>
                   <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Chef KMS Pass</label>
                   <input 
-                    type="text"
+                    type="password"
                     required
                     placeholder="e.g. password"
                     value={tenantChefPassword}
@@ -2024,44 +2050,44 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
             <div className="bg-emerald-600 p-4 text-white text-center">
               <CheckCircle size={28} className="mx-auto mb-1" />
               <h3 className="text-sm font-black uppercase tracking-wider">Tenant Onboarded Successfully</h3>
-              <p className="text-[10px] text-emerald-200 mt-0.5">{tenantConfirmation.name} is now live</p>
+              <p className="text-[10px] text-emerald-200 mt-0.5">{(tenantConfirmation as any).name} is now live</p>
             </div>
             <div className="p-4 space-y-4 text-xs">
               <div>
                 <label className="block font-black text-slate-500 uppercase tracking-wider mb-1.5 text-[9px]">Customer Public URL</label>
                 <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-2.5 flex items-center justify-between gap-2">
-                  <code className="text-[10px] font-mono text-indigo-700 truncate select-all">{tenantConfirmation.url}</code>
+                  <code className="text-[10px] font-mono text-indigo-700 truncate select-all">{(tenantConfirmation as any).url}</code>
                   <button
-                    onClick={() => { navigator.clipboard.writeText(tenantConfirmation.url); triggerAppAlert("Copied!", "Public URL copied to clipboard.", "success"); }}
+                    onClick={() => { navigator.clipboard.writeText((tenantConfirmation as any).url); triggerAppAlert("Copied!", "Public URL copied to clipboard.", "success"); }}
                     className="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition"
                   >
                     Copy
                   </button>
                 </div>
-                <p className="text-[9px] text-slate-400 mt-1">Replace <code className="font-mono">t/1</code> with target table (1-{tenantConfirmation.totalTables})</p>
+                <p className="text-[9px] text-slate-400 mt-1">Replace <code className="font-mono">t/1</code> with target table (1-{(tenantConfirmation as any).totalTables})</p>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-150">
                   <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider block">Admin Portal</span>
-                  <span className="text-[11px] font-bold text-slate-800 block mt-1">{tenantConfirmation.adminUsername} / {tenantConfirmation.adminPassword}</span>
+                  <span className="text-[11px] font-bold text-slate-800 block mt-1">{(tenantConfirmation as any).adminEmail}</span>
                 </div>
                 <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-150">
                   <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider block">Chef KDS</span>
-                  <span className="text-[11px] font-bold text-slate-800 block mt-1">{tenantConfirmation.chefUsername} / {tenantConfirmation.chefPassword}</span>
+                  <span className="text-[11px] font-bold text-slate-800 block mt-1">{(tenantConfirmation as any).chefEmail}</span>
                 </div>
               </div>
               <div className="flex gap-2 text-[9px]">
                 <div className="bg-amber-50 border border-amber-100 rounded-xl p-2.5 flex-1">
                   <span className="font-black text-amber-600 uppercase tracking-wider">Table PIN</span>
-                  <p className="font-bold text-amber-800 mt-0.5">{tenantConfirmation.verificationPin}</p>
+                  <p className="font-bold text-amber-800 mt-0.5">{(tenantConfirmation as any).verificationPin}</p>
                 </div>
                 <div className="bg-slate-50 border border-slate-150 rounded-xl p-2.5 flex-1">
                   <span className="font-black text-slate-500 uppercase tracking-wider">Tables</span>
-                  <p className="font-bold text-slate-800 mt-0.5">{tenantConfirmation.totalTables}</p>
+                  <p className="font-bold text-slate-800 mt-0.5">{(tenantConfirmation as any).totalTables}</p>
                 </div>
                 <div className="bg-slate-50 border border-slate-150 rounded-xl p-2.5 flex-1">
                   <span className="font-black text-slate-500 uppercase tracking-wider">ID</span>
-                  <p className="font-bold text-slate-800 mt-0.5 font-mono">{tenantConfirmation.id}</p>
+                  <p className="font-bold text-slate-800 mt-0.5 font-mono">{(tenantConfirmation as any).id}</p>
                 </div>
               </div>
               <button
@@ -2283,12 +2309,12 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   </div>
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <div>
-                      <label className="block font-bold text-slate-450 mb-0.5 uppercase tracking-wide text-[9px]">Admin Username</label>
+                      <label className="block font-bold text-slate-450 mb-0.5 uppercase tracking-wide text-[9px]">Admin Email</label>
                       <input 
-                        type="text"
+                        type="email"
                         required
-                        value={manageAdminUsername}
-                        onChange={(e) => setManageAdminUsername(e.target.value)}
+                        value={manageAdminEmail}
+                        onChange={(e) => setManageAdminEmail(e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 py-1.5 px-2 rounded-lg font-semibold text-xs text-slate-800"
                       />
                     </div>
@@ -2336,12 +2362,12 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   </div>
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <div>
-                      <label className="block font-bold text-slate-450 mb-0.5 uppercase tracking-wide text-[9px]">Chef Username</label>
+                      <label className="block font-bold text-slate-450 mb-0.5 uppercase tracking-wide text-[9px]">Chef Email</label>
                       <input 
-                        type="text"
+                        type="email"
                         required
-                        value={manageChefUsername}
-                        onChange={(e) => setManageChefUsername(e.target.value)}
+                        value={manageChefEmail}
+                        onChange={(e) => setManageChefEmail(e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 py-1.5 px-2 rounded-lg font-semibold text-xs text-slate-800"
                       />
                     </div>

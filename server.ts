@@ -663,13 +663,44 @@ export async function configureApp(isNetlify = false) {
   // Proactively run Seeding Check
   await seedDatabaseIfEmpty();
 
-  // SaaS Login API Endpoint
-  app.post("/api/kcodeit", (req, res) => {
-    const { username, password } = req.body;
-    if (username === "superadmin" && password === "password") {
-      return res.json({ success: true, role: "superadmin" });
+  // SaaS Login is now handled by Supabase Auth (see StaffPortalLogin.tsx)
+
+  // Securely create staff auth accounts (called by Super Admin)
+  app.post("/api/admin/create-staff", async (req, res) => {
+    try {
+      const { email, password, role, restaurantId } = req.body;
+      
+      if (!email || !password || !role || !restaurantId) {
+        return res.status(400).json({ error: "Missing required fields." });
+      }
+
+      // Create the auth user using Supabase Admin API
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true
+      });
+
+      if (authError) throw authError;
+
+      // Assign the role in user_roles table
+      const { error: roleError } = await db.from('user_roles').insert({
+        user_id: authData.user.id,
+        role: role,
+        restaurant_id: restaurantId
+      });
+
+      if (roleError) {
+        // Rollback user creation if role assignment fails
+        await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+        throw roleError;
+      }
+
+      res.json({ success: true, message: `Created ${role} user successfully.` });
+    } catch (err: any) {
+      console.error("Error creating staff user:", err);
+      res.status(500).json({ error: err.message });
     }
-    return res.status(401).json({ success: false, message: "Invalid credentials for SaaS Super Control." });
   });
 
   // === DATABASE API ENDPOINTS ===

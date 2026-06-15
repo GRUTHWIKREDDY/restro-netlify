@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Restaurant } from '../types';
+import { supabase } from '../supabase';
 
 interface StaffPortalLoginProps {
   onLoginSuccess: (mode: 'restadmin' | 'kitchen' | 'superadmin') => void;
@@ -23,7 +24,7 @@ export default function StaffPortalLogin({
   forceRole
 }: StaffPortalLoginProps) {
   const [selectedRole, setSelectedRole] = useState<'restadmin' | 'kitchen' | 'superadmin' | null>(null);
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
@@ -43,7 +44,7 @@ export default function StaffPortalLogin({
 
   const handleSelectRole = (role: 'restadmin' | 'kitchen' | 'superadmin') => {
     setSelectedRole(role);
-    setUsername(role === 'superadmin' ? 'superadmin' : '');
+    setEmail('');
     setPassword('');
     setErrorMessage('');
     setTerminalLogs([]);
@@ -53,56 +54,58 @@ export default function StaffPortalLogin({
     onLoginSuccess(role);
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedRole) return;
 
-    if (selectedRole === 'superadmin') {
-      setIsAuthenticating(true);
-      fetch("/api/kcodeit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password })
-      })
-      .then(res => res.json())
-      .then(data => {
-        setIsAuthenticating(false);
-        if (data.success) {
-          executeSecurityHandshake(selectedRole);
-        } else {
-          setErrorMessage(data.message || "Invalid credentials.");
-        }
-      })
-      .catch(() => {
-        setIsAuthenticating(false);
-        setErrorMessage("Network verification failed.");
+    setIsAuthenticating(true);
+    setErrorMessage('');
+    
+    setTerminalLogs(prev => [...prev, `Initiating auth sequence for ${email}...`]);
+
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password
       });
-      return;
-    }
 
-    const restaurant = restaurants.find(r => r.id === selectedRestaurantId);
-    if (!restaurant) {
-      setErrorMessage("Please select a restaurant location first.");
-      return;
-    }
+      if (authError || !authData.user) {
+        throw new Error(authError?.message || "Invalid credentials.");
+      }
 
-    let validUser = '';
-    let validPass = '';
-    let label = '';
-    if (selectedRole === 'restadmin') {
-      validUser = restaurant.adminUsername || 'admin';
-      validPass = restaurant.adminPassword || 'password';
-      label = defaultCreds.restadmin.label;
-    } else if (selectedRole === 'kitchen') {
-      validUser = restaurant.chefUsername || 'chef';
-      validPass = restaurant.chefPassword || 'password';
-      label = defaultCreds.kitchen.label;
-    }
+      setTerminalLogs(prev => [...prev, `Auth successful. Verifying role permissions...`]);
 
-    if (username.trim() === validUser && password === validPass) {
-      executeSecurityHandshake(selectedRole);
-    } else {
-      setErrorMessage(`Invalid credentials for ${label}. If you forgot your login, please contact SaaS Admin.`);
+      const { data: roleData, error: roleError } = await supabase
+        .from('user_roles')
+        .select('*')
+        .eq('user_id', authData.user.id)
+        .single();
+
+      if (roleError || !roleData) {
+        await supabase.auth.signOut();
+        throw new Error("No authorized role found for this user.");
+      }
+
+      if (roleData.role !== selectedRole) {
+        await supabase.auth.signOut();
+        throw new Error(`Unauthorized. This account does not have ${selectedRole} permissions.`);
+      }
+
+      // If they are logging into a specific restaurant, make sure it matches
+      if (selectedRole !== 'superadmin' && roleData.restaurant_id) {
+        onSelectRestaurant(roleData.restaurant_id);
+      }
+
+      setTerminalLogs(prev => [...prev, `Permission granted. Establishing session...`]);
+      setTimeout(() => {
+        setIsAuthenticating(false);
+        executeSecurityHandshake(roleData.role as 'restadmin' | 'kitchen' | 'superadmin');
+      }, 500);
+
+    } catch (err: any) {
+      setIsAuthenticating(false);
+      setErrorMessage(err.message || "Authentication failed.");
+      setTerminalLogs(prev => [...prev, `[ERROR] ${err.message}`]);
     }
   };
 
@@ -292,18 +295,16 @@ export default function StaffPortalLogin({
                   )}
 
                   <div className="space-y-1.5">
-                    <label className="block text-[10px] text-slate-450 font-bold ml-1 uppercase">Portal ID</label>
-                    <div className="relative">
-                      <input 
-                        type="text"
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        placeholder="e.g. admin"
-                        className="w-full bg-[#06080e] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
-                        required
-                        disabled={isAuthenticating}
-                      />
-                    </div>
+                    <label className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest block">Email Address</label>
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
+                      placeholder="admin@kcode.it"
+                      disabled={isAuthenticating}
+                    />
                   </div>
 
                   <div className="space-y-1.5">
