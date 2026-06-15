@@ -1,7 +1,17 @@
 import express from "express";
 import path from "path";
 import * as dotenv from "dotenv";
+import crypto from "crypto";
 dotenv.config();
+
+function hashPassword(password: string, salt: string): string {
+  return crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+}
+
+function generateSalt(): string {
+  return crypto.randomBytes(16).toString('hex');
+}
+
 // DeepSeek replaces GoogleGenAI — uses OpenAI-compatible API via native fetch
 import { supabaseAdmin } from "./src/supabase-server";
 
@@ -591,6 +601,72 @@ const INITIAL_USERS = [
 ];
 
 // Seeding engine
+async function migrateCredentialsIfNeeded() {
+  try {
+    const { data: restaurants, error } = await db
+      .from('restaurants')
+      .select('id, admin_username, admin_password, chef_username, chef_password');
+
+    if (error || !restaurants) return;
+
+    for (const r of restaurants) {
+      // 1. Check/Migrate Admin credentials
+      const adminEmail = r.admin_username || `${r.id}@admin.it`;
+      const adminPass = r.admin_password || "password";
+      
+      const { data: existingAdmin } = await db
+        .from('staff_credentials')
+        .select('id')
+        .eq('restaurant_id', r.id)
+        .eq('role', 'restadmin')
+        .maybeSingle();
+
+      if (!existingAdmin) {
+        const salt = generateSalt();
+        const hash = hashPassword(adminPass, salt);
+        const cred = {
+          id: `staff-${r.id}-admin`,
+          restaurant_id: r.id,
+          email: adminEmail,
+          password_hash: hash,
+          salt: salt,
+          role: 'restadmin'
+        };
+        await db.from('staff_credentials').upsert(cred, { onConflict: 'id' });
+        console.log(`Initialized secure admin credentials for restaurant ${r.id} (${adminEmail})`);
+      }
+
+      // 2. Check/Migrate Chef credentials
+      const chefEmail = r.chef_username || `${r.id}@chef.it`;
+      const chefPass = r.chef_password || "password";
+
+      const { data: existingChef } = await db
+        .from('staff_credentials')
+        .select('id')
+        .eq('restaurant_id', r.id)
+        .eq('role', 'kitchen')
+        .maybeSingle();
+
+      if (!existingChef) {
+        const salt = generateSalt();
+        const hash = hashPassword(chefPass, salt);
+        const cred = {
+          id: `staff-${r.id}-chef`,
+          restaurant_id: r.id,
+          email: chefEmail,
+          password_hash: hash,
+          salt: salt,
+          role: 'kitchen'
+        };
+        await db.from('staff_credentials').upsert(cred, { onConflict: 'id' });
+        console.log(`Initialized secure chef credentials for restaurant ${r.id} (${chefEmail})`);
+      }
+    }
+  } catch (err) {
+    console.error("Error migrating credentials:", err);
+  }
+}
+
 async function seedDatabaseIfEmpty() {
   try {
     // Check if data already exists
@@ -610,7 +686,7 @@ async function seedDatabaseIfEmpty() {
       console.log("Database is empty or has stale data. Seeding multi-outlet Indian analytics data...");
       
       // Wipe all existing data
-      const tables = ['restaurants', 'menu_items', 'orders', 'buzzers'];
+      const tables = ['restaurants', 'menu_items', 'orders', 'buzzers', 'staff_credentials'];
       for (const table of tables) {
         const { error } = await db.from(table).delete().neq('id', '__nonexistent__');
         if (error) console.error(`Error clearing ${table}:`, error);
@@ -620,8 +696,41 @@ async function seedDatabaseIfEmpty() {
       if (delUsers) console.error('Error clearing dine_in_users:', delUsers);
 
       for (const r of INITIAL_RESTAURANTS) {
-        const { error } = await db.from('restaurants').upsert(toSnake(r), { onConflict: 'id' });
+        const { adminUsername, adminPassword, chefUsername, chefPassword, ...restObj } = r;
+        const { error } = await db.from('restaurants').upsert(toSnake(restObj), { onConflict: 'id' });
         if (error) console.error('Seed error restaurants:', error);
+
+        // Seed Admin credentials securely in staff_credentials
+        if (adminUsername && adminPassword) {
+          const salt = generateSalt();
+          const hash = hashPassword(adminPassword, salt);
+          const cred = {
+            id: `staff-${r.id}-admin`,
+            restaurant_id: r.id,
+            email: adminUsername,
+            password_hash: hash,
+            salt: salt,
+            role: 'restadmin'
+          };
+          const { error: err1 } = await db.from('staff_credentials').upsert(cred, { onConflict: 'id' });
+          if (err1) console.error('Seed error staff_credentials admin:', err1);
+        }
+
+        // Seed Chef credentials securely in staff_credentials
+        if (chefUsername && chefPassword) {
+          const salt = generateSalt();
+          const hash = hashPassword(chefPassword, salt);
+          const cred = {
+            id: `staff-${r.id}-chef`,
+            restaurant_id: r.id,
+            email: chefUsername,
+            password_hash: hash,
+            salt: salt,
+            role: 'kitchen'
+          };
+          const { error: err2 } = await db.from('staff_credentials').upsert(cred, { onConflict: 'id' });
+          if (err2) console.error('Seed error staff_credentials chef:', err2);
+        }
       }
       for (const m of INITIAL_MENUS) {
         const { error } = await db.from('menu_items').upsert(toSnake(m), { onConflict: 'id' });
@@ -639,6 +748,9 @@ async function seedDatabaseIfEmpty() {
     } else {
       console.log("Database already populated with full Indian establishment profiles.");
     }
+
+    // Run dynamic migration of legacy plaintext credentials if needed
+    await migrateCredentialsIfNeeded();
   } catch (err) {
     console.error("Friction checking or seeding Supabase on boot:", err);
   }
@@ -701,22 +813,32 @@ export async function configureApp(isNetlify = false) {
         return res.status(400).json({ error: "Missing required credentials." });
       }
 
-      const { data: restaurant, error } = await db
+      // Check if restaurant exists first to get the name
+      const { data: restaurant, error: restErr } = await db
         .from('restaurants')
-        .select('id, name, admin_username, admin_password, chef_username, chef_password')
+        .select('id, name')
         .eq('id', restaurantId)
         .single();
 
-      if (error || !restaurant) {
+      if (restErr || !restaurant) {
         return res.status(401).json({ error: "Restaurant not found." });
       }
 
-      let isValid = false;
-      if (role === 'restadmin') {
-        isValid = (restaurant.admin_username === email) && (restaurant.admin_password === password);
-      } else if (role === 'kitchen') {
-        isValid = (restaurant.chef_username === email) && (restaurant.chef_password === password);
+      // Query the secure staff credentials table
+      const { data: staff, error: staffErr } = await db
+        .from('staff_credentials')
+        .select('password_hash, salt')
+        .eq('restaurant_id', restaurantId)
+        .eq('email', email)
+        .eq('role', role)
+        .maybeSingle();
+
+      if (staffErr || !staff) {
+        return res.status(401).json({ error: "Invalid credentials." });
       }
+
+      const hash = hashPassword(password, staff.salt);
+      const isValid = (hash === staff.password_hash);
 
       if (!isValid) {
         return res.status(401).json({ error: "Invalid credentials." });
@@ -734,6 +856,11 @@ export async function configureApp(isNetlify = false) {
     }
   });
 
+  // Helper: consistent ID suffix from role name
+  function roleIdSuffix(role: string): string {
+    return role === 'restadmin' ? 'admin' : role === 'kitchen' ? 'chef' : role;
+  }
+
   // Securely create staff auth accounts (called by Super Admin)
   app.post("/api/admin/create-staff", async (req, res) => {
     try {
@@ -743,16 +870,20 @@ export async function configureApp(isNetlify = false) {
         return res.status(400).json({ error: "Missing required fields." });
       }
 
-      const updateFields: any = { id: restaurantId };
-      if (role === 'restadmin') {
-        updateFields.admin_username = email;
-        updateFields.admin_password = password;
-      } else if (role === 'kitchen') {
-        updateFields.chef_username = email;
-        updateFields.chef_password = password;
-      }
+      const salt = generateSalt();
+      const hash = hashPassword(password, salt);
+      const id = `staff-${restaurantId}-${roleIdSuffix(role)}`;
 
-      const { error } = await db.from('restaurants').upsert(toSnake(updateFields), { onConflict: 'id' });
+      const cred = {
+        id,
+        restaurant_id: restaurantId,
+        email,
+        password_hash: hash,
+        salt,
+        role
+      };
+
+      const { error } = await db.from('staff_credentials').upsert(cred, { onConflict: 'id' });
       if (error) throw error;
 
       res.json({ success: true, message: `Created ${role} credentials successfully.` });
@@ -767,27 +898,17 @@ export async function configureApp(isNetlify = false) {
     try {
       const { restaurantId } = req.params;
       
-      const { data: restaurant, error } = await db
-        .from('restaurants')
-        .select('admin_username, chef_username')
-        .eq('id', restaurantId)
-        .single();
+      const { data: staff, error } = await db
+        .from('staff_credentials')
+        .select('email, role')
+        .eq('restaurant_id', restaurantId);
         
       if (error) throw error;
       
-      const staffList = [];
-      if (restaurant.admin_username) {
-        staffList.push({
-          role: 'restadmin',
-          email: restaurant.admin_username
-        });
-      }
-      if (restaurant.chef_username) {
-        staffList.push({
-          role: 'kitchen',
-          email: restaurant.chef_username
-        });
-      }
+      const staffList = (staff || []).map(s => ({
+        role: s.role,
+        email: s.email
+      }));
       
       res.json({ success: true, staff: staffList });
     } catch (err: any) {
@@ -805,25 +926,41 @@ export async function configureApp(isNetlify = false) {
         return res.status(400).json({ error: "Missing required fields." });
       }
 
-      const updateFields: any = {};
-      if (role === 'restadmin') {
-        updateFields.admin_username = email;
+      const id = `staff-${restaurantId}-${roleIdSuffix(role)}`;
+      
+      // Check if the record already exists
+      const { data: existing } = await db
+        .from('staff_credentials')
+        .select('id, salt')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (existing) {
+        const updateObj: any = { email };
         if (password && password !== "••••••••") {
-          updateFields.admin_password = password;
+          const newSalt = generateSalt();
+          updateObj.password_hash = hashPassword(password, newSalt);
+          updateObj.salt = newSalt;
         }
-      } else if (role === 'kitchen') {
-        updateFields.chef_username = email;
-        if (password && password !== "••••••••") {
-          updateFields.chef_password = password;
-        }
+        const { error } = await db
+          .from('staff_credentials')
+          .update(updateObj)
+          .eq('id', id);
+        if (error) throw error;
+      } else {
+        const salt = generateSalt();
+        const hash = hashPassword(password && password !== "••••••••" ? password : "password", salt);
+        const cred = {
+          id,
+          restaurant_id: restaurantId,
+          email,
+          password_hash: hash,
+          salt,
+          role
+        };
+        const { error } = await db.from('staff_credentials').upsert(cred, { onConflict: 'id' });
+        if (error) throw error;
       }
-
-      const { error } = await db
-        .from('restaurants')
-        .update(toSnake(updateFields))
-        .eq('id', restaurantId);
-
-      if (error) throw error;
 
       res.json({ success: true, message: `Updated ${role} credentials successfully.` });
     } catch (err: any) {

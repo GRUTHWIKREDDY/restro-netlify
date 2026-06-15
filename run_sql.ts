@@ -1,14 +1,23 @@
-import fetch from 'node-fetch';
+import * as dotenv from 'dotenv';
+import * as fs from 'fs';
+import * as path from 'path';
+
+dotenv.config();
 
 const PAT = process.env.RESTRO_SUPABASE;
 const REF = 'ahyhimbzazypjudjlpqt';
 
 async function run() {
-  const query = `
-    SELECT 1 as "connection_test";
-  `;
+  if (!PAT) {
+    console.error("Error: RESTRO_SUPABASE is not configured in .env");
+    return;
+  }
 
-  const res = await fetch(`https://api.supabase.com/v1/projects/${REF}/query`, {
+  const query = 'SELECT email, role, length(password_hash) as hash_len, length(salt) as salt_len FROM staff_credentials;';
+
+  console.log("Executing migration SQL against remote Supabase project...");
+
+  const res = await fetch(`https://api.supabase.com/v1/projects/${REF}/database/query`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${PAT}`,
