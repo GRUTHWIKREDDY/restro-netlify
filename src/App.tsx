@@ -136,6 +136,7 @@ export default function App() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    localStorage.removeItem('kcode_auth_token');
     setIsAuthenticated(false);
     triggerAppAlert("Session Closed", "You have successfully signed out.", "info");
     navigateTo('/portal');
@@ -157,8 +158,24 @@ export default function App() {
         if (roleData) {
           if (roleData.restaurant_id) setSelectedRestaurantId(roleData.restaurant_id);
           setActiveMode(roleData.role);
+          localStorage.setItem('kcode_auth_token', JSON.stringify({
+            role: roleData.role,
+            restaurantId: roleData.restaurant_id || ''
+          }));
         }
       } else {
+        const localToken = localStorage.getItem('kcode_auth_token');
+        if (localToken) {
+          try {
+            const parsed = JSON.parse(localToken);
+            if (parsed.role === 'restadmin' || parsed.role === 'kitchen') {
+              setIsAuthenticated(true);
+              setActiveMode(parsed.role);
+              if (parsed.restaurantId) setSelectedRestaurantId(parsed.restaurantId);
+              return;
+            }
+          } catch (e) {}
+        }
         setIsAuthenticated(false);
       }
     });
@@ -283,6 +300,39 @@ export default function App() {
     };
   }, []);
 
+  // Poll database every 5 seconds for orders and buzzers as a fallback to Supabase Realtime channel
+  useEffect(() => {
+    const interval = setInterval(() => {
+      supabase.from('orders').select('*').then(({ data }) => {
+        if (data) {
+          const list = data.map(toCamel) as Order[];
+          list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          setOrders(prev => {
+            if (JSON.stringify(prev) !== JSON.stringify(list)) {
+              return list;
+            }
+            return prev;
+          });
+        }
+      });
+
+      supabase.from('buzzers').select('*').then(({ data }) => {
+        if (data) {
+          const list = data.map(toCamel) as Buzzer[];
+          list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          setBuzzers(prev => {
+            if (JSON.stringify(prev) !== JSON.stringify(list)) {
+              return list;
+            }
+            return prev;
+          });
+        }
+      });
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   const activeRestaurantObj = useMemo(() => {
     return restaurants.find(r => r.id === selectedRestaurantId) || restaurants[0] || {
       id: "rest-1",
@@ -334,8 +384,10 @@ export default function App() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(updatedOrder)
         });
-        await res.json();
-        // Silent update: successfully changed status, state reflections handle feedback in real-time
+        const data = await res.json();
+        if (data && data.orders) {
+          setOrders(data.orders);
+        }
       }
     } catch (e) {
       triggerAppAlert("Error", "Could not submit status override to network.", "error");
@@ -373,8 +425,10 @@ export default function App() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(updatedOrder)
         });
-        await res.json();
-        // Silent update on dish cancellation
+        const data = await res.json();
+        if (data && data.orders) {
+          setOrders(data.orders);
+        }
       }
     } catch (e) {
       triggerAppAlert("Override Failure", "Could not remove specific item on the server.", "error");
@@ -456,7 +510,10 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newOrder)
       });
-      await resOrder.json();
+      const data = await resOrder.json();
+      if (data && data.orders) {
+        setOrders(data.orders);
+      }
 
       // 2. Fetch/Update match user profile
       const targetUser = users.find(u => u.phone === newOrder.userPhone);

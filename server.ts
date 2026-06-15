@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import * as dotenv from "dotenv";
 dotenv.config();
 // DeepSeek replaces GoogleGenAI — uses OpenAI-compatible API via native fetch
@@ -41,7 +40,11 @@ const INITIAL_RESTAURANTS = [
     latitude: 28.5672,
     longitude: 77.2025,
     geofenceRadiusMeters: 150,
-    verificationPin: "1234"
+    verificationPin: "1234",
+    adminUsername: "rest-1@admin.it",
+    adminPassword: "password",
+    chefUsername: "rest-1@chef.it",
+    chefPassword: "password"
   },
   {
     id: "rest-2",
@@ -53,7 +56,11 @@ const INITIAL_RESTAURANTS = [
     latitude: 12.9716,
     longitude: 77.5946,
     geofenceRadiusMeters: 150,
-    verificationPin: "5678"
+    verificationPin: "5678",
+    adminUsername: "rest-2@admin.it",
+    adminPassword: "password",
+    chefUsername: "rest-2@chef.it",
+    chefPassword: "password"
   },
   {
     id: "rest-3",
@@ -65,7 +72,11 @@ const INITIAL_RESTAURANTS = [
     latitude: 19.0760,
     longitude: 72.8777,
     geofenceRadiusMeters: 150,
-    verificationPin: "9999"
+    verificationPin: "9999",
+    adminUsername: "rest-3@admin.it",
+    adminPassword: "password",
+    chefUsername: "rest-3@chef.it",
+    chefPassword: "password"
   },
   {
     id: "rest-4",
@@ -77,7 +88,11 @@ const INITIAL_RESTAURANTS = [
     latitude: 22.5726,
     longitude: 88.3639,
     geofenceRadiusMeters: 150,
-    verificationPin: "4444"
+    verificationPin: "4444",
+    adminUsername: "rest-4@admin.it",
+    adminPassword: "password",
+    chefUsername: "rest-4@chef.it",
+    chefPassword: "password"
   },
   {
     id: "rest-5",
@@ -89,7 +104,11 @@ const INITIAL_RESTAURANTS = [
     latitude: 12.9716,
     longitude: 77.5946,
     geofenceRadiusMeters: 150,
-    verificationPin: "5555"
+    verificationPin: "5555",
+    adminUsername: "rest-5@admin.it",
+    adminPassword: "password",
+    chefUsername: "rest-5@chef.it",
+    chefPassword: "password"
   },
   {
     id: "rest-6",
@@ -101,7 +120,11 @@ const INITIAL_RESTAURANTS = [
     latitude: 19.0760,
     longitude: 72.8777,
     geofenceRadiusMeters: 150,
-    verificationPin: "6666"
+    verificationPin: "6666",
+    adminUsername: "rest-6@admin.it",
+    adminPassword: "password",
+    chefUsername: "rest-6@chef.it",
+    chefPassword: "password"
   },
   {
     id: "rest-7",
@@ -113,7 +136,11 @@ const INITIAL_RESTAURANTS = [
     latitude: 28.6139,
     longitude: 77.2090,
     geofenceRadiusMeters: 150,
-    verificationPin: "7777"
+    verificationPin: "7777",
+    adminUsername: "rest-7@admin.it",
+    adminPassword: "password",
+    chefUsername: "rest-7@chef.it",
+    chefPassword: "password"
   }
 ];
 
@@ -665,6 +692,48 @@ export async function configureApp(isNetlify = false) {
 
   // SaaS Login is now handled by Supabase Auth (see StaffPortalLogin.tsx)
 
+  // Backend-verified merchant/chef login endpoint
+  app.post("/api/auth/merchant-login", async (req, res) => {
+    try {
+      const { email, password, role, restaurantId } = req.body;
+      
+      if (!email || !password || !role || !restaurantId) {
+        return res.status(400).json({ error: "Missing required credentials." });
+      }
+
+      const { data: restaurant, error } = await db
+        .from('restaurants')
+        .select('id, name, admin_username, admin_password, chef_username, chef_password')
+        .eq('id', restaurantId)
+        .single();
+
+      if (error || !restaurant) {
+        return res.status(401).json({ error: "Restaurant not found." });
+      }
+
+      let isValid = false;
+      if (role === 'restadmin') {
+        isValid = (restaurant.admin_username === email) && (restaurant.admin_password === password);
+      } else if (role === 'kitchen') {
+        isValid = (restaurant.chef_username === email) && (restaurant.chef_password === password);
+      }
+
+      if (!isValid) {
+        return res.status(401).json({ error: "Invalid credentials." });
+      }
+
+      res.json({
+        success: true,
+        role,
+        restaurantId,
+        restaurantName: restaurant.name
+      });
+    } catch (err: any) {
+      console.error("Merchant login error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Securely create staff auth accounts (called by Super Admin)
   app.post("/api/admin/create-staff", async (req, res) => {
     try {
@@ -674,31 +743,21 @@ export async function configureApp(isNetlify = false) {
         return res.status(400).json({ error: "Missing required fields." });
       }
 
-      // Create the auth user using Supabase Admin API
-      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true
-      });
-
-      if (authError) throw authError;
-
-      // Assign the role in user_roles table
-      const { error: roleError } = await db.from('user_roles').insert({
-        user_id: authData.user.id,
-        role: role,
-        restaurant_id: restaurantId
-      });
-
-      if (roleError) {
-        // Rollback user creation if role assignment fails
-        await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
-        throw roleError;
+      const updateFields: any = { id: restaurantId };
+      if (role === 'restadmin') {
+        updateFields.admin_username = email;
+        updateFields.admin_password = password;
+      } else if (role === 'kitchen') {
+        updateFields.chef_username = email;
+        updateFields.chef_password = password;
       }
 
-      res.json({ success: true, message: `Created ${role} user successfully.` });
+      const { error } = await db.from('restaurants').upsert(toSnake(updateFields), { onConflict: 'id' });
+      if (error) throw error;
+
+      res.json({ success: true, message: `Created ${role} credentials successfully.` });
     } catch (err: any) {
-      console.error("Error creating staff user:", err);
+      console.error("Error creating staff credentials:", err);
       res.status(500).json({ error: err.message });
     }
   });
@@ -708,22 +767,26 @@ export async function configureApp(isNetlify = false) {
     try {
       const { restaurantId } = req.params;
       
-      const { data: roles, error: rolesError } = await db
-        .from('user_roles')
-        .select('user_id, role')
-        .eq('restaurant_id', restaurantId);
+      const { data: restaurant, error } = await db
+        .from('restaurants')
+        .select('admin_username, chef_username')
+        .eq('id', restaurantId)
+        .single();
         
-      if (rolesError) throw rolesError;
+      if (error) throw error;
       
       const staffList = [];
-      for (const r of (roles || [])) {
-        const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(r.user_id);
-        if (!userError && userData?.user) {
-          staffList.push({
-            role: r.role,
-            email: userData.user.email
-          });
-        }
+      if (restaurant.admin_username) {
+        staffList.push({
+          role: 'restadmin',
+          email: restaurant.admin_username
+        });
+      }
+      if (restaurant.chef_username) {
+        staffList.push({
+          role: 'kitchen',
+          email: restaurant.chef_username
+        });
       }
       
       res.json({ success: true, staff: staffList });
@@ -742,48 +805,27 @@ export async function configureApp(isNetlify = false) {
         return res.status(400).json({ error: "Missing required fields." });
       }
 
-      // Find the user with this role and restaurantId in user_roles
-      const { data: roleData, error: roleSearchError } = await db
-        .from('user_roles')
-        .select('user_id')
-        .eq('restaurant_id', restaurantId)
-        .eq('role', role)
-        .single();
-        
-      if (roleSearchError || !roleData) {
-        // If not found, let's create a new staff user instead
-        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-          email,
-          password: password || "password",
-          email_confirm: true
-        });
-        
-        if (authError) throw authError;
-        
-        const { error: roleError } = await db.from('user_roles').insert({
-          user_id: authData.user.id,
-          role: role,
-          restaurant_id: restaurantId
-        });
-        
-        if (roleError) {
-          await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
-          throw roleError;
+      const updateFields: any = {};
+      if (role === 'restadmin') {
+        updateFields.admin_username = email;
+        if (password && password !== "••••••••") {
+          updateFields.admin_password = password;
         }
-        
-        return res.json({ success: true, message: `Created new ${role} user successfully.` });
+      } else if (role === 'kitchen') {
+        updateFields.chef_username = email;
+        if (password && password !== "••••••••") {
+          updateFields.chef_password = password;
+        }
       }
 
-      const userId = roleData.user_id;
-      const updateData: any = { email };
-      if (password && password !== "••••••••") {
-        updateData.password = password;
-      }
+      const { error } = await db
+        .from('restaurants')
+        .update(toSnake(updateFields))
+        .eq('id', restaurantId);
 
-      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userId, updateData);
-      if (updateError) throw updateError;
+      if (error) throw error;
 
-      res.json({ success: true, message: `Updated ${role} user credentials successfully.` });
+      res.json({ success: true, message: `Updated ${role} credentials successfully.` });
     } catch (err: any) {
       console.error("Error updating staff credentials:", err);
       res.status(500).json({ error: err.message });
@@ -1785,6 +1827,8 @@ export async function configureApp(isNetlify = false) {
 
   if (!isNetlify) {
     if (process.env.NODE_ENV !== "production") {
+      const vitePkg = "vite";
+      const { createServer: createViteServer } = await import(vitePkg);
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: "spa",

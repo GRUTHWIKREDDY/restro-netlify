@@ -380,9 +380,9 @@ export default function SuperAdminDashboard({
     setManageEnableSlaWarning(!!tenant.enableSlaWarning);
     
     // Set default credentials
-    setManageAdminEmail(`admin@${tenant.id}.com`);
+    setManageAdminEmail(`${tenant.id}@admin.it`);
     setManageAdminPassword("••••••••");
-    setManageChefEmail(`chef@${tenant.id}.com`);
+    setManageChefEmail(`${tenant.id}@chef.it`);
     setManageChefPassword("••••••••");
     
     setManageModalTab('capabilities');
@@ -599,6 +599,10 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
       longitude: lng,
       geofenceRadiusMeters: 150,
       verificationPin: pin,
+      adminUsername: tenantAdminEmail.trim() || `${nextId}@admin.it`,
+      adminPassword: tenantAdminPassword.trim() || "password",
+      chefUsername: tenantChefEmail.trim() || `${nextId}@chef.it`,
+      chefPassword: tenantChefPassword.trim() || "password",
     };
 
     setIsOnboarding(true);
@@ -608,7 +612,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: tenantAdminEmail.trim() || `admin@${nextId}.com`,
+          email: tenantAdminEmail.trim() || `${nextId}@admin.it`,
           password: tenantAdminPassword.trim() || "password",
           role: 'restadmin',
           restaurantId: nextId
@@ -623,7 +627,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: tenantChefEmail.trim() || `chef@${nextId}.com`,
+          email: tenantChefEmail.trim() || `${nextId}@chef.it`,
           password: tenantChefPassword.trim() || "password",
           role: 'kitchen',
           restaurantId: nextId
@@ -706,9 +710,9 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
         id: newTenant.id,
         name: newTenant.name,
         url: `${window.location.origin}/r/${newTenant.id}/t/1`,
-        adminEmail: tenantAdminEmail.trim() || `admin@${nextId}.com`,
+        adminEmail: tenantAdminEmail.trim() || `${nextId}@admin.it`,
         adminPassword: tenantAdminPassword.trim() || 'password',
-        chefEmail: tenantChefEmail.trim() || `chef@${nextId}.com`,
+        chefEmail: tenantChefEmail.trim() || `${nextId}@chef.it`,
         chefPassword: tenantChefPassword.trim() || 'password',
         verificationPin: pin,
         totalTables: tQty,

@@ -23,6 +23,10 @@ export interface Restaurant {
   disableAdminPortal?: boolean;
   disableKdsPortal?: boolean;
   enableSlaWarning?: boolean;
+  adminUsername?: string;
+  adminPassword?: string;
+  chefUsername?: string;
+  chefPassword?: string;
 }
 
 export interface MenuItem {
