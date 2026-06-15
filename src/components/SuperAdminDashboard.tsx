@@ -327,7 +327,7 @@ export default function SuperAdminDashboard({
   };
 
   const handleOpenEditTenant = (tenant: Restaurant) => {
-    window.open(window.location.origin + window.location.pathname + `?tenantId=${tenant.id}&action=edit`, '_blank');
+    openEditLocal(tenant);
   };
 
   const selectedTenantLedgerBreakdown = useMemo(() => {
@@ -366,10 +366,10 @@ export default function SuperAdminDashboard({
   };
 
   const handleOpenLedger = (tenant: Restaurant) => {
-    window.open(window.location.origin + window.location.pathname + `?tenantId=${tenant.id}&action=ledger`, '_blank');
+    openLedgerLocal(tenant);
   };
 
-  const openManageLocal = (tenant: Restaurant) => {
+  const openManageLocal = async (tenant: Restaurant) => {
     setSelectedManageTenant(tenant);
     setManageStatus(tenant.status || "active");
     setManageLockAllItems(!!tenant.lockAllItems);
@@ -378,16 +378,34 @@ export default function SuperAdminDashboard({
     setManageDisableAdmin(!!tenant.disableAdminPortal);
     setManageDisableKds(!!tenant.disableKdsPortal);
     setManageEnableSlaWarning(!!tenant.enableSlaWarning);
-    setManageAdminUsername(tenant.adminUsername || "admin");
-    setManageAdminPassword(tenant.adminPassword || "password");
-    setManageChefUsername(tenant.chefUsername || "chef");
-    setManageChefPassword(tenant.chefPassword || "password");
+    
+    // Set default credentials
+    setManageAdminEmail(`admin@${tenant.id}.com`);
+    setManageAdminPassword("••••••••");
+    setManageChefEmail(`chef@${tenant.id}.com`);
+    setManageChefPassword("••••••••");
+    
     setManageModalTab('capabilities');
     setIsManageTenantOpen(true);
+
+    try {
+      const res = await fetch(`/api/admin/get-staff/${tenant.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.staff) {
+          const adminStaff = data.staff.find((s: any) => s.role === 'restadmin');
+          const chefStaff = data.staff.find((s: any) => s.role === 'kitchen');
+          if (adminStaff) setManageAdminEmail(adminStaff.email);
+          if (chefStaff) setManageChefEmail(chefStaff.email);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load staff details:", err);
+    }
   };
 
   const handleOpenManageTenant = (tenant: Restaurant) => {
-    window.open(window.location.origin + window.location.pathname + `?tenantId=${tenant.id}&action=manage`, '_blank');
+    openManageLocal(tenant);
   };
 
   const handleSaveCapabilities = async () => {
@@ -401,10 +419,6 @@ export default function SuperAdminDashboard({
       disableAdminPortal: manageDisableAdmin,
       disableKdsPortal: manageDisableKds,
       enableSlaWarning: manageEnableSlaWarning,
-      adminUsername: manageAdminUsername.trim() || undefined,
-      adminPassword: manageAdminPassword.trim() || undefined,
-      chefUsername: manageChefUsername.trim() || undefined,
-      chefPassword: manageChefPassword.trim() || undefined,
     };
 
     try {
@@ -418,9 +432,37 @@ export default function SuperAdminDashboard({
         body: JSON.stringify(updatedTenant)
       });
 
+      // 3. Update staff user credentials (Admin)
+      if (manageAdminEmail.trim()) {
+        await fetch("/api/admin/update-staff", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: manageAdminEmail.trim(),
+            password: manageAdminPassword !== "••••••••" ? manageAdminPassword : undefined,
+            role: "restadmin",
+            restaurantId: selectedManageTenant.id
+          })
+        });
+      }
+
+      // 4. Update staff user credentials (Chef)
+      if (manageChefEmail.trim()) {
+        await fetch("/api/admin/update-staff", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: manageChefEmail.trim(),
+            password: manageChefPassword !== "••••••••" ? manageChefPassword : undefined,
+            role: "kitchen",
+            restaurantId: selectedManageTenant.id
+          })
+        });
+      }
+
       triggerAppAlert(
         "Tenant Managed Successfully", 
-        `Administrative policies, capabilities and portal lockdowns have been updated live for ${selectedManageTenant.name}.`, 
+        `Administrative policies, capabilities, portal lockdowns, and credentials have been updated live for ${selectedManageTenant.name}.`, 
         "success"
       );
       setIsManageTenantOpen(false);

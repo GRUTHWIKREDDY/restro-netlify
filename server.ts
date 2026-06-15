@@ -703,6 +703,93 @@ export async function configureApp(isNetlify = false) {
     }
   });
 
+  // Get staff roles and emails for a restaurant (called by Super Admin)
+  app.get("/api/admin/get-staff/:restaurantId", async (req, res) => {
+    try {
+      const { restaurantId } = req.params;
+      
+      const { data: roles, error: rolesError } = await db
+        .from('user_roles')
+        .select('user_id, role')
+        .eq('restaurant_id', restaurantId);
+        
+      if (rolesError) throw rolesError;
+      
+      const staffList = [];
+      for (const r of (roles || [])) {
+        const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(r.user_id);
+        if (!userError && userData?.user) {
+          staffList.push({
+            role: r.role,
+            email: userData.user.email
+          });
+        }
+      }
+      
+      res.json({ success: true, staff: staffList });
+    } catch (err: any) {
+      console.error("Error fetching staff users:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Securely update staff auth credentials (called by Super Admin)
+  app.post("/api/admin/update-staff", async (req, res) => {
+    try {
+      const { email, password, role, restaurantId } = req.body;
+      
+      if (!email || !role || !restaurantId) {
+        return res.status(400).json({ error: "Missing required fields." });
+      }
+
+      // Find the user with this role and restaurantId in user_roles
+      const { data: roleData, error: roleSearchError } = await db
+        .from('user_roles')
+        .select('user_id')
+        .eq('restaurant_id', restaurantId)
+        .eq('role', role)
+        .single();
+        
+      if (roleSearchError || !roleData) {
+        // If not found, let's create a new staff user instead
+        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+          email,
+          password: password || "password",
+          email_confirm: true
+        });
+        
+        if (authError) throw authError;
+        
+        const { error: roleError } = await db.from('user_roles').insert({
+          user_id: authData.user.id,
+          role: role,
+          restaurant_id: restaurantId
+        });
+        
+        if (roleError) {
+          await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+          throw roleError;
+        }
+        
+        return res.json({ success: true, message: `Created new ${role} user successfully.` });
+      }
+
+      const userId = roleData.user_id;
+      const updateData: any = { email };
+      if (password && password !== "••••••••") {
+        updateData.password = password;
+      }
+
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userId, updateData);
+      if (updateError) throw updateError;
+
+      res.json({ success: true, message: `Updated ${role} user credentials successfully.` });
+    } catch (err: any) {
+      console.error("Error updating staff credentials:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // === DATABASE API ENDPOINTS ===
 
   app.get("/api/restaurants", async (req, res) => {
