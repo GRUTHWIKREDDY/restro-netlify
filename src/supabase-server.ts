@@ -4,7 +4,7 @@ dotenv.config();
 
 const supabaseUrl = process.env.RESTRO_PROJECT_URL_SUPABASE || '';
 // Use the service_role key for server-side operations (bypasses RLS)
-const supabaseServiceKey = process.env.RESTRO_SERVICE_ROLE_KEY || '';
+const supabaseServiceKey = process.env.RESTRO_SERVICE_ROLE_KEY || process.env.RESTRO_SUPABASE || '';
 
 if (!supabaseUrl || !supabaseServiceKey) {
   console.warn('Supabase credentials not configured. Server will not work.');

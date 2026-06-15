@@ -1434,41 +1434,6 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                 </div>
               </div>
 
-              {/* Card 2.5: Flyer Theme Selector */}
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-650">Flyer Theme</h4>
-                  <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
-                    flyerTheme === 'noir' ? 'bg-slate-800 text-white' :
-                    flyerTheme === 'gold' ? 'bg-amber-100 text-amber-800' :
-                    flyerTheme === 'emerald' ? 'bg-emerald-100 text-emerald-800' :
-                    'bg-indigo-100 text-indigo-800'
-                  }`}>{flyerTheme}</span>
-                </div>
-                <div className="grid grid-cols-4 gap-2">
-                  {(['noir', 'gold', 'emerald', 'cobalt'] as const).map(t => (
-                    <button
-                      key={t}
-                      onClick={() => setFlyerTheme(t)}
-                      className={`h-12 rounded-xl border-2 transition-all duration-200 ${
-                        flyerTheme === t 
-                          ? 'ring-2 ring-offset-1 ring-indigo-500 scale-105' 
-                          : 'opacity-60 hover:opacity-90'
-                      } ${
-                        t === 'noir' ? 'bg-slate-900 border-slate-700' :
-                        t === 'gold' ? 'bg-gradient-to-b from-amber-600 to-amber-800 border-amber-500' :
-                        t === 'emerald' ? 'bg-gradient-to-b from-emerald-600 to-emerald-800 border-emerald-500' :
-                        'bg-gradient-to-b from-indigo-600 to-indigo-800 border-indigo-500'
-                      }`}
-                      title={t.charAt(0).toUpperCase() + t.slice(1)}
-                    >
-                      <span className={`text-[7px] font-black uppercase tracking-widest ${
-                        t === 'noir' ? 'text-white' : 'text-white/90'
-                      }`}>{t}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
 
               {/* Card 3: Waiter Validation PIN */}
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm text-xs space-y-3 text-left">

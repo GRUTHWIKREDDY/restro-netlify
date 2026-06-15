@@ -419,6 +419,10 @@ export default function SuperAdminDashboard({
       disableAdminPortal: manageDisableAdmin,
       disableKdsPortal: manageDisableKds,
       enableSlaWarning: manageEnableSlaWarning,
+      adminUsername: manageAdminEmail.trim(),
+      adminPassword: manageAdminPassword !== "••••••••" ? manageAdminPassword : selectedManageTenant.adminPassword,
+      chefUsername: manageChefEmail.trim(),
+      chefPassword: manageChefPassword !== "••••••••" ? manageChefPassword : selectedManageTenant.chefPassword,
     };
 
     try {
@@ -426,15 +430,19 @@ export default function SuperAdminDashboard({
       await supabase.from('restaurants').upsert(toSnake(updatedTenant), { onConflict: 'id' });
 
       // 2. Post node update to sync in-memory databases
-      await fetch("/api/restaurants", {
+      const restRes = await fetch("/api/restaurants", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedTenant)
       });
+      if (!restRes.ok) {
+        const errData = await restRes.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to update restaurant capabilities");
+      }
 
       // 3. Update staff user credentials (Admin)
       if (manageAdminEmail.trim()) {
-        await fetch("/api/admin/update-staff", {
+        const adminRes = await fetch("/api/admin/update-staff", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -444,11 +452,15 @@ export default function SuperAdminDashboard({
             restaurantId: selectedManageTenant.id
           })
         });
+        if (!adminRes.ok) {
+          const errData = await adminRes.json().catch(() => ({}));
+          throw new Error(errData.error || "Failed to update admin credentials");
+        }
       }
 
       // 4. Update staff user credentials (Chef)
       if (manageChefEmail.trim()) {
-        await fetch("/api/admin/update-staff", {
+        const chefRes = await fetch("/api/admin/update-staff", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -458,6 +470,10 @@ export default function SuperAdminDashboard({
             restaurantId: selectedManageTenant.id
           })
         });
+        if (!chefRes.ok) {
+          const errData = await chefRes.json().catch(() => ({}));
+          throw new Error(errData.error || "Failed to update chef credentials");
+        }
       }
 
       triggerAppAlert(
@@ -466,8 +482,8 @@ export default function SuperAdminDashboard({
         "success"
       );
       setIsManageTenantOpen(false);
-    } catch (err) {
-      triggerAppAlert("Write Failure", "Failed to compile the merchant policy updates to the database.", "error");
+    } catch (err: any) {
+      triggerAppAlert("Write Failure", err.message || "Failed to compile the merchant policy updates to the database.", "error");
     }
   };
 
