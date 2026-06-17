@@ -7,52 +7,47 @@ Remove the "Select Restaurant" dropdown from the login flow and instead resolve 
 - **Current Flow**: User selects a role $\rightarrow$ User selects a restaurant from a dropdown $\rightarrow$ User enters email/password $\rightarrow$ Backend verifies credentials for that specific restaurant.
 - **Target Flow**: User selects a role $\rightarrow$ User enters email/password $\rightarrow$ Backend identifies the restaurant associated with that email $\rightarrow$ User is routed to the correct home page.
 - **Database**: Supabase PostgreSQL.
-- **Table Identified**: `staff_credentials` stores the mapping of `email`, `role`, and `restaurant_id`.
 - **Existing Restaurants**: 7 restaurants identified (rest-1 to rest-7).
 
 ## Proposed Approach
-1. **Data Seeding**: Insert a set of admin and kitchen users into the `staff_credentials` table for each of the 7 restaurants.
-2. **Frontend Simplification**: Remove the restaurant selection UI and state from `StaffPortalLogin.tsx`.
-3. **Backend Modification**: Update the `/api/auth/merchant-login` endpoint to resolve `restaurantId` from the `staff_credentials` table using the provided `email` and `role` before verifying the password.
+1. **Data Seeding**: Create a mapping between email addresses and restaurant IDs. Since there isn't a dedicated `users` table with `restaurant_id` visible in the current context (besides `user_roles` for superadmins), we will ensure the backend `merchant-login` endpoint can resolve the `restaurantId` from the email.
+2. **Frontend Simplification**: Remove the restaurant selection logic and UI from `StaffPortalLogin.tsx`.
+3. **Backend Modification**: Update the `/api/auth/merchant-login` endpoint to look up the `restaurantId` associated with the provided email if it's not provided in the request.
 
 ## Step-by-Step Plan
 
 ### Phase 1: Data Preparation & Seeding
-1. **Generate Credentials**: 
-   - For each restaurant (rest-1 to rest-7), create one `restadmin` and one `kitchen` account.
-   - Email format: `[restaurant-slug]@restro.com` (e.g., `royalclayoven@restro.com`).
-   - Password: `password` for all.
-2. **Insert via Supabase**: 
-   - Generate appropriate `salt` and `password_hash` using the project's hashing logic.
-   - Use the ID convention: `staff-{restaurantId}-{roleSuffix}`.
-   - Upsert into `staff_credentials`.
-3. **Documentation**: Write all generated emails and passwords to `RESTRO_CREDENTIALS.md`.
+1. **Create Credentials List**:
+   - For each of the 7 restaurants, generate an email based on the restaurant name.
+   - Example: `royalclayoven@restro.com` $\rightarrow$ `rest-1`.
+2. **Insert Data**: Insert these users into the database (assuming a `merchant_users` or similar table exists, or updating the existing auth logic).
+3. **Documentation**: Write all generated emails and passwords to `RESTRO_CREDENTIALS.md` for the user.
 
 ### Phase 2: Frontend Implementation
 1. **Modify `src/components/StaffPortalLogin.tsx`**:
-   - Remove `selectedRestaurantId` and `onSelectRestaurant` from props and state logic.
-   - Remove the restaurant selection `<select>` dropdown.
-   - Update `handleLoginSubmit` to only send `email`, `password`, and `role` to the backend.
+   - Remove the state/props related to `selectedRestaurantId` and `onSelectRestaurant`.
+   - Remove the `<select>` element for restaurant selection.
+   - Update the `handleLoginSubmit` function to stop sending `restaurantId` from the client side.
 
 ### Phase 3: Backend Implementation
-1. **Modify `server.ts` (`/api/auth/merchant-login` endpoint)**:
-   - **Remove** the requirement for `restaurantId` in the request body validation.
-   - **Step A**: Query `staff_credentials` using `email` and `role` to find the associated `restaurant_id`.
-   - **Step B**: Use the retrieved `restaurant_id` to fetch the restaurant's name from the `restaurants` table.
-   - **Step C**: Proceed with password hash verification as usual.
-   - **Step D**: Return the resolved `restaurantId` and `restaurantName` in the success response.
+1. **Update `server.ts` (or relevant auth controller)**:
+   - Locate the `POST /api/auth/merchant-login` endpoint.
+   - Implement a lookup mechanism: `Email` $\rightarrow$ `RestaurantID`.
+   - If the email exists in the mapping, proceed with the login and return the associated `restaurantId` in the response.
 
 ## Files Likely to Change
 - `src/components/StaffPortalLogin.tsx` (UI removal)
-- `server.ts` (Auth logic update)
-- `RESTRO_CREDENTIALS.md` (New file for generated credentials)
+- `server.ts` (Backend logic update)
+- `RESTRO_CREDENTIALS.md` (New file for credentials)
 
 ## Verification Steps
-- [ ] **Verify Seeding**: Check `staff_credentials` table for the 14 new entries.
-- [ ] **Test Admin Login**: Enter `royalclayoven@restro.com` $\rightarrow$ Verify automatic routing to "The Royal Clay Oven" admin panel.
-- [ ] **Test Kitchen Login**: Enter `dakshindelights@restro.com` (kitchen role) $\rightarrow$ Verify routing to "Dakshin Delights" KDS.
-- [ ] **Error Case**: Enter an email not associated with any restaurant $\rightarrow$ Verify "Invalid credentials" response.
+- [ ] **Test Login**: Enter a generated email (e.g., for "The Dim Sum House") and password.
+- [ ] **Verify Routing**: Ensure the user is automatically directed to the correct restaurant's admin/kitchen panel without picking from a list.
+- [ ] **Error Handling**: Verify that an unregistered email returns an "Invalid credentials" error.
 
 ## Risks & Tradeoffs
-- **Role Collision**: Since a user might have different passwords/salts for different roles in the same restaurant, the query must strictly use both `email` and `role`.
-- **Efficiency**: Adding one extra query to find the `restaurant_id` is a negligible performance hit for the benefit of a cleaner UX.
+- **Email Uniqueness**: This assumes each restaurant has a unique primary admin email.
+- **Security**: Moving the restaurant ID lookup to the server is actually *more* secure as it prevents users from attempting to brute-force passwords against different restaurant IDs via the client-side dropdown.
+
+## Open Questions
+- Does the current `merchant-login` endpoint use a specific table for restaurant staff, or is it using Supabase Auth with custom metadata? I will need to inspect the server code to confirm the exact table name for seeding.

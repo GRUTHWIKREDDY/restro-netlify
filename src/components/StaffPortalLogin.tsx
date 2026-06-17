@@ -299,7 +299,7 @@ export default function StaffPortalLogin({
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm text-gray-900 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition placeholder:text-gray-400"
-                      placeholder="admin@kcode.it"
+                      placeholder="you@restaurant.com"
                       disabled={isAuthenticating}
                     />
                   </div>
