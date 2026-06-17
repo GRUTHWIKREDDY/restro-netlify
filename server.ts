@@ -807,43 +807,47 @@ export async function configureApp(isNetlify = false) {
   // Backend-verified merchant/chef login endpoint
   app.post("/api/auth/merchant-login", async (req, res) => {
     try {
-      const { email, password, role, restaurantId } = req.body;
+      const { email, password, role } = req.body;
       
-      if (!email || !password || !role || !restaurantId) {
+      console.log("[MERCHANT LOGIN] body:", JSON.stringify(req.body));
+      
+      if (!email || !password || !role) {
         return res.status(400).json({ error: "Missing required credentials." });
       }
-
-      // Check if restaurant exists first to get the name
-      const { data: restaurant, error: restErr } = await db
-        .from('restaurants')
-        .select('id, name')
-        .eq('id', restaurantId)
-        .single();
-
-      if (restErr || !restaurant) {
-        return res.status(401).json({ error: "Restaurant not found." });
-      }
-
-      // Query the secure staff credentials table
+      
+      // 1. Resolve restaurant identity based on email and role
       const { data: staff, error: staffErr } = await db
-        .from('staff_credentials')
-        .select('password_hash, salt')
-        .eq('restaurant_id', restaurantId)
-        .eq('email', email)
-        .eq('role', role)
+        .from("staff_credentials")
+        .select("password_hash, salt, restaurant_id")
+        .eq("email", email)
+        .eq("role", role)
         .maybeSingle();
-
+      
       if (staffErr || !staff) {
-        return res.status(401).json({ error: "Invalid credentials." });
+        return res.status(401).json({ error: "Invalid credentials or account not found." });
       }
-
+      
+      const restaurantId = staff.restaurant_id;
+      
+      // 2. Check if restaurant exists to get the name
+      const { data: restaurant, error: restErr } = await db
+        .from("restaurants")
+        .select("id, name")
+        .eq("id", restaurantId)
+        .single();
+      
+      if (restErr || !restaurant) {
+        return res.status(401).json({ error: "Associated restaurant not found." });
+      }
+      
+      // 3. Verify password
       const hash = hashPassword(password, staff.salt);
       const isValid = (hash === staff.password_hash);
-
+      
       if (!isValid) {
         return res.status(401).json({ error: "Invalid credentials." });
       }
-
+      
       res.json({
         success: true,
         role,
