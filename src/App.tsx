@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Building2, Utensils, ChefHat, Store, ShoppingBag, RefreshCw, 
-  Sliders, CheckCircle, AlertOctagon, Info, X
+import {
+  Building2, Utensils, ChefHat, Store, ShoppingBag, RefreshCw,
+  Sliders, CheckCircle, AlertOctagon, Info, X,
+  ClipboardList, LayoutGrid, QrCode, History, BarChart3
 } from 'lucide-react';
 import { Restaurant, MenuItem, Order, DineInUser, Buzzer, FloorDef } from './types';
 import { supabase, toCamel } from './supabase';
@@ -58,6 +59,8 @@ export default function App() {
     return saved ? parseInt(saved) : 3;
   });
 
+  const [adminActiveTab, setAdminActiveTab] = useState<'orders' | 'floor' | 'menu' | 'tables' | 'history' | 'analytics'>('orders');
+
   const authRole = useMemo(() => {
     const token = localStorage.getItem('kcode_auth_token');
     if (!token) return null;
@@ -67,6 +70,10 @@ export default function App() {
       return null;
     }
   }, [isAuthenticated]);
+
+  const activeBuzzersCount = useMemo(() => {
+    return buzzers.filter(b => b.restaurantId === selectedRestaurantId).length;
+  }, [buzzers, selectedRestaurantId]);
 
   const [appAlert, setAppAlert] = useState<{
     isOpen: boolean;
@@ -154,7 +161,7 @@ export default function App() {
           .select('*')
           .eq('user_id', session.user.id)
           .single();
-          
+
         if (roleData) {
           if (roleData.restaurant_id) setSelectedRestaurantId(roleData.restaurant_id);
           setActiveMode(roleData.role);
@@ -174,7 +181,7 @@ export default function App() {
               if (parsed.restaurantId) setSelectedRestaurantId(parsed.restaurantId);
               return;
             }
-          } catch (e) {}
+          } catch (e) { }
         }
         setIsAuthenticated(false);
       }
@@ -373,8 +380,8 @@ export default function App() {
       const targetOrder = orders.find(o => o.id === orderId);
       if (targetOrder) {
         const forceReleaseFalse = nextStatus === 'pending' || nextStatus === 'accepted';
-        const updatedOrder = { 
-          ...targetOrder, 
+        const updatedOrder = {
+          ...targetOrder,
           status: nextStatus,
           handshakeApproved: (nextStatus === 'accepted' || nextStatus === 'completed') ? true : targetOrder.handshakeApproved,
           released: released !== undefined ? released : (forceReleaseFalse ? false : targetOrder.released)
@@ -399,7 +406,7 @@ export default function App() {
       const targetOrder = orders.find(o => o.id === orderId);
       if (targetOrder) {
         const remainingItems = targetOrder.items.filter((_, idx) => idx !== itemIdx);
-        
+
         let nextStatus = targetOrder.status;
         let newTotal = 0;
 
@@ -444,7 +451,7 @@ export default function App() {
         if (floors) {
           updatedTenant.floors = floors;
         }
-        
+
         const res = await fetch("/api/restaurants", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -572,7 +579,7 @@ export default function App() {
       const completedOrders = orders.filter(
         o => o.restaurantId === activeRestaurantObj.id && (o.status === 'completed' || o.status === 'rejected')
       );
-      
+
       let clearedCount = 0;
       for (const order of completedOrders) {
         try {
@@ -585,7 +592,7 @@ export default function App() {
 
       if (clearedCount > 0) {
         triggerAppAlert(
-          "Tickets Cleared", 
+          "Tickets Cleared",
           `Updated operational state to ${status.toUpperCase()} and cleared out ${clearedCount} concluded/full-fill tickets.`,
           "success"
         );
@@ -597,59 +604,174 @@ export default function App() {
     }
   };
 
+  const handleToggleOperationalStatusHeader = () => {
+    if (activeRestaurantObj.lockedBySuperAdmin) {
+      triggerAppAlert(
+        "Administrative Hold Lock",
+        "Administrative Hold: Your kitchen operational privileges are currently locked by kCodeIT Super Admin. Please contact APP Admins to reactivate.",
+        "error"
+      );
+      return;
+    }
+    const nextStatus = activeRestaurantObj.status === 'active' ? 'inactive' : 'active';
+    handleSetRestaurantStatus(nextStatus);
+  };
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex flex-col font-sans">
-      
-      {/* SaaS Global Header - ONLY visible on portal routes when authorized */}
+      {/* Global Header — visible on portal routes when authenticated */}
       {isPortalRoute && isAuthenticated && (
-        <div className="bg-[#0b0f19] text-slate-100 border-b border-slate-900 shadow-md sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between py-3.5 gap-3">
-              
-              <div className="flex items-center justify-between">
-                <div onClick={() => navigateTo('/')} className="flex items-center gap-3 cursor-pointer group">
-                  <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex-shrink-0 flex items-center justify-center shadow-lg shadow-indigo-500/10 transition group-hover:scale-105">
-                    <span className="text-[12px] font-black font-display text-white">kC</span>
+        <div className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm/5">
+          <div className="max-w-full px-6 sm:px-10 lg:px-12">
+            <div className="flex items-center justify-between py-6 sm:py-7">
+
+              {/* Left: Brand / Restaurant Info & Status */}
+              <div onClick={() => navigateTo('/')} className="flex items-center gap-3 cursor-pointer group shrink-0">
+                {activeMode !== 'superadmin' && activeRestaurantObj?.logoUrl ? (
+                  <img
+                    src={activeRestaurantObj.logoUrl}
+                    alt={activeRestaurantObj.name}
+                    className="w-10 h-10 rounded-xl object-cover border border-slate-100 shadow-inner transition duration-300 group-hover:scale-105"
+                  />
+                ) : (
+                  <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center transition duration-300 group-hover:bg-indigo-700 shadow-md">
+                    <span className="text-sm font-black text-white">R</span>
                   </div>
-                  <div>
-                    <h1 className="text-sm font-black tracking-widest leading-none text-white uppercase font-display group-hover:text-indigo-400 transition">kCodeIT</h1>
-                    <span className="text-[9px] text-slate-400 font-mono tracking-widest uppercase block mt-1">Staff Secure Dashboard</span>
+                )}
+                <div className="flex flex-col gap-0.5">
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-base font-extrabold tracking-tight text-slate-900 group-hover:text-indigo-600 transition">
+                      {activeMode === 'superadmin' ? 'Restro Super Admin' : (activeRestaurantObj?.name || 'Restro')}
+                    </h1>
+
+                    {activeMode === 'restadmin' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleOperationalStatusHeader();
+                        }}
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-black tracking-wide border transition flex items-center gap-1 cursor-pointer ${activeRestaurantObj.lockedBySuperAdmin ? 'bg-rose-100 border-rose-300 text-rose-800' :
+                            activeRestaurantObj.status === 'active' ? 'bg-emerald-100 border-emerald-300 text-emerald-800 hover:bg-emerald-200' :
+                              'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200'
+                          }`}
+                      >
+                        {activeRestaurantObj.lockedBySuperAdmin ? (
+                          <span>LOCKED</span>
+                        ) : activeRestaurantObj.status === 'active' ? (
+                          <>
+                            <span className="w-1 h-1 rounded-full bg-emerald-500"></span>
+                            <span>ONLINE</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="w-1 h-1 rounded-full bg-slate-400"></span>
+                            <span>OFFLINE</span>
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
+                  <span className="text-[10px] text-slate-400 font-bold tracking-wider uppercase leading-none">
+                    {activeMode === 'superadmin' ? 'Platform Console' : activeMode === 'kitchen' ? 'Kitchen Monitor' : 'Management Portal'}
+                  </span>
                 </div>
               </div>
 
-              {/* Status Display */}
-              <div className="flex flex-wrap gap-1 bg-[#090b11] p-1.5 rounded-full border border-slate-850 px-4">
-                <span className="flex items-center gap-1.5 px-2 py-1 text-xs font-black uppercase text-indigo-400">
-                  {activeMode === 'restadmin' && <><Store size={13} /> Admin Portal</>}
-                  {activeMode === 'kitchen' && <><ChefHat size={13} /> Kitchen Display</>}
-                  {activeMode === 'superadmin' && <><Building2 size={13} /> SaaS Control</>}
-                </span>
-              </div>
+              {/* Middle: Navigation tabs for Restaurant Admin */}
+              {activeMode === 'restadmin' && (
+                <div className="hidden md:flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/60 shadow-inner/10">
+                  {(['orders', 'floor', 'menu', 'tables', 'history', 'analytics'] as const).map(tab => {
+                    const tabMeta = {
+                      orders: { label: 'Live Orders', icon: ClipboardList },
+                      floor: { label: 'Floor & Seating', icon: LayoutGrid },
+                      menu: { label: 'Menu Management', icon: Utensils },
+                      tables: { label: 'QR Flyers', icon: QrCode },
+                      history: { label: 'Sales History', icon: History },
+                      analytics: { label: 'Analytics', icon: BarChart3 }
+                    }[tab];
+                    const Icon = tabMeta.icon;
+                    const isActive = adminActiveTab === tab;
 
-              <div className="flex items-center gap-2.5">
-                {authRole === 'superadmin' && activeMode !== 'superadmin' && (
-                  <button 
-                    onClick={() => setActiveMode('superadmin')}
-                    className="px-4 py-2 bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-900/40 text-indigo-250 hover:text-white text-xs font-black rounded-full transition shadow-sm cursor-pointer"
-                  >
-                    ← Back to SaaS Control
-                  </button>
-                )}
-                <button 
-                  onClick={handleLogout}
-                  className="px-4 py-2 bg-rose-955/70 hover:bg-rose-900 border border-rose-900/40 text-rose-200 hover:text-white text-xs font-black rounded-full transition shadow-sm cursor-pointer"
-                >
-                  Log Out
-                </button>
-              </div>
+                    return (
+                      <button
+                        key={tab}
+                        onClick={() => setAdminActiveTab(tab)}
+                        className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider rounded-xl transition-all duration-205 flex items-center gap-2 cursor-pointer relative ${isActive
+                            ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-250/30 scale-[1.01]'
+                            : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
+                          }`}
+                      >
+                        <div className="relative flex items-center justify-center">
+                          <Icon size={13} className={`stroke-[2.5] ${isActive ? 'text-indigo-650' : 'text-slate-400'}`} />
+                          {tab === 'orders' && activeBuzzersCount > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                            </span>
+                          )}
+                        </div>
+                        <span>{tabMeta.label}</span>
+                        {tab === 'orders' && activeBuzzersCount > 0 && (
+                          <span className="px-1.5 py-0.5 bg-rose-500 text-white text-[9px] font-black rounded-md animate-bounce shadow-sm">
+                            {activeBuzzersCount}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Right: Logout */}
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 text-slate-600 hover:text-rose-600 hover:bg-rose-50 text-xs font-bold rounded-xl border border-slate-200 hover:border-rose-200 transition cursor-pointer"
+              >
+                Log Out
+              </button>
 
             </div>
+
+            {/* Mobile Tab Row */}
+            {activeMode === 'restadmin' && (
+              <div className="flex md:hidden overflow-x-auto gap-1.5 pb-3 pt-1 border-t border-slate-100 scrollbar-none">
+                {(['orders', 'floor', 'menu', 'tables', 'history', 'analytics'] as const).map(tab => {
+                  const tabMeta = {
+                    orders: { label: 'Live Orders', icon: ClipboardList },
+                    floor: { label: 'Floor & Seating', icon: LayoutGrid },
+                    menu: { label: 'Menu Management', icon: Utensils },
+                    tables: { label: 'QR Flyers', icon: QrCode },
+                    history: { label: 'Sales History', icon: History },
+                    analytics: { label: 'Analytics', icon: BarChart3 }
+                  }[tab];
+                  const Icon = tabMeta.icon;
+                  const isActive = adminActiveTab === tab;
+
+                  return (
+                    <button
+                      key={tab}
+                      onClick={() => setAdminActiveTab(tab)}
+                      className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center gap-1.5 shrink-0 cursor-pointer relative ${isActive
+                          ? 'bg-slate-900 text-white shadow-sm'
+                          : 'text-slate-500 hover:bg-slate-100'
+                        }`}
+                    >
+                      <Icon size={12} />
+                      <span>{tabMeta.label}</span>
+                      {tab === 'orders' && activeBuzzersCount > 0 && (
+                        <span className="px-1.5 py-0.5 bg-rose-500 text-white text-[8px] font-black rounded animate-bounce shadow-xs">
+                          {activeBuzzersCount}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
           </div>
         </div>
       )}
-
-
 
       {/* Main View Router */}
       <main className="flex-1 flex flex-col animate-fade-in">
@@ -676,7 +798,7 @@ export default function App() {
           </div>
         ) : isPortalRoute ? (
           !isAuthenticated ? (
-            <StaffPortalLogin 
+            <StaffPortalLogin
               restaurants={restaurants}
               selectedRestaurantId={selectedRestaurantId}
               onSelectRestaurant={setSelectedRestaurantId}
@@ -687,7 +809,7 @@ export default function App() {
           ) : (
             <>
               {activeMode === 'restadmin' && (
-                <RestaurantAdminPanel 
+                <RestaurantAdminPanel
                   restaurant={activeRestaurantObj}
                   restaurants={restaurants}
                   onChangeRestaurantStatus={handleSetRestaurantStatus}
@@ -701,12 +823,13 @@ export default function App() {
                   onTableUpdate={(count, floors) => handleModifyRestaurantTablesGlobal(activeRestaurantObj.id, count, floors)}
                   triggerAppAlert={triggerAppAlert}
                   buzzers={buzzers}
-                  onSwitchToKitchenMode={() => setActiveMode('kitchen')}
+                  activeTab={adminActiveTab}
+                  setActiveTab={setAdminActiveTab}
                 />
               )}
 
               {activeMode === 'kitchen' && (
-                <KitchenDisplaySystem 
+                <KitchenDisplaySystem
                   restaurant={activeRestaurantObj}
                   orders={orders}
                   onUpdateOrderStatus={handleUpdateOrderStatus}
@@ -719,7 +842,7 @@ export default function App() {
               )}
 
               {activeMode === 'superadmin' && (
-                <SuperAdminDashboard 
+                <SuperAdminDashboard
                   restaurants={restaurants}
                   setRestaurants={setRestaurants}
                   menus={menus}
@@ -735,7 +858,7 @@ export default function App() {
             </>
           )
         ) : (
-          <DineInCustomerUI 
+          <DineInCustomerUI
             restaurant={activeRestaurantObj}
             tableNumber={selectedTableNumber}
             menus={menus}

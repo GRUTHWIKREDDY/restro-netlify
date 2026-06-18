@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Building2, ChefHat, Store, KeyRound, Lock, ArrowRight, CornerDownRight, ShieldCheck, HelpCircle
+  Building2, ChefHat, Store, KeyRound, Lock, ArrowRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Restaurant } from '../types';
@@ -28,7 +28,6 @@ export default function StaffPortalLogin({
   const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
-  const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
 
   React.useEffect(() => {
     if (forceRole) {
@@ -36,18 +35,11 @@ export default function StaffPortalLogin({
     }
   }, [forceRole]);
 
-  const defaultCreds = {
-    restadmin: { user: 'admin', pass: 'password', label: 'Admin Portal' },
-    kitchen: { user: 'chef', pass: 'password', label: 'Chef KDS Panel' },
-    superadmin: { user: 'superadmin', pass: 'password', label: 'SaaS Super Control' }
-  };
-
   const handleSelectRole = (role: 'restadmin' | 'kitchen' | 'superadmin') => {
     setSelectedRole(role);
     setEmail('');
     setPassword('');
     setErrorMessage('');
-    setTerminalLogs([]);
   };
 
   const executeSecurityHandshake = async (role: 'restadmin' | 'kitchen' | 'superadmin') => {
@@ -60,8 +52,6 @@ export default function StaffPortalLogin({
 
     setIsAuthenticating(true);
     setErrorMessage('');
-
-    setTerminalLogs(prev => [...prev, `Initiating auth sequence for ${email}...`]);
     
     if (selectedRole === 'superadmin') {
       try {
@@ -73,8 +63,6 @@ export default function StaffPortalLogin({
         if (authError || !authData.user) {
           throw new Error(authError?.message || "Invalid credentials.");
         }
-
-        setTerminalLogs(prev => [...prev, `Auth successful. Verifying role permissions...`]);
 
         const { data: roleData, error: roleError } = await supabase
           .from('user_roles')
@@ -97,7 +85,6 @@ export default function StaffPortalLogin({
           restaurantId: roleData.restaurant_id || ''
         }));
 
-        setTerminalLogs(prev => [...prev, `Permission granted. Establishing session...`]);
         setTimeout(() => {
           setIsAuthenticating(false);
           executeSecurityHandshake(roleData.role as 'restadmin' | 'kitchen' | 'superadmin');
@@ -106,7 +93,6 @@ export default function StaffPortalLogin({
       } catch (err: any) {
         setIsAuthenticating(false);
         setErrorMessage(err.message || "Authentication failed.");
-        setTerminalLogs(prev => [...prev, `[ERROR] ${err.message}`]);
       }
     } else {
       try {
@@ -125,8 +111,6 @@ export default function StaffPortalLogin({
           throw new Error(data.error || "Authentication failed.");
         }
 
-        setTerminalLogs(prev => [...prev, `Credentials verified. Mapping operational role...`]);
-
         localStorage.setItem('kcode_auth_token', JSON.stringify({
           role: selectedRole,
           restaurantId: data.restaurantId
@@ -140,12 +124,11 @@ export default function StaffPortalLogin({
       } catch (err: any) {
         setIsAuthenticating(false);
         setErrorMessage(err.message || "Authentication failed.");
-        setTerminalLogs(prev => [...prev, `[ERROR] ${err.message}`]);
       }
     }
   };
   return (
-    <div className="flex-1 min-h-[85vh] bg-gray-50 text-gray-900 flex flex-col justify-center items-center py-10 px-4 select-none relative overflow-hidden">
+    <div className="flex-1 min-h-[85vh] bg-slate-50 text-slate-900 flex flex-col justify-center items-center py-10 px-4 select-none relative overflow-hidden">
 
       <div className="w-full max-w-4xl space-y-8 z-10">
 
@@ -155,7 +138,7 @@ export default function StaffPortalLogin({
             initial={{ y: -10, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.4, delay: 0.1 }}
-            className="text-3xl md:text-4xl font-black font-display text-gray-800 tracking-tight leading-none"
+            className="text-3xl md:text-4xl font-black font-display text-slate-800 tracking-tight leading-none"
           >
             Restro <span className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">Management Portal</span>
           </motion.h2>
@@ -163,7 +146,7 @@ export default function StaffPortalLogin({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.5, delay: 0.2 }}
-            className="text-xs text-gray-500 max-w-lg mx-auto leading-relaxed"
+            className="text-xs text-slate-500 max-w-lg mx-auto leading-relaxed"
           >
             Access restaurant administration tools, Live Kitchen Display Systems, or high-tier SaaS subscription controls.
           </motion.p>
@@ -185,24 +168,20 @@ export default function StaffPortalLogin({
                 className={`relative p-5 rounded-[24px] border text-left flex flex-col justify-between gap-5 transition-all duration-350 transform hover:-translate-y-1 ${
                   selectedRole === 'restadmin'
                     ? 'bg-white border-indigo-500 shadow-[0_0_20px_rgba(79,70,229,0.1)] ring-1 ring-indigo-500/30'
-                    : 'bg-white hover:bg-gray-50 border-gray-200 hover:border-gray-300 shadow-sm'
+                    : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-slate-300 shadow-sm'
                   }`}
               >
                 <div className="space-y-3">
                   <div className={`w-10 h-10 rounded-1.5xl flex items-center justify-center border transition ${
-                    selectedRole === 'restadmin' ? 'bg-indigo-600 border-indigo-500' : 'bg-gray-100 border-gray-200'
+                    selectedRole === 'restadmin' ? 'bg-indigo-600 border-indigo-500' : 'bg-slate-100 border-slate-200'
                     }`}>
-                    <Store size={20} className={selectedRole === 'restadmin' ? 'text-white' : 'text-gray-500'} />
+                    <Store size={20} className={selectedRole === 'restadmin' ? 'text-white' : 'text-slate-500'} />
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-sm text-gray-800">Merchant Admin Portal</h3>
+                    <h3 className="font-extrabold text-sm text-slate-800">Merchant Admin Portal</h3>
                   </div>
                 </div>
-                <div className="flex items-center justify-between text-[10px] pt-2 border-t border-gray-100">
-                  <span className="font-mono text-emerald-600 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                    Operational node online
-                  </span>
+                <div className="flex items-center justify-between text-[10px] pt-2 border-t border-slate-100">
                   {selectedRole === 'restadmin' && <ArrowRight size={12} className="text-indigo-500" />}
                 </div>
               </button>
@@ -213,24 +192,20 @@ export default function StaffPortalLogin({
                 className={`relative p-5 rounded-[24px] border text-left flex flex-col justify-between gap-5 transition-all duration-350 transform hover:-translate-y-1 ${
                   selectedRole === 'kitchen'
                     ? 'bg-white border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.1)] ring-1 ring-amber-500/30'
-                    : 'bg-white hover:bg-gray-50 border-gray-200 hover:border-gray-300 shadow-sm'
+                    : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-slate-300 shadow-sm'
                   }`}
               >
                 <div className="space-y-3">
                   <div className={`w-10 h-10 rounded-1.5xl flex items-center justify-center border transition ${
-                    selectedRole === 'kitchen' ? 'bg-amber-500 border-amber-400' : 'bg-gray-100 border-gray-200'
+                    selectedRole === 'kitchen' ? 'bg-amber-500 border-amber-400' : 'bg-slate-100 border-slate-200'
                     }`}>
-                    <ChefHat size={20} className={selectedRole === 'kitchen' ? 'text-white' : 'text-gray-500'} />
+                    <ChefHat size={20} className={selectedRole === 'kitchen' ? 'text-white' : 'text-slate-500'} />
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-sm text-gray-800">Chefs' Kitchen (KDS)</h3>
+                    <h3 className="font-extrabold text-sm text-slate-800">Chefs' Kitchen (KDS)</h3>
                   </div>
                 </div>
-                <div className="flex items-center justify-between text-[10px] pt-2 border-t border-gray-100">
-                  <span className="font-mono text-emerald-600 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                    KDS sound engine active
-                  </span>
+                <div className="flex items-center justify-between text-[10px] pt-2 border-t border-slate-100">
                   {selectedRole === 'kitchen' && <ArrowRight size={12} className="text-amber-500" />}
                 </div>
               </button>
@@ -242,23 +217,23 @@ export default function StaffPortalLogin({
                   className={`relative p-5 rounded-[24px] border text-left flex flex-col justify-between gap-5 transition-all duration-350 transform hover:-translate-y-1 ${
                     selectedRole === 'superadmin'
                       ? 'bg-white border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.1)] ring-1 ring-purple-500/30'
-                      : 'bg-white hover:bg-gray-50 border-gray-200 hover:border-gray-300 shadow-sm'
+                      : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-slate-300 shadow-sm'
                     }`}
                 >
                   <div className="space-y-3">
                     <div className={`w-10 h-10 rounded-1.5xl flex items-center justify-center border transition ${
-                      selectedRole === 'superadmin' ? 'bg-purple-600 border-purple-500' : 'bg-gray-100 border-gray-200'
+                      selectedRole === 'superadmin' ? 'bg-purple-600 border-purple-500' : 'bg-slate-100 border-slate-200'
                       }`}>
-                      <Building2 size={20} className={selectedRole === 'superadmin' ? 'text-white' : 'text-gray-500'} />
+                      <Building2 size={20} className={selectedRole === 'superadmin' ? 'text-white' : 'text-slate-500'} />
                     </div>
                     <div>
-                      <h3 className="font-extrabold text-sm text-gray-800">SaaS Super Control</h3>
-                      <p className="text-[10px] text-gray-500 mt-1 leading-normal">
+                      <h3 className="font-extrabold text-sm text-slate-800">SaaS Super Control</h3>
+                      <p className="text-[10px] text-slate-500 mt-1 leading-normal">
                         Multi-tenant analytics, license control holds, global franchise revenues, and global reset toggles.
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between text-[10px] pt-2 border-t border-gray-100">
+                  <div className="flex items-center justify-between text-[10px] pt-2 border-t border-slate-100">
                     <span className="font-mono text-emerald-600 flex items-center gap-1">
                       <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
                       Control tower listening
@@ -279,12 +254,12 @@ export default function StaffPortalLogin({
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
-                className="md:col-span-5 bg-white border border-gray-200 rounded-[32px] p-6 shadow-xl space-y-5"
+                className="md:col-span-5 bg-white border border-slate-200 rounded-[32px] p-6 shadow-xl space-y-5"
               >
-                <div className="flex items-center gap-2 border-b border-gray-100 pb-3">
+                <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
                   <KeyRound size={16} className="text-indigo-600" />
                   <div>
-                    <h4 className="font-extrabold text-sm text-gray-800">
+                    <h4 className="font-extrabold text-sm text-slate-800">
                       {selectedRole === "restadmin" ? "Admin Portal Login" : selectedRole === "kitchen" ? "Kitchen Portal Login" : "Super Admin Login"}
                     </h4>
                   </div>
@@ -292,13 +267,13 @@ export default function StaffPortalLogin({
 
                 <form onSubmit={handleLoginSubmit} className="space-y-4">
                   <div className="space-y-1.5">
-                    <label className="text-[9px] font-extrabold text-gray-500 uppercase tracking-widest block">Email</label>
+                    <label className="text-[9px] font-extrabold text-slate-500 uppercase tracking-widest block">Email</label>
                     <input
                       type="email"
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm text-gray-900 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition placeholder:text-gray-400"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition placeholder:text-slate-400"
                       placeholder="you@restaurant.com"
                       disabled={isAuthenticating}
                     />
@@ -306,7 +281,7 @@ export default function StaffPortalLogin({
 
                   <div className="space-y-1.5">
                     <div className="flex justify-between items-center px-1">
-                      <label className="block text-[10px] text-gray-500 font-bold uppercase">Password</label>
+                      <label className="block text-[10px] text-slate-500 font-bold uppercase">Password</label>
                     </div>
                     <div className="relative">
                       <input
@@ -314,11 +289,11 @@ export default function StaffPortalLogin({
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="••••••••"
-                        className="w-full bg-white border border-gray-300 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-gray-900 placeholder-gray-400 focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
                         required
                         disabled={isAuthenticating}
                       />
-                      <Lock size={12} className="absolute right-3.5 top-3 text-gray-400" />
+                      <Lock size={12} className="absolute right-3.5 top-3 text-slate-400" />
                     </div>
                   </div>
 

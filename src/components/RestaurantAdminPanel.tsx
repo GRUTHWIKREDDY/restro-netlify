@@ -1,16 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Building2, Store, ClipboardList, ChefHat, CheckCircle, Clock, 
-  AlertTriangle, DollarSign, QrCode, Plus, Edit, Trash2, Search, 
-  Wand2, BrainCircuit, Bot, FileText, X, Sparkles, RefreshCw, 
-  AlertOctagon, Info, ArrowLeftRight, Bell, Camera, Check, Loader2, Utensils
+import {
+  ClipboardList, ChefHat, CheckCircle,
+  AlertTriangle, DollarSign, QrCode, Plus, Edit, Trash2, Search,
+  Wand2, FileText, X, Sparkles, RefreshCw,
+  AlertOctagon, ArrowLeftRight, Bell, Camera, Check, Loader2, Utensils,
+  LayoutGrid, History, BarChart3
 } from 'lucide-react';
 import { Restaurant, MenuItem, Order, Buzzer, FloorDef } from '../types';
-import { supabase, toSnake } from '../supabase';
+import { supabase } from '../supabase';
 import html2canvas from 'html2canvas';
 import AnalyticsDashboard from './analytics/AnalyticsDashboard';
 import { calculateBillSummary } from '../utils/billing';
-
 interface AdminProps {
   restaurant: Restaurant;
   restaurants: Restaurant[];
@@ -25,8 +25,8 @@ interface AdminProps {
   onTableUpdate: (count: number, floors?: FloorDef[]) => void;
   triggerAppAlert: (title: string, message: string, type?: 'success' | 'error' | 'info') => void;
   buzzers: Buzzer[];
-  ticker?: number;
-  onSwitchToKitchenMode: () => void;
+  activeTab?: 'orders' | 'floor' | 'menu' | 'tables' | 'history' | 'analytics';
+  setActiveTab?: (tab: 'orders' | 'floor' | 'menu' | 'tables' | 'history' | 'analytics') => void;
 }
 
 export default function RestaurantAdminPanel({
@@ -43,18 +43,18 @@ export default function RestaurantAdminPanel({
   onTableUpdate,
   triggerAppAlert,
   buzzers,
-  ticker,
-  onSwitchToKitchenMode
+  activeTab: propActiveTab,
+  setActiveTab: propSetActiveTab
 }: AdminProps) {
   if (restaurant?.disableAdminPortal) {
     return (
       <div id="restaurant-admin-panel-blocked" className="max-w-4xl mx-auto my-12 p-8 bg-white border border-rose-100 rounded-3xl shadow-xl text-center">
-        <div className="w-16 h-16 bg-rose-50 border border-rose-100 rounded-2xl flex items-center justify-center mx-auto text-rose-600 mb-4 animate-bounce">
+        <div className="w-16 h-16 bg-rose-50 border border-rose-100 rounded-2xl flex items-center justify-center mx-auto text-rose-600 mb-4">
           <AlertOctagon size={32} />
         </div>
         <h2 className="text-xl font-bold text-slate-900">Admin Portal Access Suspended</h2>
         <p className="text-sm text-slate-500 mt-2 max-w-lg mx-auto leading-relaxed">
-          The administrative privileges for <span className="font-extrabold text-slate-800">{restaurant.name}</span> have been temporarily disabled or limited by the platforms' SaaS Super Administrator. Contact support to request reinstatement.
+          The administrative privileges for <span className="font-extrabold text-slate-800">{restaurant.name}</span> have been temporarily disabled or limited by the Platform Administrator. Contact support to request reinstatement.
         </p>
         <div className="mt-6 flex justify-center gap-3">
           <button
@@ -68,7 +68,9 @@ export default function RestaurantAdminPanel({
     );
   }
 
-  const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'tables' | 'floor' | 'history' | 'analytics'>('orders');
+  const [localActiveTab, setLocalActiveTab] = useState<'orders' | 'menu' | 'tables' | 'floor' | 'history' | 'analytics'>('orders');
+  const activeTab = propActiveTab || localActiveTab;
+  const setActiveTab = propSetActiveTab || setLocalActiveTab;
   const [menuSearchQuery, setMenuSearchQuery] = useState('');
   const [historySearch, setHistorySearch] = useState('');
   const [selectedHistoryDate, setSelectedHistoryDate] = useState<string>('');
@@ -125,26 +127,8 @@ export default function RestaurantAdminPanel({
   const [useFloors, setUseFloors] = useState<boolean>(!!(restaurant?.floors && restaurant.floors.length > 0));
   const [floorsData, setFloorsData] = useState<FloorDef[]>(restaurant?.floors || [{ name: 'Main Floor', seats: restaurant?.totalTables || 8 }]);
   const [selectedQRTable, setSelectedQRTable] = useState<number>(1);
-  const [flyerTheme, setFlyerTheme] = useState<'noir' | 'gold' | 'emerald' | 'cobalt'>('noir');
-  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [isBulkPrintOpen, setIsBulkPrintOpen] = useState(false);
   const [pinFormVal, setPinFormVal] = useState<string>(restaurant?.verificationPin || '1234');
-
-  // QR Routing Engine Base URL customizable options
-  const [qrBaseUrlOption, setQrBaseUrlOption] = useState<'auto' | 'custom'>('auto');
-  const [qrCustomBaseUrl, setQrCustomBaseUrl] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return window.location.origin;
-    }
-    return '';
-  });
-
-  const activeQRBaseUrl = useMemo(() => {
-    if (qrBaseUrlOption === 'custom' && qrCustomBaseUrl.trim()) {
-      return qrCustomBaseUrl.trim().replace(/\/+$/, '');
-    }
-    return window.location.origin;
-  }, [qrBaseUrlOption, qrCustomBaseUrl]);
 
   useEffect(() => {
     if (restaurant) {
@@ -170,7 +154,7 @@ export default function RestaurantAdminPanel({
 
   const dailyHistorySummaries = useMemo(() => {
     const summaries: Record<string, { count: number; revenue: number; orders: Order[] }> = {};
-    
+
     tenantOrders.forEach(o => {
       const rawDate = o.createdAt ? o.createdAt.split('T')[0] : 'Unknown Date';
       if (!summaries[rawDate]) {
@@ -323,6 +307,17 @@ export default function RestaurantAdminPanel({
     );
   };
 
+  const scrollToOrderSection = (status: 'pending' | 'accepted' | 'completed' | 'rejected') => {
+    const el = document.getElementById(`order-section-${status}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('ring-4', 'ring-indigo-500/30');
+      setTimeout(() => {
+        el.classList.remove('ring-4', 'ring-indigo-500/30');
+      }, 1500);
+    }
+  };
+
   const handleAiWriteDescription = async () => {
     if (!menuForm.name) {
       triggerAppAlert("Parameters Required", "Please specify a Dish Title to allow Gemini to analyze gourmet descriptors.", "error");
@@ -346,7 +341,7 @@ export default function RestaurantAdminPanel({
       }));
       triggerAppAlert("Description Polished!", "AI has formulated a high-conversion culinary description.", "success");
     } catch (e) {
-      triggerAppAlert("Description compose error", "Failed to retrieve copywriter neural minds. Let's try again.", "error");
+      triggerAppAlert("Description compose error", "Failed to retrieve AI Assistant. Let's try again.", "error");
     } finally {
       setIsAiWritingDescription(false);
     }
@@ -444,7 +439,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
   const handleExecutePhotoShoot = () => {
     const dishQuery = customShootQuery || menuForm.name || "Gourmet Dish";
     setIsPerformingShoot(true);
-    
+
     // Quick camera flash visual simulation
     setShootFlash(true);
     setTimeout(() => setShootFlash(false), 250);
@@ -585,8 +580,8 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
     if (useFloors) {
       const sum = floorsData.reduce((acc, f) => acc + f.seats, 0);
       if (sum < 1 || sum > 200) {
-         triggerAppAlert("Integrity Warning", "Total seats across floors must be between 1 and 200.", "error");
-         return;
+        triggerAppAlert("Integrity Warning", "Total seats across floors must be between 1 and 200.", "error");
+        return;
       }
       onTableUpdate(sum, floorsData);
       triggerAppAlert("Floor Scale Committed", `${sum} seats allocated across ${floorsData.length} floors.`, "success");
@@ -682,7 +677,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
     if (!tableData || !tableData.isOccupied) return;
 
     try {
-      const updatePromises = tableData.activeOrders.map(order => 
+      const updatePromises = tableData.activeOrders.map(order =>
         onUpdateOrderStatus(order.id, 'completed', true)
       );
       await Promise.all(updatePromises);
@@ -698,7 +693,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
     if (!tableData || !tableData.isOccupied) return;
 
     try {
-      const updatePromises = tableData.activeOrders.map(order => 
+      const updatePromises = tableData.activeOrders.map(order =>
         onUpdateOrderStatus(order.id, 'rejected', true)
       );
       await Promise.all(updatePromises);
@@ -710,8 +705,8 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
   };
 
   return (
-    <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6 text-slate-800">
-      
+    <div className="flex-1 max-w-full w-full mx-auto px-4 sm:px-8 lg:px-12 py-6 space-y-6 text-slate-800">
+
       {/* PRINT-ONLY STYLES - hide all admin chrome during print */}
       <style>{`
         @media print {
@@ -730,992 +725,787 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
           @page { margin: 0; size: auto; }
         }
       `}</style>
-      
-      {/* Upper branding header & active toggle holds */}
-      <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <img 
-            src={restaurant.logoUrl} 
-            alt={restaurant.name} 
-            className="w-14 h-14 rounded-2xl object-cover border border-slate-100 shadow-inner" 
-          />
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-xl font-bold tracking-tight text-slate-900">{restaurant.name} Engine</h2>
-              
-              <button
-                onClick={handleToggleOperationalStatus}
-                className={`px-3.5 py-1 rounded-full text-xs font-black tracking-wide border transition flex items-center gap-1.5 ${
-                  restaurant.lockedBySuperAdmin ? 'bg-rose-100 border-rose-300 text-rose-800' :
-                  restaurant.status === 'active' ? 'bg-emerald-100 border-emerald-300 text-emerald-800 hover:bg-emerald-200' :
-                  'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                {restaurant.lockedBySuperAdmin ? (
-                  <>
-                    <AlertOctagon size={12} className="text-rose-600 animate-pulse" />
-                    <span>LOCKED OVERRIDE BY SUPER ADMIN</span>
-                  </>
-                ) : restaurant.status === 'active' ? (
-                  <>
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span>KITCHEN IS ONLINE</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                    <span>ONLINE HOLD (INACTIVE)</span>
-                  </>
-                )}
-              </button>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5 font-semibold">Authorized Local Node ID: <span className="font-mono text-slate-705 font-bold">{restaurant.id}</span></p>
-          </div>
-        </div>
 
-        {/* Tab triggers */}
-        <div className="flex flex-wrap gap-1 bg-slate-150 p-1.5 rounded-2xl border border-slate-200">
-          {(['orders', 'menu', 'tables', 'floor', 'history', 'analytics'] as const).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-3.5 py-1.5 text-xs font-black uppercase tracking-wider rounded-xl transition flex items-center gap-1.5 ${activeTab === tab ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-550 hover:text-slate-900'}`}
-            >
-              <span>
-                {tab === 'orders' ? 'Tickets Dispatch' : 
-                 tab === 'menu' ? 'Menu & Promos' : 
-                 tab === 'tables' ? 'QR Code Suite' : 
-                 tab === 'floor' ? 'Seat Floor' : 
-                 tab === 'history' ? 'Order Histories' :
-                 '📊 Analytics'}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
 
-      {/* KPI Indicators grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        
-        {/* CARD 1: NetGross Cache */}
-        <button 
-          onClick={() => setIsSalesLedgerOpen(true)}
-          className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm text-left hover:border-emerald-500 hover:shadow-md active:scale-[0.99] transition duration-200 group relative block cursor-pointer"
-        >
-          <div className="flex justify-between text-slate-400">
-            <span className="text-[10px] uppercase font-black tracking-wider group-hover:text-emerald-600">NetGross Cache</span>
-            <div className="text-emerald-500 font-extrabold text-sm font-mono">₹</div>
-          </div>
-          <h3 className="text-2xl font-black text-slate-900 mt-1">₹{stats.revenue.toFixed(2)}</h3>
-          <p className="text-[10px] text-slate-400 mt-1 group-hover:text-emerald-600 transition font-mono">Run Ledger Audits →</p>
-        </button>
 
-        {/* CARD 2: Seat Floor Manager */}
-        <button 
-          onClick={() => setActiveTab('floor')}
-          className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm text-left hover:border-indigo-505 hover:border-indigo-500 hover:shadow-md active:scale-[0.99] transition duration-200 group relative block cursor-pointer"
-        >
-          <div className="flex justify-between text-slate-400">
-            <span className="text-[10px] uppercase font-black tracking-wider group-hover:text-indigo-600">Seat Floor Manager</span>
-            <span className="text-indigo-500 text-xs text-right">🪑</span>
-          </div>
-          <h3 className="text-2xl font-black text-slate-900 mt-1">
-            {floorTableData.filter(t => t.isOccupied).length} / {restaurant.totalTables} Occupied
-          </h3>
-          <p className="text-[10px] text-slate-400 mt-1 group-hover:text-indigo-600 transition font-mono">
-            {floorTableData.filter(t => t.floorState === 'empty').length} vacant seats • {floorTableData.filter(t => t.isOccupied).length} busy →
-          </p>
-        </button>
 
-        {/* CARD 3: Menu & Promos */}
-        <button 
-          onClick={() => setActiveTab('menu')}
-          className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm text-left hover:border-rose-500 hover:shadow-md active:scale-[0.99] transition duration-200 group relative block cursor-pointer"
-        >
-          <div className="flex justify-between text-slate-400">
-            <span className="text-[10px] uppercase font-black tracking-wider group-hover:text-rose-600">Menu & Promos</span>
-            <Utensils size={18} className="text-rose-505 text-rose-500" />
-          </div>
-          <h3 className="text-2xl font-black text-slate-900 mt-1">Catalog & Promos</h3>
-          <p className="text-[10px] text-slate-400 mt-1 group-hover:text-rose-600 transition font-mono">Manage menu items, recipes, and discounts →</p>
-        </button>
-
-        {/* CARD 4: Cooking Station */}
-        <button 
-          onClick={() => {
-            setActiveTab('orders');
-            setTimeout(() => {
-              const element = document.getElementById('live-override-hub');
-              if (element) {
-                element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }
-            }, 100);
-          }}
-          className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm text-left hover:border-amber-500 hover:shadow-md active:scale-[0.99] transition duration-200 group relative block cursor-pointer"
-        >
-          <div className="flex justify-between text-slate-400">
-            <span className="text-[10px] uppercase font-black tracking-wider group-hover:text-amber-600">Cooking Station</span>
-            <ChefHat size={18} className="text-amber-500 animate-pulse" />
-          </div>
-          <h3 className="text-lg font-black text-slate-900 mt-2">
-            {stats.accepted} Cooking • {stats.pending} Pending
-          </h3>
-          <p className="text-[10px] text-slate-400 mt-1 group-hover:text-amber-600 transition font-mono">Open Kitchen Layout Monitor →</p>
-        </button>
-      </div>
-
-      {/* Dynamic Workspace layout containing left-side tabs and persistent right-side buzzer panel */}
+      {/* Dynamic Workspace layout containing left-side tabs and conditional right-side buzzer panel */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-        
+
         {/* Main Tab Content Area */}
-        <div className="lg:col-span-3 space-y-6 order-2 lg:order-1">
+        <div className={`${activeTab === 'orders' ? 'lg:col-span-3' : 'lg:col-span-4'} space-y-6 order-2 lg:order-1`}>
 
           {/* TAB: TICKETS DISPATCH OVERVIEW */}
           {activeTab === 'orders' && (
             <div id="live-override-hub" className="space-y-4">
-              <div className="bg-white p-4 rounded-3xl border border-slate-200">
-                <h3 className="text-base font-bold text-slate-905">Live Culinary Override Hub</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Manage chronological order cards. Admins can override chef tasks and move accidentally completed orders back into active preparation.</p>
-          </div>
+              <div className="flex items-center justify-between py-1">
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900">Live Orders</h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Manage incoming orders and override preparation states.</p>
+                </div>
+              </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {(['pending', 'accepted', 'completed', 'rejected'] as const).map(sectionStatus => {
-              const list = tenantOrders.filter(o => o.status === sectionStatus && o.released !== true);
-              return (
-                <div key={sectionStatus} className="bg-white p-3.5 rounded-2xl border border-slate-200 flex flex-col space-y-3">
-                  <span className={`text-xs font-black uppercase flex items-center gap-1 pb-2 border-b border-slate-100 ${
-                    sectionStatus === 'pending' ? 'text-yellow-600' :
-                    sectionStatus === 'accepted' ? 'text-blue-600' :
-                    sectionStatus === 'completed' ? 'text-emerald-600' : 'text-rose-600'
-                  }`}>
-                    {sectionStatus === 'pending' ? 'Pending Queue' :
-                     sectionStatus === 'accepted' ? 'Preparing (Cooking)' :
-                     sectionStatus === 'completed' ? 'Completed (Served)' : 'Rejected / Cancelled'} ({list.length})
-                  </span>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {(['pending', 'accepted', 'completed', 'rejected'] as const).map(sectionStatus => {
+                  const list = tenantOrders.filter(o => o.status === sectionStatus && o.released !== true);
+                  return (<div
+                    key={sectionStatus}
+                    id={`order-section-${sectionStatus}`}
+                    className="bg-white p-3.5 rounded-2xl border border-slate-200 flex flex-col space-y-3 transition-all duration-300"
+                  >
+                    <span className={`text-xs font-black uppercase flex items-center gap-1 pb-2 border-b border-slate-100 ${sectionStatus === 'pending' ? 'text-yellow-600' :
+                        sectionStatus === 'accepted' ? 'text-blue-600' :
+                          sectionStatus === 'completed' ? 'text-emerald-600' : 'text-rose-600'
+                      }`}>
+                      {sectionStatus === 'pending' ? 'Pending Queue' :
+                        sectionStatus === 'accepted' ? 'Preparing (Cooking)' :
+                          sectionStatus === 'completed' ? 'Completed (Served)' : 'Rejected / Cancelled'} ({list.length})
+                    </span>
 
-                  <div className="space-y-3 overflow-y-auto max-h-[480px] scrollbar-none">
-                    {list.map(o => (
-                      <div key={o.id} className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-3.5">
-                        <div className="flex justify-between font-bold text-[11px]">
-                          <div>
-                            <span className="text-slate-900 block font-black">Table #{o.tableNumber}</span>
-                            <span className="text-[9px] text-slate-400 block font-mono">ID: {o.id.split('-')[1]}</span>
+                    <div className="space-y-3 overflow-y-auto max-h-[calc(100vh-285px)] scrollbar-none">
+                      {list.map(o => (
+                        <div
+                          key={o.id}
+                          className={`bg-white p-4 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300 space-y-4 relative border-l-4 ${o.status === 'pending' ? 'border-l-amber-500 bg-amber-50/5' :
+                              o.status === 'accepted' ? 'border-l-blue-500 bg-blue-50/5' :
+                                o.status === 'completed' ? 'border-l-emerald-500 bg-emerald-50/5' : 'border-l-rose-500 bg-rose-50/5'
+                            }`}
+                        >
+                          <div className="flex justify-between font-bold text-[11px]">
+                            <div>
+                              <span className="text-slate-900 block font-black text-xs">Table #{o.tableNumber}</span>
+                              <span className="text-[9px] text-slate-400 block font-mono">ID: {o.id.split('-')[1]}</span>
+                            </div>
+                            <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-lg text-[9px] font-bold">
+                              {new Date(o.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
                           </div>
-                          <span className="p-1 bg-slate-200 text-slate-600 rounded text-[9px]">
-                            {new Date(o.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+
+                          <div className="py-2 border-y border-dashed border-slate-200 text-[11px] text-slate-600 space-y-1.5">
+                            {o.items.map((it, idx) => (
+                              <div key={idx} className="flex justify-between items-center group">
+                                <span className="flex items-center gap-2">
+                                  {onCancelSpecificDish && (
+                                    <button
+                                      onClick={() => onCancelSpecificDish(o.id, idx)}
+                                      className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded transition cursor-pointer"
+                                      title="Cancel individual dish"
+                                    >
+                                      <X size={10} className="stroke-[3]" />
+                                    </button>
+                                  )}
+                                  <span className={`px-1.5 py-0.5 text-[9px] font-black rounded ${o.status === 'pending' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                                      o.status === 'accepted' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                                        'bg-slate-100 text-slate-700 border border-slate-200'
+                                    }`}>
+                                    {it.quantity}x
+                                  </span>
+                                  <span className="font-semibold text-slate-800">{it.name}</span>
+                                </span>
+                                <span className="font-bold text-slate-900">₹{(it.price * it.quantity).toFixed(2)}</span>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Bill displaying precise exclusions */}
+                          <div className="text-[10px] text-slate-500 space-y-1">
+                            <div className="flex justify-between">
+                              <span>Base Subtotal:</span>
+                              <span>₹{(calculateBillSummary(o.items).originalSubtotal).toFixed(2)}</span>
+                            </div>
+                            {calculateBillSummary(o.items).totalDeductions > 0 && (
+                              <div className="flex justify-between text-rose-600 font-bold">
+                                <span>Excluded Special Offer:</span>
+                                <span>-₹{(calculateBillSummary(o.items).totalDeductions).toFixed(2)}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between text-slate-950 font-black border-t border-slate-100 pt-1.5">
+                              <span className="text-xs">Final Net:</span>
+                              <span className="text-xs">₹{o.totalAmount.toFixed(2)}</span>
+                            </div>
+                          </div>
+
+                          {/* GEOFENCING ANTI-FRAUD DISPATCH INDICATOR */}
+                          {o.requiresHandshake && !o.handshakeApproved ? (
+                            <div id={`handshake-warning-${o.id}`} className="bg-amber-50 border border-amber-250 text-amber-950 rounded-2xl p-3.5 space-y-2 text-left text-[10.5px] shadow-sm ring-2 ring-amber-400/30 animate-pulse">
+                              <div className="flex justify-between items-center">
+                                <span className="font-black flex items-center gap-1.5 text-amber-800 text-[9px] uppercase tracking-wider">
+                                  <AlertOctagon size={12} className="text-amber-600 shrink-0" />
+                                  REMOTE GEOFENCE HOLD
+                                </span>
+                                <span className="text-[9.5px] bg-amber-200 text-amber-900 font-black px-1.5 py-0.5 rounded-lg font-mono">CODE: {o.handshakeCode}</span>
+                              </div>
+                              <p className="text-[10px] text-slate-600 leading-relaxed font-semibold">
+                                Diner ordered outside boundary range. Verify guest presence to unlock kitchen preparation.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onUpdateOrderStatus(o.id, 'accepted');
+                                }}
+                                className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 text-center py-2 rounded-xl font-black text-[9.5px] uppercase tracking-wider transition shadow-sm hover:shadow cursor-pointer"
+                              >
+                                Bypass Hold & Release
+                              </button>
+                            </div>
+                          ) : o.requiresHandshake && o.handshakeApproved ? (
+                            <div className="text-[9.5px] text-emerald-700 bg-emerald-50 border border-emerald-150 rounded-xl p-2.5 flex items-center gap-1.5 font-bold">
+                              <CheckCircle size={12} className="text-emerald-600 shrink-0" />
+                              <span>Remote Hold Released via Floor PIN</span>
+                            </div>
+                          ) : null}
+
+                          {/* Administrative override buttons */}
+                          <div className="flex gap-1">
+                            {o.status === 'pending' && (
+                              <>
+                                <button
+                                  onClick={() => onUpdateOrderStatus(o.id, 'rejected')}
+                                  className="w-1/2 bg-white hover:bg-rose-50 border border-slate-250 hover:border-rose-300 text-rose-500 px-2 py-1 text-[10px] font-black rounded-xl transition"
+                                >
+                                  Reject
+                                </button>
+                                <button
+                                  onClick={() => onUpdateOrderStatus(o.id, 'accepted')}
+                                  className="w-1/2 bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 text-[10px] font-black rounded-xl transition"
+                                >
+                                  Accept
+                                </button>
+                              </>
+                            )}
+
+                            {o.status === 'accepted' && (
+                              <div className="flex gap-1 w-full">
+                                <button
+                                  onClick={() => onUpdateOrderStatus(o.id, 'rejected')}
+                                  className="w-1/2 bg-white hover:bg-rose-50 border border-slate-250 text-rose-500 text-rose-500 px-2 py-1 text-[10px] font-black rounded-xl transition cursor-pointer"
+                                >
+                                  Cancel order
+                                </button>
+                                <button
+                                  onClick={() => onUpdateOrderStatus(o.id, 'completed')}
+                                  className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 text-[10px] font-black rounded-xl transition shadow-sm cursor-pointer"
+                                >
+                                  Deliver Table
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      {list.length === 0 && (
+                        <p className="text-[11px] text-slate-400 font-bold text-center py-6">Current partition empty.</p>
+                      )}
+                    </div>
+                  </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* TAB: MENU PROMOS ENGINE */}
+          {activeTab === 'menu' && (
+            <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-4 shadow-sm">
+              {restaurant.lockAllItems && (
+                <div className="bg-rose-50 border border-rose-200 text-rose-900 rounded-2xl p-4 flex gap-3 text-xs leading-relaxed">
+                  <div className="p-1 px-2 font-black rounded bg-rose-600 text-white shrink-0 self-start">CATALOG LOCKED</div>
+                  <div className="space-y-0.5">
+                    <h4 className="font-extrabold text-rose-950">Recipe and Price Configuration Locked</h4>
+                    <p className="text-rose-800 font-medium">This brand has its recipes locked in a strict Read-Only mode by the Platform Administrator. Item creation, price revisions, and deletion operations are suspended.</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Menu Items ({currentRestaurantMenus.length})</h3>
+                  <p className="text-xs text-slate-500">Manage dishes, prices, and promotional discounts.</p>
+                </div>
+                <button
+                  onClick={() => {
+                    if (restaurant.lockAllItems) {
+                      triggerAppAlert("Action Blocked", "Your brand is set to read-only by the Super Admin.", "error");
+                      return;
+                    }
+                    handleOpenMenuModal();
+                  }}
+                  disabled={!!restaurant.lockAllItems}
+                  className={`font-bold text-xs py-2 px-4 rounded-xl transition flex items-center gap-1 self-start ${restaurant.lockAllItems
+                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                    }`}
+                >
+                  <Plus size={15} />
+                  Add Menu Item
+                </button>
+              </div>
+
+              {/* Search Bar */}
+              <div className="relative">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                <input
+                  type="text"
+                  placeholder="Search menu items by name, category, or description..."
+                  value={menuSearchQuery}
+                  onChange={(e) => setMenuSearchQuery(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                />
+              </div>
+
+              <div className="overflow-x-auto max-h-[520px] overflow-y-auto rounded-xl border border-slate-100">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="sticky top-0 bg-white z-10">
+                    <tr className="border-b border-slate-200 text-slate-400 font-black uppercase hover:bg-transparent">
+                      <th className="py-2.5 px-1.5">Item Details</th>
+                      <th className="py-2.5 px-1.5">Category</th>
+                      <th className="py-2.5 px-1.5">Price</th>
+                      <th className="py-2.5 px-1.5">Special Offers</th>
+                      <th className="py-2.5 px-1.5">Availability</th>
+                      <th className="py-2.5 px-1.5 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {currentRestaurantMenus.filter(item => {
+                      if (!menuSearchQuery.trim()) return true;
+                      const q = menuSearchQuery.toLowerCase();
+                      return item.name.toLowerCase().includes(q) || item.category.toLowerCase().includes(q) || (item.description || '').toLowerCase().includes(q);
+                    }).map(item => (
+                      <tr key={item.id} className="hover:bg-slate-50/50 transition duration-100">
+                        <td className="py-3 px-1.5 max-w-sm">
+                          <div className="flex items-center gap-2.5">
+                            <img
+                              src={item.imageUrl || "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=120&auto=format&fit=crop&q=80"}
+                              alt={item.name}
+                              className="w-10 h-10 rounded-xl object-cover bg-slate-100 border border-slate-200 shadow-inner flex-shrink-0"
+                              referrerPolicy="no-referrer"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                {item.isVeg !== undefined && (
+                                  <div className={`w-3 h-3 border ${item.isVeg ? 'border-emerald-600' : 'border-rose-600'} flex items-center justify-center p-[1px] rounded-xs bg-white flex-shrink-0`} title={item.isVeg ? "Veg" : "Non-Veg"}>
+                                    <div className={`w-1 h-1 rounded-full ${item.isVeg ? 'bg-emerald-600' : 'bg-rose-600'}`}></div>
+                                  </div>
+                                )}
+                                <p className="font-extrabold text-slate-900 leading-snug truncate">{item.name}</p>
+                              </div>
+                              <p className="text-slate-400 text-[10px] leading-relaxed line-clamp-1">{item.description}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-1.5">
+                          <span className="bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded-full text-[10px] tracking-wide">
+                            {item.category}
+                          </span>
+                        </td>
+                        <td className="py-3 px-1.5 font-bold text-slate-800">
+                          <div>
+                            <span>₹{item.price.toFixed(2)}</span>
+                            {item.isLimitedTimeOffer && (
+                              <span className="text-[10px] text-slate-400 block line-through">
+                                ₹{(item.price + item.promoValue).toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-1.5">
+                          {item.isLimitedTimeOffer ? (
+                            <div>
+                              <span className="bg-amber-100 text-amber-800 font-black px-1.5 py-0.2 rounded text-[9px] uppercase tracking-wider">
+                                ACTIVE PROMO
+                              </span>
+                              <p className="text-[10px] text-amber-600 truncate font-semibold mt-0.5">{item.offerDetails}</p>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 font-semibold text-[10px]">Disabled</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-1.5">
+                          <button
+                            onClick={() => {
+                              if (restaurant.lockAllItems) {
+                                triggerAppAlert("Action Blocked", "Your recipe catalog is currently locked as Read-Only.", "error");
+                                return;
+                              }
+                              onMenuItemSave({ ...item, isAvailable: !item.isAvailable }, true);
+                              // If marking as sold out, cancel pending orders with this item
+                              if (item.isAvailable) {
+                                fetch("/api/menus/sold-out/" + item.id, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ restaurantId: restaurant.id })
+                                }).then(r => r.json()).then(data => {
+                                  if (data.affectedOrders?.length > 0) {
+                                    triggerAppAlert(
+                                      "Items Auto-Cancelled",
+                                      `Marked "${item.name}" as sold out. ${data.cancelledItems} item(s) auto-cancelled from ${data.affectedOrders.length} order(s).`,
+                                      "info"
+                                    );
+                                  }
+                                }).catch(() => { });
+                              }
+                            }}
+                            className={`px-1.5 py-0.5 text-[10px] rounded font-black uppercase ${item.isAvailable ? 'bg-emerald-50 text-emerald-600 border border-emerald-250' :
+                                'bg-rose-50 text-rose-500 border border-rose-200'
+                              } ${restaurant.lockAllItems ? 'opacity-60 cursor-not-allowed' : ''}`}
+                          >
+                            {item.isAvailable ? "Available" : "Sold Out"}
+                          </button>
+                        </td>
+                        <td className="py-3 px-1.5 text-right space-x-1 whitespace-nowrap">
+                          <button
+                            onClick={() => {
+                              if (restaurant.lockAllItems) {
+                                triggerAppAlert("Action Blocked", "Your recipe catalog is currently locked as Read-Only.", "error");
+                                return;
+                              }
+                              handleOpenMenuModal(item);
+                            }}
+                            className={`p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded ${restaurant.lockAllItems ? 'cursor-not-allowed opacity-40' : ''}`}
+                          >
+                            <Edit size={14} />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (restaurant.lockAllItems) {
+                                triggerAppAlert("Action Blocked", "Your recipe catalog is currently locked as Read-Only.", "error");
+                                return;
+                              }
+                              onMenuItemDelete(item.id);
+                            }}
+                            className={`p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded ${restaurant.lockAllItems ? 'cursor-not-allowed opacity-40' : ''}`}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {currentRestaurantMenus.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="text-center py-8 font-bold text-slate-400">No catalog items. Onboard menu cards above.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: QR CODE flyers GENERATOR */}
+          {activeTab === 'tables' && (
+            <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-6 shadow-sm">
+              {restaurant.disableQrGeneration && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl p-4 flex gap-3 text-xs leading-relaxed">
+                  <div className="p-1 px-2 font-black rounded bg-amber-600 text-white shrink-0 self-start">SCALING SUSPENDED</div>
+                  <div className="space-y-0.5">
+                    <h4 className="font-extrabold text-amber-950">QR Table Modifications Blocked</h4>
+                    <p className="text-amber-800 text-amber-800 font-medium">Your brand's table limits have been locked by the platform manager. Existing tabletop QR layouts remain routable, but scaling the quantities or re-routing URL parameters is currently suspended.</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="border-b border-slate-200 pb-4">
+                <h3 className="text-base font-bold text-slate-900">QR Code Generator</h3>
+                <p className="text-xs text-slate-500">Create table QR codes and print physical posters.</p>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                <div className="xl:col-span-5 space-y-6">
+                  {/* Card 1: QR Settings */}
+                  <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-5">
+                    <h4 className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-600">QR Suite Settings</h4>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-slate-700 block">1. Allocate Tables Quantity</label>
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            className="sr-only peer"
+                            checked={useFloors}
+                            onChange={(e) => setUseFloors(e.target.checked)}
+                            disabled={!!restaurant.disableQrGeneration}
+                          />
+                          <div className="w-7 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600 relative"></div>
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Use Floors Layout</span>
+                        </label>
+                      </div>
+
+                      {!useFloors ? (
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            min="1"
+                            max="200"
+                            disabled={!!restaurant.disableQrGeneration}
+                            value={tempTableCount}
+                            onChange={(e) => setTempTableCount(e.target.value)}
+                            className={`w-20 bg-white border border-slate-300 rounded-xl text-center px-2 py-1.5 font-black text-slate-800 ${restaurant.disableQrGeneration ? 'opacity-50 bg-slate-100 cursor-not-allowed border-slate-200' : ''
+                              }`}
+                          />
+                          <button
+                            onClick={handleCommitTableCount}
+                            disabled={!!restaurant.disableQrGeneration}
+                            className={`flex-1 py-1.5 px-3 rounded-xl font-bold transition text-xs shadow-xs ${restaurant.disableQrGeneration
+                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                                : 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer'
+                              }`}
+                          >
+                            Set Global Table Count
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-2 border border-slate-200 rounded-xl p-3 bg-white">
+                          {floorsData.map((floor, index) => (
+                            <div key={index} className="flex gap-2 items-center">
+                              <input
+                                type="text"
+                                placeholder="Floor Name"
+                                value={floor.name}
+                                onChange={(e) => {
+                                  const nd = [...floorsData];
+                                  nd[index].name = e.target.value;
+                                  setFloorsData(nd);
+                                }}
+                                disabled={!!restaurant.disableQrGeneration}
+                                className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800"
+                              />
+                              <input
+                                type="number"
+                                min="1" max="100"
+                                value={floor.seats}
+                                onChange={(e) => {
+                                  const nd = [...floorsData];
+                                  nd[index].seats = parseInt(e.target.value) || 0;
+                                  setFloorsData(nd);
+                                }}
+                                disabled={!!restaurant.disableQrGeneration}
+                                className="w-16 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 text-center"
+                              />
+                              <button
+                                onClick={() => {
+                                  if (floorsData.length > 1) {
+                                    setFloorsData(floorsData.filter((_, i) => i !== index));
+                                  }
+                                }}
+                                disabled={!!restaurant.disableQrGeneration || floorsData.length === 1}
+                                className="p-1.5 text-red-400 hover:bg-red-50 rounded"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          ))}
+                          <div className="flex gap-2 mt-2 pt-2 border-t border-slate-100">
+                            <button
+                              onClick={() => setFloorsData([...floorsData, { name: `Floor ${floorsData.length + 1}`, seats: 10 }])}
+                              disabled={!!restaurant.disableQrGeneration}
+                              className="flex-1 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-black uppercase rounded-xl transition"
+                            >
+                              + Add Floor
+                            </button>
+                            <button
+                              onClick={handleCommitTableCount}
+                              disabled={!!restaurant.disableQrGeneration}
+                              className="flex-1 py-1.5 px-3 rounded-lg font-bold transition text-[10px] uppercase shadow-xs bg-slate-900 hover:bg-slate-800 text-white cursor-pointer"
+                            >
+                              Save Configuration ({floorsData.reduce((a, c) => a + c.seats, 0)} Total)
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      <p className="text-[9.5px] text-slate-400 leading-normal">
+                        Scale your physical seats dynamically. Max: 200. Code routes are created live.
+                      </p>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-200 space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700 block text-left">2. Choose Seat Showcase</label>
+                      <select
+                        value={selectedQRTable}
+                        onChange={(e) => setSelectedQRTable(parseInt(e.target.value))}
+                        className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-2 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-500 cursor-pointer"
+                      >
+                        {useFloors ? (() => {
+                          let acc = 0;
+                          return floorsData.map((floor, fIdx) => {
+                            const start = acc + 1;
+                            const end = acc + floor.seats;
+                            acc += floor.seats;
+                            if (floor.seats === 0) return null;
+                            return (
+                              <optgroup key={fIdx} label={`${floor.name} (Seats ${start}-${end})`}>
+                                {Array.from({ length: floor.seats }, (_, idx) => start + idx).map(num => (
+                                  <option key={num} value={num}>Desk Standing Card — Table #{num}</option>
+                                ))}
+                              </optgroup>
+                            );
+                          });
+                        })() : Array.from({ length: restaurant.totalTables }, (_, idx) => idx + 1).map(num => (
+                          <option key={num} value={num}>Desk Standing Card — Table #{num}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+
+                  {/* Card 3: Customer Access Key */}
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm text-xs space-y-3 text-left">
+                    <div className="flex items-center justify-between">
+                      <p className="font-extrabold text-slate-700 uppercase text-[9px] tracking-wider">Customer Access Key</p>
+                      <span className="font-mono text-xs bg-slate-50 border border-slate-200 text-slate-700 font-bold px-2.5 py-0.5 rounded-lg shadow-inner">
+                        Key: <span className="font-black text-indigo-650">{restaurant?.verificationPin || '1234'}</span>
+                      </span>
+                    </div>
+                    <p className="text-[10px] leading-relaxed text-slate-400 font-medium">
+                      Update code or auto-generate digits. Diners input this key to self-verify and place orders if geofencing or automatic GPS validation checks fail.
+                    </p>
+                    <div className="flex gap-2.5">
+                      <input
+                        type="text"
+                        maxLength={4}
+                        value={pinFormVal}
+                        onChange={(e) => setPinFormVal(e.target.value.replace(/\D/g, ''))}
+                        className="w-16 bg-white border border-slate-300 rounded-xl text-center font-bold text-slate-800 tracking-widest text-xs py-1.5"
+                        placeholder="1234"
+                      />
+                      <button
+                        onClick={handleCommitWaiterPin}
+                        className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] py-1.5 rounded-xl font-bold transition cursor-pointer"
+                      >
+                        Save Key
+                      </button>
+                      <button
+                        onClick={handleRandomizeWaiterPin}
+                        title="Rotate Access Key"
+                        className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-[11px] py-1.5 px-2 rounded-xl font-extrabold transition flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <RefreshCw size={11} className="shrink-0" />
+                        Rotate
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Preview Column */}
+                <div className="xl:col-span-7 space-y-4">
+                  <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 text-white space-y-6 shadow-xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-48 h-48 bg-slate-800/10 rounded-full blur-3xl pointer-events-none"></div>
+
+                    <div className="flex flex-col xl:flex-row items-center gap-6 xl:items-start justify-between min-w-0">
+                      {/* Real-time printable poster display mock */}
+                      <div className="flex-1 space-y-4 min-w-0 w-full xl:w-auto">
+                        <span className="bg-rose-500 text-white py-0.5 px-3 rounded-full text-[8.5px] font-black uppercase tracking-widest block w-max">
+                          LIVE DESK TEMPLATE PREVIEW
+                        </span>
+                        <h4 className="text-lg font-black tracking-tight">Interactive Table Tent Flyer</h4>
+                        <p className="text-xs text-slate-305 leading-relaxed">
+                          Custom branded with your menu content & logo. Guests scan with their native camera to immediately initiate order tickets on our database.
+                        </p>
+
+                        <div className="space-y-1">
+                          <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block">Direct Dynamic Endpoint</span>
+                          <div className="bg-slate-950 p-2 text-[10.5px] font-mono border border-slate-800 rounded-xl text-emerald-400 flex items-center justify-between select-all max-w-sm">
+                            <span className="truncate">{window.location.origin}/r/{restaurant.id}/t/{selectedQRTable}</span>
+                            <span className="text-[8px] bg-slate-800 text-slate-500 px-1 py-0.2 rounded shrink-0 ml-1">Live</span>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 pt-3">
+                          <button
+                            onClick={() => window.print()}
+                            className="bg-white hover:bg-slate-100 text-slate-950 font-black px-3 py-2 rounded-xl text-[10px] transition shadow-lg flex items-center gap-1.5 cursor-pointer flex-1 min-w-[130px] justify-center"
+                          >
+                            🖨 Print Desk-Tent
+                          </button>
+                          <button
+                            onClick={async () => {
+                              const flyerEl = document.getElementById('print-qr-flyer-area');
+                              if (!flyerEl) return;
+                              try {
+                                const canvas = await html2canvas(flyerEl, {
+                                  scale: 2,
+                                  backgroundColor: null,
+                                  useCORS: true,
+                                });
+                                const link = document.createElement('a');
+                                link.download = `${restaurant.name.toLowerCase().replace(/\s+/g, '-')}-table-${selectedQRTable}-flyer.png`;
+                                link.href = canvas.toDataURL('image/png');
+                                link.click();
+                              } catch (err) {
+                                const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=0f172a&data=${encodeURIComponent(`${window.location.origin}/r/${restaurant.id}/t/${selectedQRTable}`)}`;
+                                const link = document.createElement('a');
+                                link.href = qrUrl;
+                                link.download = `${restaurant.name.toLowerCase().replace(/\s+/g, '-')}-table-${selectedQRTable}-qr.png`;
+                                link.click();
+                              }
+                            }}
+                            className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-extrabold px-3 py-2 rounded-xl text-[10px] transition cursor-pointer flex-1 min-w-[130px] justify-center flex items-center gap-1.5"
+                          >
+                            ↓ Download PNG
+                          </button>
+                          <button
+                            onClick={() => setIsBulkPrintOpen(true)}
+                            className="bg-emerald-700 hover:bg-emerald-600 text-white border border-emerald-600 font-extrabold px-3 py-2 rounded-xl text-[10px] transition cursor-pointer flex-1 min-w-[100px] justify-center flex items-center gap-1.5"
+                          >
+                            ☰ Print All
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Visual flyer container reflecting select design template */}
+                      <div className="w-64 bg-slate-950 border border-slate-800 text-white border rounded-2xl p-4 flex flex-col items-center text-center shadow-2xl shrink-0 transition-all duration-300">
+                        {/* Flyer Header Logo mockup */}
+                        <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest opacity-80 border-b border-white/20 pb-2 w-full justify-center">
+                          <Utensils size={10} />
+                          {restaurant.name}
+                        </div>
+
+                        <div className="my-4">
+                          <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Please Scan</div>
+                          <h5 className="text-base font-extrabold tracking-tight">ORDER DIRECTLY</h5>
+                          <p className="text-[8px] text-slate-400 max-w-[150px] mx-auto leading-tight mt-1">
+                            View menu, request floor assistance, & self-checkout instantly
+                          </p>
+                        </div>
+
+                        {/* QR Code Container */}
+                        <div className="bg-white p-2.5 rounded-xl shadow-lg flex flex-col items-center">
+                          <img
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&color=0f172a&data=${encodeURIComponent(`${window.location.origin}/r/${restaurant.id}/t/${selectedQRTable}`)}`}
+                            alt={`QR code for Table ${selectedQRTable}`}
+                            referrerPolicy="no-referrer"
+                            className="w-28 h-28 object-contain"
+                          />
+                          <span className="text-[7.5px] font-black tracking-widest uppercase text-slate-900 mt-1.5 bg-slate-100 px-2 py-0.5 rounded font-mono">
+                            SCAN ME
                           </span>
                         </div>
 
-                        <div className="py-2 border-y border-dashed border-slate-200 text-[11px] text-slate-600 space-y-1">
-                          {o.items.map((it, idx) => (
-                            <div key={idx} className="flex justify-between items-center group">
-                              <span className="flex items-center gap-1">
-                                {onCancelSpecificDish && (
-                                  <button
-                                    onClick={() => onCancelSpecificDish(o.id, idx)}
-                                    className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-500 rounded transition cursor-pointer"
-                                    title="Cancel individual dish"
-                                  >
-                                    <X size={10} className="stroke-[3]" />
-                                  </button>
-                                )}
-                                <span>{it.quantity}x {it.name}</span>
-                              </span>
-                              <span className="font-semibold text-slate-800">₹{(it.price * it.quantity).toFixed(2)}</span>
+                        <div className="mt-4 pt-2 border-t border-white/10 w-full">
+                          <div className="text-[10px] font-bold text-slate-400">YOUR TABLE</div>
+                          <div className="text-xl font-black tracking-widest font-mono text-white mt-0.5">
+                            TABLE #{selectedQRTable}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  {/* ALWAYS RENDERED FOR DIRECT PRINT - INVISIBLE ON SCREEN, VISIBLE ON PRINT */}
+                  <div id="print-qr-flyer-area" className="hidden print:flex flex-col items-center justify-center min-h-screen bg-white">
+                    <div className="w-full max-w-sm border-2 rounded-3xl p-8 flex flex-col items-center text-center shadow-none relative bg-slate-950 border-slate-800 text-white">
+                      {/* Visual top accent ribbon */}
+                      <div className="absolute top-0 inset-x-0 h-2.5 rounded-t-3xl bg-indigo-600"></div>
+
+                      {/* Restaurant Mark */}
+                      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest opacity-90 border-b border-white/20 pb-3 w-full justify-center pt-2">
+                        <Utensils size={14} className="text-indigo-400" />
+                        <span>{restaurant.name}</span>
+                      </div>
+
+                      {/* Subheadings */}
+                      <div className="my-6 space-y-2">
+                        <div className="text-xs font-black tracking-widest uppercase text-indigo-400">
+                          ORDER & PAY DIRECTLY
+                        </div>
+                        <h2 className="text-xl font-extrabold tracking-tight">SKIP THE WAIT</h2>
+                        <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
+                          View high-definition food photos, split the bill dynamically on UPI, call the server directly, and book food to the kitchen instantly.
+                        </p>
+                      </div>
+
+                      {/* QR Core Code */}
+                      <div className="bg-white p-4 rounded-2xl shadow-2xl flex flex-col items-center border-4 border-slate-200">
+                        <img
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=0f172a&data=${encodeURIComponent(`${window.location.origin}/r/${restaurant.id}/t/${selectedQRTable}`)}`}
+                          alt={`Table QR code`}
+                          referrerPolicy="no-referrer"
+                          className="w-44 h-44 object-contain"
+                        />
+                        <div className="text-[10px] font-black tracking-widest uppercase text-slate-900 mt-2 bg-slate-100 px-3 py-1 rounded-full border border-slate-200 font-mono">
+                          ✦ SCAN SCREEN TO SEAT ✦
+                        </div>
+                      </div>
+
+                      {/* Seat Indicator footer card */}
+                      <div className="mt-8 pt-4 border-t border-white/10 w-full space-y-1">
+                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Table Address</div>
+                        <div className="text-2xl font-black tracking-widest font-mono text-white">
+                          TABLE #{selectedQRTable}
+                        </div>
+                        <p className="text-[8.5px] text-slate-500 font-mono select-all">
+                          {window.location.origin}/r/{restaurant.id}/t/{selectedQRTable}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* BULK QR PRINT MODAL */}
+          {isBulkPrintOpen && (
+            <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200">
+                {/* Header */}
+                <div className="sticky top-0 bg-white z-10 flex items-center justify-between p-4 border-b border-slate-200 rounded-t-3xl">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">All Table QR Codes</h3>
+                    <p className="text-[10px] text-slate-500 mt-0.5">{restaurant.name} — {restaurant.totalTables} tables</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => window.print()}
+                      className="bg-slate-900 hover:bg-slate-800 text-white font-black px-4 py-2 rounded-xl text-xs uppercase tracking-wider transition shadow-sm"
+                    >
+                      🖨 Print All
+                    </button>
+                    <button
+                      onClick={() => setIsBulkPrintOpen(false)}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-3 py-2 rounded-xl text-xs transition"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+
+                {/* QR Grid — grouped by floor */}
+                <div className="p-4 bulk-print-grid">
+                  {floorsData.map((floor, fi) => {
+                    const startTable = floorsData.slice(0, fi).reduce((sum, f) => sum + f.seats, 0) + 1;
+                    const endTable = startTable + floor.seats - 1;
+                    const tableNumbers: number[] = [];
+                    for (let t = startTable; t <= endTable && t <= (restaurant.totalTables || 50); t++) {
+                      tableNumbers.push(t);
+                    }
+                    return (
+                      <div key={fi} className="mb-6">
+                        <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3 border-b border-slate-200 pb-1.5">
+                          {floor.name} — Tables {startTable}-{Math.min(endTable, restaurant.totalTables || 50)}
+                        </h4>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                          {tableNumbers.map((tnum) => (
+                            <div
+                              key={tnum}
+                              className="bg-white border border-slate-200 rounded-xl p-2.5 flex flex-col items-center text-center shadow-sm"
+                            >
+                              <img
+                                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&color=0f172a&data=${encodeURIComponent(`${window.location.origin}/r/${restaurant.id}/t/${tnum}`)}`}
+                                alt={`Table ${tnum}`}
+                                referrerPolicy="no-referrer"
+                                className="w-20 h-20 object-contain"
+                              />
+                              <span className="text-[10px] font-black text-slate-800 mt-1 font-mono">TABLE {tnum}</span>
                             </div>
                           ))}
                         </div>
-
-                        {/* Bill displaying precise exclusions */}
-                        <div className="text-[10px] text-slate-500 space-y-0.5">
-                          <div className="flex justify-between">
-                            <span>Base:</span>
-                            <span>₹{(calculateBillSummary(o.items).originalSubtotal).toFixed(2)}</span>
-                          </div>
-                          {calculateBillSummary(o.items).totalDeductions > 0 && (
-                            <div className="flex justify-between text-rose-500 font-bold">
-                              <span>Excluded Special Offer:</span>
-                              <span>-₹{(calculateBillSummary(o.items).totalDeductions).toFixed(2)}</span>
-                            </div>
-                          )}
-                          <div className="flex justify-between text-slate-950 font-black border-t border-slate-100 pt-1">
-                            <span>Final Net:</span>
-                            <span>₹{o.totalAmount.toFixed(2)}</span>
-                          </div>
-                        </div>
-
-                        {/* GEOFENCING ANTI-FRAUD DISPATCH INDICATOR */}
-                        {o.requiresHandshake && !o.handshakeApproved ? (
-                          <div id={`handshake-warning-${o.id}`} className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-2.5 space-y-1.5 text-left text-[10.5px]">
-                            <div className="flex justify-between items-center">
-                              <span className="font-extrabold flex items-center gap-1 text-amber-800 text-[9px] uppercase">
-                                ⚠️ REMOTE HANDSHAKE HOLD
-                              </span>
-                              <span className="text-[8.5px] bg-amber-200 text-amber-900 font-bold px-1 py-0.2 rounded font-mono">CODE: {o.handshakeCode}</span>
-                            </div>
-                            <p className="text-[9.5px] text-slate-550 leading-tight">
-                              This guest placed the order away from the restaurant. Handshake validation is required to unlock kitchen preparation.
-                            </p>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onUpdateOrderStatus(o.id, 'accepted');
-                              }}
-                              className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 text-center py-1 rounded font-black text-[9px] uppercase tracking-wider transition cursor-pointer"
-                            >
-                              Bypass & release hold
-                            </button>
-                          </div>
-                        ) : o.requiresHandshake && o.handshakeApproved ? (
-                          <div className="text-[9.5px] text-emerald-700 bg-emerald-50 border border-emerald-150 rounded-xl p-2 flex items-center gap-1 font-extrabold">
-                            ✔ Remote Hold Released via Floor Staff PIN
-                          </div>
-                        ) : (
-                          <div className="bg-slate-100 text-slate-500 rounded-lg p-1.5 text-[8.5px] font-mono flex items-center justify-between">
-                            <span>GPS Verify Status: Verified</span>
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                          </div>
-                        )}
-
-                        {/* Administrative override buttons */}
-                        <div className="flex gap-1">
-                          {o.status === 'pending' && (
-                            <>
-                              <button 
-                                onClick={() => onUpdateOrderStatus(o.id, 'rejected')}
-                                className="w-1/2 bg-white hover:bg-rose-50 border border-slate-250 hover:border-rose-300 text-rose-500 px-2 py-1 text-[10px] font-black rounded-lg transition"
-                              >
-                                Reject
-                              </button>
-                              <button 
-                                onClick={() => onUpdateOrderStatus(o.id, 'accepted')}
-                                className="w-1/2 bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 text-[10px] font-black rounded-lg transition"
-                              >
-                                Accept
-                              </button>
-                            </>
-                          )}
-
-                          {o.status === 'accepted' && (
-                            <div className="flex gap-1 w-full">
-                              <button 
-                                onClick={() => onUpdateOrderStatus(o.id, 'rejected')}
-                                className="w-1/2 bg-white hover:bg-rose-50 border border-slate-250 text-rose-550 text-rose-500 px-2 py-1 text-[10px] font-black rounded-lg transition cursor-pointer"
-                              >
-                                Cancel order
-                              </button>
-                              <button 
-                                onClick={() => onUpdateOrderStatus(o.id, 'completed')}
-                                className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 text-[10px] font-black rounded-lg transition shadow-sm cursor-pointer"
-                              >
-                                Deliver Table
-                              </button>
-                            </div>
-                          )}
-                        </div>
                       </div>
-                    ))}
-                    {list.length === 0 && (
-                      <p className="text-[11px] text-slate-400 font-bold text-center py-8">Current partition empty.</p>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* TAB: MENU PROMOS ENGINE */}
-      {activeTab === 'menu' && (
-        <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-4 shadow-sm">
-          {restaurant.lockAllItems && (
-            <div className="bg-rose-50 border border-rose-200 text-rose-900 rounded-2xl p-4 flex gap-3 text-xs leading-relaxed animate-pulse">
-              <div className="p-1 px-2 font-black rounded bg-rose-600 text-white shrink-0 self-start">CATALOG LOCKED</div>
-              <div className="space-y-0.5">
-                <h4 className="font-extrabold text-rose-950">Recipe and Price Configuration Locked</h4>
-                <p className="text-rose-800 font-medium">This brand has its recipes locked in a strict Read-Only mode by the SaaS platform Super Administrator. Item creation, price revisions, and deletion operations are suspended.</p>
-              </div>
-            </div>
-          )}
-
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-150">
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Custom Brand Catalog ({currentRestaurantMenus.length})</h3>
-              <p className="text-xs text-slate-500">Configure dish details and apply Limited Time promotional discounts instantly.</p>
-            </div>
-            <button
-              onClick={() => {
-                if (restaurant.lockAllItems) {
-                  triggerAppAlert("Action Blocked", "Your brand is set to read-only by the Super Admin.", "error");
-                  return;
-                }
-                handleOpenMenuModal();
-              }}
-              disabled={!!restaurant.lockAllItems}
-              className={`font-bold text-xs py-2 px-4 rounded-xl transition flex items-center gap-1 self-start ${
-                restaurant.lockAllItems 
-                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300' 
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-              }`}
-            >
-              <Plus size={15} />
-              Add Menu Item
-            </button>
-          </div>
-
-          {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-            <input
-              type="text"
-              placeholder="Search menu items by name, category, or description..."
-              value={menuSearchQuery}
-              onChange={(e) => setMenuSearchQuery(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
-            />
-          </div>
-
-          <div className="overflow-x-auto max-h-[520px] overflow-y-auto rounded-xl border border-slate-100">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead className="sticky top-0 bg-white z-10">
-                <tr className="border-b border-slate-150 text-slate-400 font-black uppercase hover:bg-transparent">
-                  <th className="py-2.5 px-1.5">Recipe Info</th>
-                  <th className="py-2.5 px-1.5">Category</th>
-                  <th className="py-2.5 px-1.5">Net Price</th>
-                  <th className="py-2.5 px-1.5">LTO Flash Promo</th>
-                  <th className="py-2.5 px-1.5">Chef Stock</th>
-                  <th className="py-2.5 px-1.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {currentRestaurantMenus.filter(item => {
-                  if (!menuSearchQuery.trim()) return true;
-                  const q = menuSearchQuery.toLowerCase();
-                  return item.name.toLowerCase().includes(q) || item.category.toLowerCase().includes(q) || (item.description || '').toLowerCase().includes(q);
-                }).map(item => (
-                  <tr key={item.id} className="hover:bg-slate-50/50 transition duration-100">
-                    <td className="py-3 px-1.5 max-w-sm">
-                      <div className="flex items-center gap-2.5">
-                        <img 
-                          src={item.imageUrl || "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=120&auto=format&fit=crop&q=80"} 
-                          alt={item.name} 
-                          className="w-10 h-10 rounded-xl object-cover bg-slate-100 border border-slate-205 shadow-inner flex-shrink-0" 
-                          referrerPolicy="no-referrer"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            {item.isVeg !== undefined && (
-                              <div className={`w-3 h-3 border ${item.isVeg ? 'border-emerald-600' : 'border-rose-600'} flex items-center justify-center p-[1px] rounded-xs bg-white flex-shrink-0`} title={item.isVeg ? "Veg" : "Non-Veg"}>
-                                <div className={`w-1 h-1 rounded-full ${item.isVeg ? 'bg-emerald-600' : 'bg-rose-600'}`}></div>
-                              </div>
-                            )}
-                            <p className="font-extrabold text-slate-900 leading-snug truncate">{item.name}</p>
-                          </div>
-                          <p className="text-slate-400 text-[10px] leading-relaxed line-clamp-1">{item.description}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-1.5">
-                      <span className="bg-slate-100 text-slate-655 font-bold px-2 py-0.5 rounded-full text-[10px] tracking-wide">
-                        {item.category}
-                      </span>
-                    </td>
-                    <td className="py-3 px-1.5 font-bold text-slate-800">
-                      <div>
-                        <span>₹{item.price.toFixed(2)}</span>
-                        {item.isLimitedTimeOffer && (
-                          <span className="text-[10px] text-slate-400 block line-through">
-                            ₹{(item.price + item.promoValue).toFixed(2)}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-3 px-1.5">
-                      {item.isLimitedTimeOffer ? (
-                        <div>
-                          <span className="bg-amber-100 text-amber-800 font-black px-1.5 py-0.2 rounded text-[9px] uppercase tracking-wider">
-                            ACTIVE PROMO
-                          </span>
-                          <p className="text-[10px] text-amber-600 truncate font-semibold mt-0.5">{item.offerDetails}</p>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400 font-semibold text-[10px]">Disabled</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-1.5">
-                      <button
-                        onClick={() => {
-                          if (restaurant.lockAllItems) {
-                            triggerAppAlert("Action Blocked", "Your recipe catalog is currently locked as Read-Only.", "error");
-                            return;
-                          }
-                          onMenuItemSave({ ...item, isAvailable: !item.isAvailable }, true);
-                          // If marking as sold out, cancel pending orders with this item
-                          if (item.isAvailable) {
-                            fetch("/api/menus/sold-out/" + item.id, {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ restaurantId: restaurant.id })
-                            }).then(r => r.json()).then(data => {
-                              if (data.affectedOrders?.length > 0) {
-                                triggerAppAlert(
-                                  "Items Auto-Cancelled",
-                                  `Marked "${item.name}" as sold out. ${data.cancelledItems} item(s) auto-cancelled from ${data.affectedOrders.length} order(s).`,
-                                  "info"
-                                );
-                              }
-                            }).catch(() => {});
-                          }
-                        }}
-                        className={`px-1.5 py-0.5 text-[10px] rounded font-black uppercase ${
-                          item.isAvailable ? 'bg-emerald-50 text-emerald-600 border border-emerald-250' :
-                          'bg-rose-50 text-rose-500 border border-rose-250'
-                        } ${restaurant.lockAllItems ? 'opacity-60 cursor-not-allowed' : ''}`}
-                      >
-                        {item.isAvailable ? "Available" : "Sold Out"}
-                      </button>
-                    </td>
-                    <td className="py-3 px-1.5 text-right space-x-1 whitespace-nowrap">
-                      <button 
-                        onClick={() => {
-                          if (restaurant.lockAllItems) {
-                            triggerAppAlert("Action Blocked", "Your recipe catalog is currently locked as Read-Only.", "error");
-                            return;
-                          }
-                          handleOpenMenuModal(item);
-                        }}
-                        className={`p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded ${restaurant.lockAllItems ? 'cursor-not-allowed opacity-40' : ''}`}
-                      >
-                        <Edit size={14} />
-                      </button>
-                      <button 
-                        onClick={() => {
-                          if (restaurant.lockAllItems) {
-                            triggerAppAlert("Action Blocked", "Your recipe catalog is currently locked as Read-Only.", "error");
-                            return;
-                          }
-                          onMenuItemDelete(item.id);
-                        }}
-                        className={`p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded ${restaurant.lockAllItems ? 'cursor-not-allowed opacity-40' : ''}`}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {currentRestaurantMenus.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="text-center py-8 font-bold text-slate-450">No catalog items. Onboard menu cards above.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB: QR CODE flyers GENERATOR */}
-      {activeTab === 'tables' && (
-        <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-6 shadow-sm">
-          {restaurant.disableQrGeneration && (
-            <div className="bg-amber-55 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl p-4 flex gap-3 text-xs leading-relaxed animate-pulse">
-              <div className="p-1 px-2 font-black rounded bg-amber-600 text-white shrink-0 self-start">SCALING SUSPENDED</div>
-              <div className="space-y-0.5">
-                <h4 className="font-extrabold text-amber-950">QR Seating Node Modifications Blocked</h4>
-                <p className="text-amber-850 text-amber-800 font-medium">Your brand's seating node limits have been locked by the platform manager. Existing tabletop QR layouts remain routable, but scaling the quantities or re-routing URL parameters is currently suspended.</p>
-              </div>
-            </div>
-          )}
-
-          <div className="border-b border-slate-150 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Seating Node QR Suite</h3>
-              <p className="text-xs text-slate-500">Provision smart touchpoint QR layouts, choose branded desk-tent display themes, and print physical posters.</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span>
-              <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
-                URL Routing Engine: Active
-              </span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-            <div className="xl:col-span-5 space-y-6">
-              {/* Card 1: QR Settings */}
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-5">
-                <h4 className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-650">QR Suite Settings</h4>
-                
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-700 block">1. Allocate Tables Quantity</label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        className="sr-only peer" 
-                        checked={useFloors}
-                        onChange={(e) => setUseFloors(e.target.checked)}
-                        disabled={!!restaurant.disableQrGeneration}
-                      />
-                      <div className="w-7 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600 relative"></div>
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Use Floors Layout</span>
-                    </label>
-                  </div>
-                  
-                  {!useFloors ? (
-                    <div className="flex gap-2">
-                      <input 
-                        type="number" 
-                        min="1"
-                        max="200"
-                        disabled={!!restaurant.disableQrGeneration}
-                        value={tempTableCount}
-                        onChange={(e) => setTempTableCount(e.target.value)}
-                        className={`w-20 bg-white border border-slate-300 rounded-xl text-center px-2 py-1.5 font-black text-slate-800 ${
-                          restaurant.disableQrGeneration ? 'opacity-50 bg-slate-100 cursor-not-allowed border-slate-200' : ''
-                        }`}
-                      />
-                      <button 
-                        onClick={handleCommitTableCount}
-                        disabled={!!restaurant.disableQrGeneration}
-                        className={`flex-1 py-1.5 px-3 rounded-xl font-bold transition text-xs shadow-xs ${
-                          restaurant.disableQrGeneration 
-                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300' 
-                            : 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer'
-                        }`}
-                      >
-                        Set Global Table Count
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-2 border border-slate-200 rounded-xl p-3 bg-white">
-                      {floorsData.map((floor, index) => (
-                        <div key={index} className="flex gap-2 items-center">
-                          <input 
-                            type="text" 
-                            placeholder="Floor Name"
-                            value={floor.name}
-                            onChange={(e) => {
-                              const nd = [...floorsData];
-                              nd[index].name = e.target.value;
-                              setFloorsData(nd);
-                            }}
-                            disabled={!!restaurant.disableQrGeneration}
-                            className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800"
-                          />
-                          <input 
-                            type="number" 
-                            min="1" max="100"
-                            value={floor.seats}
-                            onChange={(e) => {
-                              const nd = [...floorsData];
-                              nd[index].seats = parseInt(e.target.value) || 0;
-                              setFloorsData(nd);
-                            }}
-                            disabled={!!restaurant.disableQrGeneration}
-                            className="w-16 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800 text-center"
-                          />
-                          <button 
-                            onClick={() => {
-                              if (floorsData.length > 1) {
-                                setFloorsData(floorsData.filter((_, i) => i !== index));
-                              }
-                            }}
-                            disabled={!!restaurant.disableQrGeneration || floorsData.length === 1}
-                            className="p-1.5 text-red-400 hover:bg-red-50 rounded"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      ))}
-                      <div className="flex gap-2 mt-2 pt-2 border-t border-slate-100">
-                        <button 
-                          onClick={() => setFloorsData([...floorsData, { name: `Floor ${floorsData.length + 1}`, seats: 10 }])}
-                          disabled={!!restaurant.disableQrGeneration}
-                          className="flex-1 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-black uppercase rounded-lg transition"
-                        >
-                          + Add Floor
-                        </button>
-                        <button 
-                          onClick={handleCommitTableCount}
-                          disabled={!!restaurant.disableQrGeneration}
-                          className="flex-1 py-1.5 px-3 rounded-lg font-bold transition text-[10px] uppercase shadow-xs bg-slate-900 hover:bg-slate-800 text-white cursor-pointer"
-                        >
-                          Commit Setup ({floorsData.reduce((a,c) => a + c.seats, 0)} Total)
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  <p className="text-[9.5px] text-slate-400 leading-normal">
-                    Scale your physical seats dynamically. Max: 200. Code routes are created live.
-                  </p>
+                    );
+                  })}
                 </div>
 
-                <div className="pt-3 border-t border-slate-200 space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 block text-left">2. Choose Seat Showcase</label>
-                  <select
-                    value={selectedQRTable}
-                    onChange={(e) => setSelectedQRTable(parseInt(e.target.value))}
-                    className="w-full bg-white border border-slate-300 rounded-xl px-2.5 py-2 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-500 cursor-pointer"
-                  >
-                    {useFloors ? (() => {
-                      let acc = 0;
-                      return floorsData.map((floor, fIdx) => {
-                        const start = acc + 1;
-                        const end = acc + floor.seats;
-                        acc += floor.seats;
-                        if (floor.seats === 0) return null;
-                        return (
-                          <optgroup key={fIdx} label={`${floor.name} (Seats ${start}-${end})`}>
-                            {Array.from({ length: floor.seats }, (_, idx) => start + idx).map(num => (
-                              <option key={num} value={num}>Desk Standing Card — Table #{num}</option>
-                            ))}
-                          </optgroup>
-                        );
-                      });
-                    })() : Array.from({ length: restaurant.totalTables }, (_, idx) => idx + 1).map(num => (
-                      <option key={num} value={num}>Desk Standing Card — Table #{num}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="pt-3 border-t border-slate-200 space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 block text-left">3. QR Public URL Target Address</label>
-                  <div className="grid grid-cols-2 gap-1.5 bg-white p-1 rounded-xl border">
-                    <button
-                      type="button"
-                      onClick={() => setQrBaseUrlOption('auto')}
-                      className={`text-[9px] font-black uppercase py-1 px-1.5 rounded-lg transition-all ${qrBaseUrlOption === 'auto' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-805'}`}
-                    >
-                      Auto-Detect
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setQrBaseUrlOption('custom')}
-                      className={`text-[9px] font-black uppercase py-1 px-1.5 rounded-lg transition-all ${qrBaseUrlOption === 'custom' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-805'}`}
-                    >
-                      Custom URL
-                    </button>
-                  </div>
-                  {qrBaseUrlOption === 'custom' ? (
-                    <div className="space-y-1">
-                      <input 
-                        type="url" 
-                        placeholder="e.g. https://ais-pre-..."
-                        value={qrCustomBaseUrl}
-                        onChange={(e) => setQrCustomBaseUrl(e.target.value)}
-                        className="w-full bg-white border border-slate-350 rounded-xl px-2.5 py-1.5 text-[10.5px] font-mono font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                      />
-                      <p className="text-[9px] text-amber-600 leading-normal font-semibold">
-                        ⚠️ Paste your Shared App URL or Live Deployment domain so scanning works perfectly on your external mobile phone!
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-[9px] text-slate-400 leading-normal">
-                      Currently utilizing frame host origin: <span className="font-mono text-[9px] font-bold text-slate-500 bg-slate-100 px-1 rounded">{window.location.origin}</span>
-                    </p>
-                  )}
-                </div>
-
-                <div className="pt-4 border-t border-slate-200 text-xs text-slate-505 space-y-2">
-                  <p className="font-extrabold text-slate-705 uppercase text-[9px] tracking-wider">Device Test Link</p>
-                  <p className="text-[10px] leading-relaxed text-slate-400">
-                    Click below to open the digital customer ordering page for <b className="text-slate-600 font-bold">Table #{selectedQRTable}</b> in a new browser tab to try seating:
-                  </p>
-                  <a
-                    href={`${activeQRBaseUrl}/r/${restaurant.id}/t/${selectedQRTable}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold py-2 px-3 rounded-xl text-[10.5px] uppercase tracking-wider block text-center border border-indigo-100 transition shadow-2xs animate-pulse-slow-once"
-                  >
-                    📱 Test Guest Portal (Table #{selectedQRTable})
-                  </a>
-                </div>
-              </div>
-
-
-              {/* Card 3: Waiter Validation PIN */}
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm text-xs space-y-3 text-left">
-                <div className="flex items-center justify-between">
-                  <p className="font-extrabold text-slate-705 uppercase text-[9px] tracking-wider">Waiter Validation PIN</p>
-                  <span className="font-mono text-[9px] bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-slate-500 font-extrabold">GATEWAY KEY</span>
-                </div>
-                <p className="text-[10px] leading-relaxed text-slate-400">
-                  Update code or auto-generate digits. Waiters share this code with diners when physical device GPS checks fail.
-                </p>
-                <div className="flex gap-2.5">
-                  <input 
-                    type="text" 
-                    maxLength={4}
-                    value={pinFormVal}
-                    onChange={(e) => setPinFormVal(e.target.value.replace(/\D/g, ''))}
-                    className="w-16 bg-white border border-slate-300 rounded-xl text-center font-bold text-slate-800 tracking-widest text-xs py-1.5"
-                    placeholder="1234"
-                  />
-                  <button 
-                    onClick={handleCommitWaiterPin}
-                    className="flex-1 bg-slate-900 hover:bg-slate-800 text-white text-[11px] py-1.5 rounded-xl font-bold transition cursor-pointer"
-                  >
-                    Save PIN
-                  </button>
-                  <button 
-                    onClick={handleRandomizeWaiterPin}
-                    title="Rotate Waiter PIN"
-                    className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-150 text-indigo-700 text-[11px] py-1.5 px-2 rounded-xl font-extrabold transition flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <RefreshCw size={11} className="shrink-0" />
-                    Rotate
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Preview Column */}
-            <div className="xl:col-span-7 space-y-4">
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 text-white space-y-6 shadow-xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-48 h-48 bg-slate-800/10 rounded-full blur-3xl pointer-events-none"></div>
-                
-                <div className="flex flex-col xl:flex-row items-center gap-6 xl:items-start justify-between min-w-0">
-                  {/* Real-time printable poster display mock */}
-                  <div className="flex-1 space-y-4 min-w-0 w-full xl:w-auto">
-                    <span className="bg-rose-500 text-white py-0.5 px-3 rounded-full text-[8.5px] font-black uppercase tracking-widest block w-max">
-                      LIVE DESK TEMPLATE PREVIEW
-                    </span>
-                    <h4 className="text-lg font-black tracking-tight">Interactive Table Tent Flyer</h4>
-                    <p className="text-xs text-slate-305 leading-relaxed">
-                      Custom branded with your menu content & logo. Guests scan with their native camera to immediately initiate order tickets on our database.
-                    </p>
-                    
-                    <div className="space-y-1">
-                      <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest block">Direct Dynamic Endpoint</span>
-                      <div className="bg-slate-950 p-2 text-[10.5px] font-mono border border-slate-800 rounded-xl text-emerald-400 flex items-center justify-between select-all max-w-sm">
-                        <span className="truncate">{activeQRBaseUrl}/r/{restaurant.id}/t/{selectedQRTable}</span>
-                        <span className="text-[8px] bg-slate-850 text-slate-500 px-1 py-0.2 rounded shrink-0 ml-1">Live</span>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2 pt-3">
-                      <button
-                        onClick={() => window.print()}
-                        className="bg-white hover:bg-slate-100 text-slate-950 font-black px-3 py-2 rounded-xl text-[10px] transition shadow-lg flex items-center gap-1.5 cursor-pointer flex-1 min-w-[130px] justify-center"
-                      >
-                        🖨 Print Desk-Tent
-                      </button>
-                      <button
-                        onClick={async () => {
-                          const flyerEl = document.getElementById('print-qr-flyer-area');
-                          if (!flyerEl) return;
-                          try {
-                            const canvas = await html2canvas(flyerEl, {
-                              scale: 2,
-                              backgroundColor: null,
-                              useCORS: true,
-                            });
-                            const link = document.createElement('a');
-                            link.download = `${restaurant.name.toLowerCase().replace(/\s+/g, '-')}-table-${selectedQRTable}-flyer.png`;
-                            link.href = canvas.toDataURL('image/png');
-                            link.click();
-                          } catch (err) {
-                            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=0f172a&data=${encodeURIComponent(`${activeQRBaseUrl}/r/${restaurant.id}/t/${selectedQRTable}`)}`;
-                            const link = document.createElement('a');
-                            link.href = qrUrl;
-                            link.download = `${restaurant.name.toLowerCase().replace(/\s+/g, '-')}-table-${selectedQRTable}-qr.png`;
-                            link.click();
-                          }
-                        }}
-                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-extrabold px-3 py-2 rounded-xl text-[10px] transition cursor-pointer flex-1 min-w-[130px] justify-center flex items-center gap-1.5"
-                      >
-                        ↓ Download PNG
-                      </button>
-                      <button
-                        onClick={() => setIsBulkPrintOpen(true)}
-                        className="bg-emerald-700 hover:bg-emerald-600 text-white border border-emerald-600 font-extrabold px-3 py-2 rounded-xl text-[10px] transition cursor-pointer flex-1 min-w-[100px] justify-center flex items-center gap-1.5"
-                      >
-                        ☰ Print All
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Visual flyer container reflecting select design template */}
-                  <div className={`w-64 border rounded-2xl p-4 flex flex-col items-center text-center shadow-2xl shrink-0 transition-all duration-300 ${
-                    flyerTheme === 'noir' ? 'bg-slate-950 border-slate-800 text-white' :
-                    flyerTheme === 'gold' ? 'bg-gradient-to-b from-amber-950 to-slate-950 border-amber-550/40 text-amber-50' :
-                    flyerTheme === 'emerald' ? 'bg-gradient-to-b from-emerald-950 to-slate-950 border-emerald-550/40 text-emerald-50' :
-                    'bg-gradient-to-b from-indigo-950 to-slate-950 border-teal-555/40 text-sky-50'
-                  }`}>
-                    {/* Flyer Header Logo mockup */}
-                    <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest opacity-80 border-b border-white/20 pb-2 w-full justify-center">
-                      <Utensils size={10} />
-                      {restaurant.name}
-                    </div>
-
-                    <div className="my-4">
-                      <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Please Scan</div>
-                      <h5 className="text-base font-extrabold tracking-tight">ORDER DIRECTLY</h5>
-                      <p className="text-[8px] text-slate-400 max-w-[150px] mx-auto leading-tight mt-1">
-                        View menu, request floor assistance, & self-checkout instantly
-                      </p>
-                    </div>
-
-                    {/* QR Code Container */}
-                    <div className="bg-white p-2.5 rounded-xl shadow-lg flex flex-col items-center">
-                      <img 
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&color=0f172a&data=${encodeURIComponent(`${activeQRBaseUrl}/r/${restaurant.id}/t/${selectedQRTable}`)}`}
-                        alt={`QR code for Table ${selectedQRTable}`}
-                        referrerPolicy="no-referrer"
-                        className="w-28 h-28 object-contain"
-                      />
-                      <span className="text-[7.5px] font-black tracking-widest uppercase text-slate-900 mt-1.5 bg-slate-100 px-2 py-0.5 rounded font-mono">
-                        SCAN ME
-                      </span>
-                    </div>
-
-                    <div className="mt-4 pt-2 border-t border-white/10 w-full">
-                      <div className="text-[10px] font-bold text-slate-400">YOUR SEATING NODE</div>
-                      <div className="text-xl font-black tracking-widest font-mono text-white mt-0.5">
-                        TABLE #{selectedQRTable}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-                 {/* ALWAYS RENDERED FOR DIRECT PRINT - INVISIBLE ON SCREEN, VISIBLE ON PRINT */}
-      <div id="print-qr-flyer-area" className="hidden print:flex flex-col items-center justify-center min-h-screen bg-white">
-        <div className={`w-full max-w-sm border-2 rounded-3xl p-8 flex flex-col items-center text-center shadow-none relative ${
-          flyerTheme === 'noir' ? 'bg-slate-950 border-slate-800 text-white' :
-          flyerTheme === 'gold' ? 'bg-gradient-to-b from-amber-950 via-slate-950 to-slate-950 border-amber-500 text-amber-50' :
-          flyerTheme === 'emerald' ? 'bg-gradient-to-b from-emerald-950 via-slate-950 to-slate-950 border-emerald-500 text-emerald-50' :
-          'bg-gradient-to-b from-indigo-950 via-slate-950 to-slate-950 border-teal-500 text-teal-50'
-        }`}>
-          {/* Visual top accent ribbon */}
-          <div className={`absolute top-0 inset-x-0 h-2.5 rounded-t-3xl ${
-            flyerTheme === 'noir' ? 'bg-indigo-600' :
-            flyerTheme === 'gold' ? 'bg-amber-500' :
-            flyerTheme === 'emerald' ? 'bg-emerald-500' :
-            'bg-teal-500'
-          }`}></div>
-
-          {/* Restaurant Mark */}
-          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest opacity-90 border-b border-white/20 pb-3 w-full justify-center pt-2">
-            <Utensils size={14} className={
-              flyerTheme === 'noir' ? 'text-indigo-400' :
-              flyerTheme === 'gold' ? 'text-amber-400' :
-              flyerTheme === 'emerald' ? 'text-emerald-400' :
-              'text-teal-400'
-            } />
-            <span>{restaurant.name}</span>
-          </div>
-
-          {/* Subheadings */}
-          <div className="my-6 space-y-2">
-            <div className={`text-xs font-black tracking-widest uppercase ${
-              flyerTheme === 'noir' ? 'text-indigo-400' :
-              flyerTheme === 'gold' ? 'text-amber-400' :
-              flyerTheme === 'emerald' ? 'text-emerald-400' :
-              'text-teal-400'
-            }`}>
-              ORDER & PAY DIRECTLY
-            </div>
-            <h2 className="text-xl font-extrabold tracking-tight">SKIP THE WAIT</h2>
-            <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-              View high-definition food photos, split the bill dynamically on UPI, call the server directly, and book food to the kitchen instantly.
-            </p>
-          </div>
-
-          {/* QR Core Code */}
-          <div className="bg-white p-4 rounded-2xl shadow-2xl flex flex-col items-center border-4 border-slate-200">
-            <img 
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=0f172a&data=${encodeURIComponent(`${activeQRBaseUrl}/r/${restaurant.id}/t/${selectedQRTable}`)}`}
-              alt={`Table QR code`}
-              referrerPolicy="no-referrer"
-              className="w-44 h-44 object-contain"
-            />
-            <div className="text-[10px] font-black tracking-widest uppercase text-slate-900 mt-2 bg-slate-100 px-3 py-1 rounded-full border border-slate-200 font-mono">
-              ✦ SCAN SCREEN TO SEAT ✦
-            </div>
-          </div>
-
-          {/* Seat Indicator footer card */}
-          <div className="mt-8 pt-4 border-t border-white/10 w-full space-y-1">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Digital Seating Address</div>
-            <div className="text-2xl font-black tracking-widest font-mono text-white">
-              TABLE #{selectedQRTable}
-            </div>
-            <p className="text-[8.5px] text-slate-500 font-mono select-all">
-              {activeQRBaseUrl}/r/{restaurant.id}/t/{selectedQRTable}
-            </p>
-          </div>
-        </div>
-      </div>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* BULK QR PRINT MODAL */}
-      {isBulkPrintOpen && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200">
-            {/* Header */}
-            <div className="sticky top-0 bg-white z-10 flex items-center justify-between p-4 border-b border-slate-200 rounded-t-3xl">
-              <div>
-                <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">All Table QR Codes</h3>
-                <p className="text-[10px] text-slate-500 mt-0.5">{restaurant.name} — {restaurant.totalTables} tables</p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => window.print()}
-                  className="bg-slate-900 hover:bg-slate-800 text-white font-black px-4 py-2 rounded-xl text-xs uppercase tracking-wider transition shadow-sm"
-                >
-                  🖨 Print All
-                </button>
-                <button
-                  onClick={() => setIsBulkPrintOpen(false)}
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-3 py-2 rounded-xl text-xs transition"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-
-            {/* QR Grid — grouped by floor */}
-            <div className="p-4 bulk-print-grid">
-              {floorsData.map((floor, fi) => {
-                const startTable = floorsData.slice(0, fi).reduce((sum, f) => sum + f.seats, 0) + 1;
-                const endTable = startTable + floor.seats - 1;
-                const tableNumbers: number[] = [];
-                for (let t = startTable; t <= endTable && t <= (restaurant.totalTables || 50); t++) {
-                  tableNumbers.push(t);
-                }
-                return (
-                  <div key={fi} className="mb-6">
-                    <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3 border-b border-slate-150 pb-1.5">
-                      {floor.name} — Tables {startTable}-{Math.min(endTable, restaurant.totalTables || 50)}
-                    </h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                      {tableNumbers.map((tnum) => (
-                        <div
-                          key={tnum}
-                          className="bg-white border border-slate-200 rounded-xl p-2.5 flex flex-col items-center text-center shadow-sm"
-                        >
-                          <img
-                            src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&color=0f172a&data=${encodeURIComponent(`${activeQRBaseUrl}/r/${restaurant.id}/t/${tnum}`)}`}
-                            alt={`Table ${tnum}`}
-                            referrerPolicy="no-referrer"
-                            className="w-20 h-20 object-contain"
-                          />
-                          <span className="text-[10px] font-black text-slate-800 mt-1 font-mono">TABLE {tnum}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Print-specific styles for bulk print */}
-            <style>{`
+                {/* Print-specific styles for bulk print */}
+                <style>{`
               @media print {
                 body * { visibility: hidden !important; }
                 .bulk-print-grid, .bulk-print-grid * { visibility: visible !important; }
@@ -1723,572 +1513,658 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                 @page { margin: 1cm; size: auto; }
               }
             `}</style>
-          </div>
-        </div>
-      )}
-
-      {/* TAB: LIVE FLOOR SEATING MONITOR */}
-      {activeTab === 'floor' && (
-        <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-6 shadow-sm">
-          <div className="border-b border-slate-150 pb-4 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Live active Seating Floor</h3>
-              <p className="text-xs text-slate-500">Monitor table occupancies, pending chefs tickets, and unbilled active sums.</p>
-            </div>
-            <button
-              onClick={() => setActiveTab('tables')}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[11px] px-3.5 py-2 rounded-xl transition duration-150 shadow-sm flex items-center gap-1.5 cursor-pointer w-max"
-            >
-              <QrCode size={13} />
-              <span>QR Management Suite</span>
-            </button>
-          </div>
-
-          <div className="space-y-8">
-            {restaurant.floors && restaurant.floors.length > 0 ? (() => {
-              let acc = 0;
-              return restaurant.floors.map((floor, fIdx) => {
-                const start = acc;
-                const end = acc + floor.seats;
-                acc += floor.seats;
-                const floorTables = floorTableData.slice(start, end);
-                
-                if (floorTables.length === 0) return null;
-
-                return (
-                  <div key={fIdx} className="space-y-3">
-                    <h4 className="text-sm font-extrabold text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2">{floor.name}</h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
-                      {floorTables.map(t => {
-                        let liveDurationStr = "";
-                        if (t.isOccupied && t.earliestCreatedAt) {
-                          const diffMs = Date.now() - new Date(t.earliestCreatedAt).getTime();
-                          const totalSec = Math.floor(Math.max(0, diffMs) / 1000);
-                          const min = Math.floor(totalSec / 60);
-                          const sec = totalSec % 60;
-                          liveDurationStr = `${min}m ${sec}s`;
-                        }
-
-                        return (
-                          <div
-                            key={t.tableNum}
-                            className={`p-4 rounded-3xl border flex flex-col justify-between min-h-36 transition-all duration-300 relative ${
-                              t.floorState === 'empty' ? 'bg-slate-50 border-slate-200 opacity-60' :
-                              t.floorState === 'pending' ? 'bg-yellow-50 border-yellow-300 shadow-sm shadow-yellow-100' :
-                              t.floorState === 'preparing' ? 'bg-blue-50 border-blue-300 shadow-sm shadow-blue-105' :
-                              'bg-emerald-50 border-emerald-305 shadow-sm shadow-emerald-100'
-                            }`}
-                          >
-                            <div>
-                              <div className="flex justify-between items-center text-[9px] text-slate-400">
-                                <span className="font-mono">TABLE NODE</span>
-                                <span className={`w-2.5 h-2.5 rounded-full ${
-                                  t.floorState === 'empty' ? 'bg-slate-300' :
-                                  t.floorState === 'pending' ? 'bg-yellow-500 animate-pulse' :
-                                  t.floorState === 'preparing' ? 'bg-blue-500 animate-pulse' :
-                                  'bg-emerald-500'
-                                }`}></span>
-                              </div>
-                              <h4 className="text-xl font-bold text-slate-900 mt-1">Seat #{t.tableNum}</h4>
-                            </div>
-
-                            <div className="mt-2 space-y-1 z-10">
-                              {t.isOccupied ? (
-                                <div className="space-y-1">
-                                  <div className="text-[10px] leading-tight">
-                                    <p className="font-extrabold text-slate-800 uppercase truncate">👤 {t.occupantName}</p>
-                                    <p className="text-[8.5px] text-slate-400 font-mono">{t.occupantPhone}</p>
-                                  </div>
-                                  <div className="text-[9.5px] bg-white/70 border border-slate-200 rounded px-1.5 py-0.5 w-max font-mono flex items-center gap-1 mt-1">
-                                    <span className="text-slate-400">⏱</span>
-                                    <span className="font-bold text-indigo-600 animate-pulse">{liveDurationStr || "0m 0s"}</span>
-                                  </div>
-                                  <div className="pt-1.5 border-t border-slate-250 mt-1.5">
-                                    <p className="text-[9px] text-slate-505 font-bold">{t.ordersCount} tickets</p>
-                                    <p className="text-xs font-black text-slate-955">₹{t.billTotal.toFixed(2)}</p>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleReleaseTable(t.tableNum)}
-                                    className={`mt-2.5 w-full text-white font-extrabold py-1 px-1.5 rounded-xl text-[8.5px] uppercase tracking-wider transition cursor-pointer block text-center shadow-xs ${t.floorState === 'pending' || t.floorState === 'preparing' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-900 hover:bg-rose-600'}`}
-                                  >
-                                    {t.floorState === 'pending' || t.floorState === 'preparing' ? 'Deliver & Release' : 'Settle & Release'}
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="text-[9px] uppercase tracking-wider font-extrabold text-slate-400">VACANT</span>
-                              )}
-                            </div>
-
-                            <div className="absolute bottom-1 right-2 text-6xl font-black text-slate-950/5 select-none pointer-events-none">
-                              {t.tableNum}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              });
-            })() : (
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
-                {floorTableData.map(t => {
-                  let liveDurationStr = "";
-                  if (t.isOccupied && t.earliestCreatedAt) {
-                    const diffMs = Date.now() - new Date(t.earliestCreatedAt).getTime();
-                    const totalSec = Math.floor(Math.max(0, diffMs) / 1000);
-                    const min = Math.floor(totalSec / 60);
-                    const sec = totalSec % 60;
-                    liveDurationStr = `${min}m ${sec}s`;
-                  }
-
-                  return (
-                    <div
-                      key={t.tableNum}
-                      className={`p-4 rounded-3xl border flex flex-col justify-between min-h-36 transition-all duration-300 relative ${
-                        t.floorState === 'empty' ? 'bg-slate-50 border-slate-200 opacity-60' :
-                        t.floorState === 'pending' ? 'bg-yellow-50 border-yellow-300 shadow-sm shadow-yellow-100' :
-                        t.floorState === 'preparing' ? 'bg-blue-50 border-blue-300 shadow-sm shadow-blue-105' :
-                        'bg-emerald-50 border-emerald-305 shadow-sm shadow-emerald-100'
-                      }`}
-                    >
-                      <div>
-                        <div className="flex justify-between items-center text-[9px] text-slate-400">
-                          <span className="font-mono">TABLE NODE</span>
-                          <span className={`w-2.5 h-2.5 rounded-full ${
-                            t.floorState === 'empty' ? 'bg-slate-300' :
-                            t.floorState === 'pending' ? 'bg-yellow-500 animate-pulse' :
-                            t.floorState === 'preparing' ? 'bg-blue-500 animate-pulse' :
-                            'bg-emerald-500'
-                          }`}></span>
-                        </div>
-                        <h4 className="text-xl font-bold text-slate-900 mt-1">Seat #{t.tableNum}</h4>
-                      </div>
-
-                      <div className="mt-2 space-y-1 z-10">
-                        {t.isOccupied ? (
-                          <div className="space-y-1">
-                            <div className="text-[10px] leading-tight">
-                              <p className="font-extrabold text-slate-800 uppercase truncate">👤 {t.occupantName}</p>
-                              <p className="text-[8.5px] text-slate-400 font-mono">{t.occupantPhone}</p>
-                            </div>
-                            <div className="text-[9.5px] bg-white/70 border border-slate-200 rounded px-1.5 py-0.5 w-max font-mono flex items-center gap-1 mt-1">
-                              <span className="text-slate-400">⏱</span>
-                              <span className="font-bold text-indigo-600 animate-pulse">{liveDurationStr || "0m 0s"}</span>
-                            </div>
-                            <div className="pt-1.5 border-t border-slate-250 mt-1.5">
-                              <p className="text-[9px] text-slate-505 font-bold">{t.ordersCount} tickets</p>
-                              <p className="text-xs font-black text-slate-955">₹{t.billTotal.toFixed(2)}</p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleReleaseTable(t.tableNum)}
-                              className={`mt-2.5 w-full text-white font-extrabold py-1 px-1.5 rounded-xl text-[8.5px] uppercase tracking-wider transition cursor-pointer block text-center shadow-xs ${t.floorState === 'pending' || t.floorState === 'preparing' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-900 hover:bg-rose-600'}`}
-                            >
-                              {t.floorState === 'pending' || t.floorState === 'preparing' ? 'Deliver & Release' : 'Settle & Release'}
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-[9px] uppercase tracking-wider font-extrabold text-slate-400">VACANT</span>
-                        )}
-                      </div>
-
-                      <div className="absolute bottom-1 right-2 text-6xl font-black text-slate-950/5 select-none pointer-events-none">
-                        {t.tableNum}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 flex flex-wrap gap-4 text-[10px] font-bold text-slate-500">
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-slate-300 rounded-full"></span> Empty Unoccupied</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-yellow-500 rounded-full"></span> Customer Pending Order</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-blue-500 rounded-full"></span> Kitchen Cooking</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-emerald-500 rounded-full"></span> Delivered / Unsettled Tab</span>
-          </div>
-        </div>
-      )}
-
-      {/* TAB: DAY-BY-DAY ORDER HISTORIES */}
-      {activeTab === 'history' && (
-        <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-6 shadow-sm font-sans animate-fade-in">
-          <div className="border-b border-slate-150 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Historical Order Logs</h3>
-              <p className="text-xs text-slate-500 mt-1">Check day-by-day finalized revenue collections and order tickets, including those cleared or inactive.</p>
-            </div>
-            
-            {/* Quick Reset All Filters */}
-            {(historySearch || historyStatusFilter !== 'all' || historyReleaseFilter !== 'all' || historyMinAmount || historyMaxAmount || showAllHistoryDates) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setHistorySearch('');
-                  setHistoryStatusFilter('all');
-                  setHistoryReleaseFilter('all');
-                  setHistoryMinAmount('');
-                  setHistoryMaxAmount('');
-                  setShowAllHistoryDates(false);
-                }}
-                className="bg-rose-50 hover:bg-rose-100 text-rose-650 text-[11px] font-black uppercase tracking-wider px-3.5 py-2 rounded-xl transition flex items-center gap-1 cursor-pointer"
-              >
-                Clear All Filters (✕)
-              </button>
-            )}
-          </div>
-
-          {dailyHistorySummaries.length === 0 ? (
-            <div className="text-center py-12 border-2 border-dashed rounded-3xl border-slate-200 bg-slate-50">
-              <ClipboardList size={40} className="text-slate-300 mx-auto mb-3" />
-              <p className="text-sm font-bold text-slate-800">No Historical Records Found</p>
-              <p className="text-xs text-slate-400 mt-1">Concluded tickets or new transactions will materialize here on a day-to-day basis.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-              {/* Left Column: Day-by-Day summaries */}
-              <div className="space-y-3 lg:col-span-1 max-h-[600px] overflow-y-auto pr-1">
-                <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider block mb-1 font-mono">Select Business Day</span>
-                
-                {/* All Available Dates toggle */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAllHistoryDates(true);
-                  }}
-                  className={`w-full text-left p-4 rounded-2xl border transition-all duration-200 flex justify-between items-center cursor-pointer mb-2 ${
-                    showAllHistoryDates
-                      ? 'bg-slate-900 border-slate-950 text-white shadow-md'
-                      : 'bg-indigo-50 border-indigo-100 text-indigo-900 hover:bg-indigo-100/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-base">📅</span>
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-wide">
-                        All Records Combined
-                      </p>
-                      <p className={`text-[10px] mt-0.5 font-semibold ${showAllHistoryDates ? 'text-slate-300' : 'text-indigo-600'}`}>
-                        Search across all timeline logs
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-bold font-mono">→</span>
-                </button>
-
-                {dailyHistorySummaries.map((day) => (
-                  <button
-                    key={day.dateStr}
-                    type="button"
-                    onClick={() => {
-                      setSelectedHistoryDate(day.dateStr);
-                      setShowAllHistoryDates(false);
-                    }}
-                    className={`w-full text-left p-4 rounded-2xl border transition-all duration-200 flex justify-between items-center cursor-pointer ${
-                      (!showAllHistoryDates && selectedHistoryDate === day.dateStr)
-                        ? 'bg-indigo-600 border-indigo-650 text-white shadow-md'
-                        : 'bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100 hover:border-slate-300'
-                    }`}
-                  >
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-wide">
-                        {formatHistoryDate(day.dateStr)}
-                      </p>
-                      <p className={`text-[10px] mt-1 font-semibold ${(!showAllHistoryDates && selectedHistoryDate === day.dateStr) ? 'text-indigo-100' : 'text-slate-400'}`}>
-                        {day.count} Total Tickets
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-black text-emerald-600">₹{day.revenue.toFixed(2)}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-              {/* Right Column: Detailed orders list with robust filters */}
-              <div className="lg:col-span-2 space-y-4">
-                {/* Advanced Search & Filtering Console */}
-                <div className="bg-slate-50 p-4 border border-slate-200 rounded-3xl space-y-3">
-                  <span className="text-[9px] uppercase font-black text-slate-400 tracking-wider block font-mono">Advanced Filters Console</span>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Text Search */}
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
-                      <input
-                        type="text"
-                        placeholder="Search name, phone, item, table, or ID..."
-                        value={historySearch}
-                        onChange={(e) => setHistorySearch(e.target.value)}
-                        className="w-full bg-white border border-slate-202 rounded-xl py-2 pl-9 pr-4 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-505 text-slate-805"
-                      />
-                    </div>
-
-                    {/* Date Picker (Like Date Change Request!) */}
-                    <div className="flex items-center gap-2 bg-white px-3 py-1 border border-slate-202 rounded-xl">
-                      <span className="text-[10px] font-black text-slate-400 uppercase font-mono whitespace-nowrap">Jump:</span>
-                      <input
-                        type="date"
-                        value={selectedHistoryDate}
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            setSelectedHistoryDate(e.target.value);
-                            setShowAllHistoryDates(false);
-                          }
-                        }}
-                        className="w-full text-xs font-extrabold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                    {/* Status Filter */}
-                    <div className="flex flex-col space-y-1">
-                      <label className="text-[9px] text-slate-400 font-black uppercase font-mono">Chef Status</label>
-                      <select
-                        value={historyStatusFilter}
-                        onChange={(e) => setHistoryStatusFilter(e.target.value as any)}
-                        className="bg-white border border-slate-202 rounded-xl p-2 text-xs font-semibold focus:outline-none text-slate-800"
-                      >
-                        <option value="all">All Kitchen Statuses</option>
-                        <option value="pending">Pending Only</option>
-                        <option value="accepted">Accepted / Cooking</option>
-                        <option value="completed">Completed Only</option>
-                        <option value="rejected">Rejected Only</option>
-                      </select>
-                    </div>
-
-                    {/* Table Release Settle Filter */}
-                    <div className="flex flex-col space-y-1">
-                      <label className="text-[9px] text-slate-400 font-black uppercase font-mono">Billed State</label>
-                      <select
-                        value={historyReleaseFilter}
-                        onChange={(e) => setHistoryReleaseFilter(e.target.value as any)}
-                        className="bg-white border border-slate-202 rounded-xl p-2 text-xs font-semibold focus:outline-none text-slate-800"
-                      >
-                        <option value="all">All States (Active + Cleared)</option>
-                        <option value="active">Active Dining Bills Only</option>
-                        <option value="cleared">Cleared / Released Only</option>
-                      </select>
-                    </div>
-
-                    {/* Price Range */}
-                    <div className="flex flex-col space-y-1">
-                      <label className="text-[9px] text-slate-400 font-black uppercase font-mono">Bill Range (INR)</label>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          placeholder="Min ₹"
-                          value={historyMinAmount}
-                          onChange={(e) => setHistoryMinAmount(e.target.value)}
-                          className="bg-white border border-slate-202 rounded-xl p-2 text-xs font-semibold focus:outline-none w-full text-slate-800"
-                        />
-                        <span className="text-slate-300 text-xs">-</span>
-                        <input
-                          type="number"
-                          placeholder="Max ₹"
-                          value={historyMaxAmount}
-                          onChange={(e) => setHistoryMaxAmount(e.target.value)}
-                          className="bg-white border border-slate-202 rounded-xl p-2 text-xs font-semibold focus:outline-none w-full text-slate-800"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Selected Day / Range Context Label */}
-                <div className="flex justify-between items-center bg-indigo-50/50 px-4 py-2.5 rounded-2xl border border-indigo-100">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 bg-indigo-600 rounded-full"></span>
-                    <span className="text-xs font-bold text-slate-700">
-                      Viewing: <strong className="text-indigo-950">{showAllHistoryDates ? "All Available Dates (Eco-timeline)" : formatHistoryDate(selectedHistoryDate)}</strong>
-                    </span>
-                  </div>
-                  <span className="text-[10px] font-black uppercase font-mono text-indigo-650 bg-indigo-100 px-2 py-0.5 rounded-lg">
-                    {filteredHistoryOrders.length} matching tickets
-                  </span>
-                </div>
-
-                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                  {filteredHistoryOrders.length === 0 ? (
-                    <div className="text-center py-10 bg-slate-50 border rounded-2xl border-slate-200">
-                      <p className="text-xs font-bold text-slate-505">No orders match the current active log filters.</p>
-                      <p className="text-[10px] text-slate-400 mt-1">Try to clear some filters or select "All Records Combined".</p>
-                    </div>
-                  ) : (
-                    filteredHistoryOrders.map((ord) => (
-                      <div
-                        key={ord.id}
-                        className="p-4 bg-slate-50/50 border border-slate-200 rounded-2xl hover:border-slate-350 hover:bg-slate-55 transition"
-                      >
-                        <div className="flex justify-between items-start gap-2 flex-wrap pb-2 border-b border-slate-100 mb-2">
-                          <div>
-                            <span className="text-[9px] font-mono font-bold text-indigo-650 block">
-                              #ID: {ord.id.split('-')[1] || ord.id}
-                            </span>
-                            <span className="text-xs font-black text-slate-900 mt-0.5 inline-block font-sans">
-                              Table #{ord.tableNumber}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                              ord.status === 'completed' ? 'bg-emerald-50 text-emerald-650 border border-emerald-100' :
-                              ord.status === 'accepted' ? 'bg-blue-50 text-blue-650 border border-blue-105' :
-                              ord.status === 'pending' ? 'bg-yellow-50 text-yellow-605 border border-yellow-115' :
-                              'bg-rose-50 text-rose-500 border border-rose-115'
-                            }`}>
-                              {ord.status}
-                            </span>
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                              ord.released === true 
-                                ? 'bg-slate-100 text-slate-500 border border-slate-205' 
-                                : 'bg-orange-50 text-orange-600 border border-orange-200'
-                            }`}>
-                              {ord.released === true ? 'Cleared' : 'Active'}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans">
-                          <div>
-                            <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wide font-mono">
-                              Guest details
-                            </p>
-                            <p className="font-extrabold text-slate-800 mt-0.5">{ord.userName}</p>
-                            <p className="text-slate-500 font-mono text-[10px]">{ord.userPhone}</p>
-                            <span className="text-[9px] text-slate-400 font-bold block mt-1.5">
-                              Ordered: {new Date(ord.createdAt).toLocaleString()}
-                            </span>
-                          </div>
-                          <div>
-                            <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wide font-mono">
-                              Dishes ordered
-                            </p>
-                            <div className="mt-1 space-y-1">
-                              {ord.items.map((it, idx) => (
-                                <div key={idx} className="flex justify-between font-bold text-slate-700">
-                                  <span>{it.quantity}x {it.name}</span>
-                                  <span>₹{(it.price * it.quantity).toFixed(2)}</span>
-                                </div>
-                              ))}
-                            </div>
-                            <div className="pt-1.5 mt-1.5 border-t border-dashed border-slate-200 flex justify-between font-black text-slate-900">
-                              <span>Total Net amount:</span>
-                              <span>₹{ord.totalAmount.toFixed(2)}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
               </div>
             </div>
           )}
-        </div>
-      )}
 
-      {/* TAB: ANALYTICS DASHBOARD */}
-      {activeTab === 'analytics' && (
-        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
-          <AnalyticsDashboard restaurantId={restaurant.id} restaurantName={restaurant.name} />
-        </div>
-      )}
-
-        </div>
-
-        {/* Persistent Right Side Panel: Live Guest Service Buzzers */}
-        <div className="lg:col-span-1 space-y-4 lg:sticky lg:top-24 bg-gradient-to-b from-rose-50 to-amber-50/60 border border-amber-200 p-4 rounded-3xl shadow-sm order-1 lg:order-2 w-full">
-          <div className="flex items-center justify-between border-b border-amber-200/50 pb-2.5">
-            <div className="flex items-center gap-1.5">
-              <span className="flex h-2.0 w-2.0 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-              </span>
-              <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-1">
-                <Bell size={12} className="text-rose-500 animate-bounce" /> Floor Buzzers
-              </h3>
-            </div>
-            <span className="bg-rose-600 text-white font-black text-[9px] uppercase font-mono px-2 py-0.5 rounded-full shadow-xs">
-              {pendingBuzzers.length} Active
-            </span>
-          </div>
-
-          <div className="space-y-3 lg:overflow-y-auto lg:max-h-[550px] pr-1">
-            {pendingBuzzers.length === 0 ? (
-              <div className="text-center py-6 px-3 bg-white/50 rounded-2xl border border-dashed border-amber-150">
-                <p className="text-[11px] text-slate-400 italic">
-                  🎉 No active table chimes. All guests are dining peacefully!
-                </p>
+          {/* TAB: LIVE FLOOR SEATING MONITOR */}
+          {activeTab === 'floor' && (
+            <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-6 shadow-sm">
+              <div className="border-b border-slate-200 pb-4 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Table Overview</h3>
+                  <p className="text-xs text-slate-500">Monitor table occupancy, pending orders, and active bills.</p>
+                </div>
+                <button
+                  onClick={() => setActiveTab('tables')}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[11px] px-3.5 py-2 rounded-xl transition duration-150 shadow-sm flex items-center gap-1.5 cursor-pointer w-max"
+                >
+                  <QrCode size={13} />
+                  <span>QR Code Settings</span>
+                </button>
               </div>
-            ) : (
-              <div className="flex flex-row overflow-x-auto gap-2 lg:flex-col pb-2 lg:pb-0 scrollbar-none snap-x">
-                {pendingBuzzers.map((b) => (
-                  <div key={b.id} className="bg-white border border-amber-200/80 hover:border-amber-400/80 hover:shadow-xs rounded-2xl p-2 md:p-3 flex flex-none w-[190px] sm:w-[220px] lg:w-full flex-col justify-between transition snap-start">
-                    <div className="space-y-1.5 md:space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[8px] md:text-[9px] font-black uppercase bg-indigo-50 text-indigo-750 px-1.5 md:px-2 py-0.5 rounded-full font-mono border border-indigo-100">
-                          Table #{b.tableNumber}
-                        </span>
-                        <span className="text-[7px] md:text-[8px] font-mono text-slate-400">
-                          {new Date(b.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                      
-                      <div className="flex items-start gap-1 md:gap-1.5 pt-0.5 text-slate-800">
-                        <div className="w-4 h-4 md:w-5 md:h-5 flex items-center justify-center bg-amber-50 text-amber-600 rounded-full flex-shrink-0 border border-amber-100">
-                          <Bell size={8} />
+
+              <div className="space-y-8">
+                {restaurant.floors && restaurant.floors.length > 0 ? (() => {
+                  let acc = 0;
+                  return restaurant.floors.map((floor, fIdx) => {
+                    const start = acc;
+                    const end = acc + floor.seats;
+                    acc += floor.seats;
+                    const floorTables = floorTableData.slice(start, end);
+
+                    if (floorTables.length === 0) return null;
+
+                    return (
+                      <div key={fIdx} className="space-y-3">
+                        <h4 className="text-sm font-extrabold text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2">{floor.name}</h4>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
+                          {floorTables.map(t => {
+                            let liveDurationStr = "";
+                            if (t.isOccupied && t.earliestCreatedAt) {
+                              const diffMs = Date.now() - new Date(t.earliestCreatedAt).getTime();
+                              const totalSec = Math.floor(Math.max(0, diffMs) / 1000);
+                              const min = Math.floor(totalSec / 60);
+                              const sec = totalSec % 60;
+                              liveDurationStr = `${min}m ${sec}s`;
+                            }
+
+                            return (
+                              <div
+                                key={t.tableNum}
+                                className={`p-3 rounded-2xl border flex flex-col justify-between h-[145px] transition-all duration-300 relative ${t.floorState === 'empty' ? 'bg-slate-50 border-slate-200 opacity-60' :
+                                    t.floorState === 'pending' ? 'bg-yellow-50 border-yellow-300 shadow-sm shadow-yellow-100' :
+                                      t.floorState === 'preparing' ? 'bg-blue-50 border-blue-300 shadow-sm shadow-blue-105' :
+                                        'bg-emerald-50 border-emerald-200 shadow-sm shadow-emerald-100'
+                                  }`}
+                              >
+                                <div>
+                                  <div className="flex justify-between items-center text-[8.5px] text-slate-400">
+                                    <span className="font-mono">TABLE</span>
+                                    <span className={`w-2 h-2 rounded-full ${t.floorState === 'empty' ? 'bg-slate-300' :
+                                        t.floorState === 'pending' ? 'bg-yellow-500 animate-pulse' :
+                                          t.floorState === 'preparing' ? 'bg-blue-500 animate-pulse' :
+                                            'bg-emerald-500'
+                                      }`}></span>
+                                  </div>
+                                  <h4 className="text-sm font-black text-slate-900 mt-0.5">Seat #{t.tableNum}</h4>
+                                </div>
+
+                                <div className="space-y-1.5 z-10 text-[9px]">
+                                  {t.isOccupied ? (
+                                    <div className="space-y-1">
+                                      <div className="flex justify-between items-center text-slate-800 leading-tight">
+                                        <span className="font-extrabold truncate max-w-[70px]">👤 {t.occupantName}</span>
+                                        <span className="text-[8px] text-indigo-600 font-bold font-mono">⏱ {liveDurationStr.split(' ')[0] || "0m"}</span>
+                                      </div>
+                                      <div className="flex justify-between items-center text-[8.5px] text-slate-505">
+                                        <span>{t.ordersCount}t</span>
+                                        <span className="font-black text-slate-900">₹{t.billTotal.toFixed(0)}</span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleReleaseTable(t.tableNum)}
+                                        className={`w-full text-white font-black py-0.5 rounded-lg text-[8px] uppercase tracking-wider transition cursor-pointer text-center block ${t.floorState === 'pending' || t.floorState === 'preparing' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-900 hover:bg-rose-600'}`}
+                                      >
+                                        {t.floorState === 'pending' || t.floorState === 'preparing' ? 'Release' : 'Settle'}
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="text-slate-400 font-black text-[9px] tracking-wider uppercase">
+                                      VACANT
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="absolute bottom-1 right-2 text-6xl font-black text-slate-950/5 select-none pointer-events-none">
+                                  {t.tableNum}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <h4 className="text-[9px] md:text-[10px] font-black text-slate-900 uppercase tracking-wide truncate">
-                            {b.requestType === 'Request Table Service' ? '🤵 Table' : 
-                             b.requestType === 'Bring Extra Water' ? '🥛 Water' : 
-                             b.requestType === 'Table Clean Up' ? '🧹 Clean' : 
-                             '🧾 Bill'}
-                          </h4>
-                          <p className="text-[8px] md:text-[9px] text-slate-500 italic leading-snug truncate">
-                            "{b.requestType}"
+                      </div>
+                    );
+                  });
+                })() : (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
+                    {floorTableData.map(t => {
+                      let liveDurationStr = "";
+                      if (t.isOccupied && t.earliestCreatedAt) {
+                        const diffMs = Date.now() - new Date(t.earliestCreatedAt).getTime();
+                        const totalSec = Math.floor(Math.max(0, diffMs) / 1000);
+                        const min = Math.floor(totalSec / 60);
+                        const sec = totalSec % 60;
+                        liveDurationStr = `${min}m ${sec}s`;
+                      }
+
+                      return (
+                        <div
+                          key={t.tableNum}
+                          className={`p-3 rounded-2xl border flex flex-col justify-between h-[145px] transition-all duration-300 relative ${t.floorState === 'empty' ? 'bg-slate-50 border-slate-200 opacity-60' :
+                              t.floorState === 'pending' ? 'bg-yellow-50 border-yellow-300 shadow-sm shadow-yellow-100' :
+                                t.floorState === 'preparing' ? 'bg-blue-50 border-blue-300 shadow-sm shadow-blue-105' :
+                                  'bg-emerald-50 border-emerald-200 shadow-sm shadow-emerald-100'
+                            }`}
+                        >
+                          <div>
+                            <div className="flex justify-between items-center text-[8.5px] text-slate-400">
+                              <span className="font-mono">TABLE</span>
+                              <span className={`w-2 h-2 rounded-full ${t.floorState === 'empty' ? 'bg-slate-300' :
+                                  t.floorState === 'pending' ? 'bg-yellow-500 animate-pulse' :
+                                    t.floorState === 'preparing' ? 'bg-blue-500 animate-pulse' :
+                                      'bg-emerald-500'
+                                }`}></span>
+                            </div>
+                            <h4 className="text-sm font-black text-slate-900 mt-0.5">Seat #{t.tableNum}</h4>
+                          </div>
+
+                          <div className="space-y-1.5 z-10 text-[9px]">
+                            {t.isOccupied ? (
+                              <div className="space-y-1">
+                                <div className="flex justify-between items-center text-slate-800 leading-tight">
+                                  <span className="font-extrabold truncate max-w-[70px]">👤 {t.occupantName}</span>
+                                  <span className="text-[8px] text-indigo-600 font-bold font-mono">⏱ {liveDurationStr.split(' ')[0] || "0m"}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-[8.5px] text-slate-505">
+                                  <span>{t.ordersCount}t</span>
+                                  <span className="font-black text-slate-900">₹{t.billTotal.toFixed(0)}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleReleaseTable(t.tableNum)}
+                                  className={`w-full text-white font-black py-0.5 rounded-lg text-[8px] uppercase tracking-wider transition cursor-pointer text-center block ${t.floorState === 'pending' || t.floorState === 'preparing' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-900 hover:bg-rose-600'}`}
+                                >
+                                  {t.floorState === 'pending' || t.floorState === 'preparing' ? 'Release' : 'Settle'}
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="text-slate-400 font-black text-[9px] tracking-wider uppercase">
+                                VACANT
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="absolute bottom-1 right-2 text-6xl font-black text-slate-950/5 select-none pointer-events-none">
+                            {t.tableNum}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 flex flex-wrap gap-4 text-[10px] font-bold text-slate-500">
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-slate-300 rounded-full"></span> Empty Unoccupied</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-yellow-500 rounded-full"></span> Customer Pending Order</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-blue-500 rounded-full"></span> Kitchen Cooking</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-emerald-500 rounded-full"></span> Delivered / Unsettled Tab</span>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: DAY-BY-DAY ORDER HISTORIES */}
+          {activeTab === 'history' && (
+            <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-6 shadow-sm font-sans animate-fade-in">
+              <div className="border-b border-slate-200 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Order History</h3>
+                  <p className="text-xs text-slate-500 mt-1">View day-by-day revenue and order records.</p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsSalesLedgerOpen(true)}
+                    className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <FileText size={14} />
+                    <span>View Detailed Sales Ledger</span>
+                  </button>
+                </div>
+
+                {/* Quick Reset All Filters */}
+                {(historySearch || historyStatusFilter !== 'all' || historyReleaseFilter !== 'all' || historyMinAmount || historyMaxAmount || showAllHistoryDates) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHistorySearch('');
+                      setHistoryStatusFilter('all');
+                      setHistoryReleaseFilter('all');
+                      setHistoryMinAmount('');
+                      setHistoryMaxAmount('');
+                      setShowAllHistoryDates(false);
+                    }}
+                    className="bg-rose-50 hover:bg-rose-100 text-rose-600 text-[11px] font-black uppercase tracking-wider px-3.5 py-2 rounded-xl transition flex items-center gap-1 cursor-pointer"
+                  >
+                    Clear All Filters (✕)
+                  </button>
+                )}
+              </div>
+
+              {dailyHistorySummaries.length === 0 ? (
+                <div className="text-center py-12 border-2 border-dashed rounded-3xl border-slate-200 bg-slate-50">
+                  <ClipboardList size={40} className="text-slate-300 mx-auto mb-3" />
+                  <p className="text-sm font-bold text-slate-800">No Historical Records Found</p>
+                  <p className="text-xs text-slate-400 mt-1">Concluded tickets or new transactions will materialize here on a day-to-day basis.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                  {/* Left Column: Day-by-Day summaries */}
+                  <div className="space-y-3 lg:col-span-1 max-h-[600px] overflow-y-auto pr-1">
+                    <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider block mb-1 font-mono">Select Business Day</span>
+
+                    {/* All Available Dates toggle */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAllHistoryDates(true);
+                      }}
+                      className={`w-full text-left p-4 rounded-2xl border transition-all duration-200 flex justify-between items-center cursor-pointer mb-2 ${showAllHistoryDates
+                          ? 'bg-slate-900 border-slate-950 text-white shadow-md'
+                          : 'bg-indigo-50 border-indigo-100 text-indigo-900 hover:bg-indigo-100/50'
+                        }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-base">📅</span>
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-wide">
+                            All Records Combined
+                          </p>
+                          <p className={`text-[10px] mt-0.5 font-semibold ${showAllHistoryDates ? 'text-slate-300' : 'text-indigo-600'}`}>
+                            Search across all timeline logs
                           </p>
                         </div>
                       </div>
+                      <span className="text-xs font-bold font-mono">→</span>
+                    </button>
+
+                    {dailyHistorySummaries.map((day) => (
+                      <button
+                        key={day.dateStr}
+                        type="button"
+                        onClick={() => {
+                          setSelectedHistoryDate(day.dateStr);
+                          setShowAllHistoryDates(false);
+                        }}
+                        className={`w-full text-left p-4 rounded-2xl border transition-all duration-200 flex justify-between items-center cursor-pointer ${(!showAllHistoryDates && selectedHistoryDate === day.dateStr)
+                            ? 'bg-indigo-600 border-indigo-650 text-white shadow-md'
+                            : 'bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100 hover:border-slate-300'
+                          }`}
+                      >
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-wide">
+                            {formatHistoryDate(day.dateStr)}
+                          </p>
+                          <p className={`text-[10px] mt-1 font-semibold ${(!showAllHistoryDates && selectedHistoryDate === day.dateStr) ? 'text-indigo-100' : 'text-slate-400'}`}>
+                            {day.count} Total Tickets
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-black text-emerald-600">₹{day.revenue.toFixed(2)}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Right Column: Detailed orders list with robust filters */}
+                  <div className="lg:col-span-2 space-y-4">
+                    {/* Advanced Search & Filtering Console */}
+                    <div className="bg-slate-50 p-4 border border-slate-200 rounded-3xl space-y-3">
+                      <span className="text-[9px] uppercase font-black text-slate-400 tracking-wider block font-mono">Advanced Filters Console</span>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {/* Text Search */}
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+                          <input
+                            type="text"
+                            placeholder="Search name, phone, item, table, or ID..."
+                            value={historySearch}
+                            onChange={(e) => setHistorySearch(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl py-2 pl-9 pr-4 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-505 text-slate-800"
+                          />
+                        </div>
+
+                        {/* Date Picker (Like Date Change Request!) */}
+                        <div className="flex items-center gap-2 bg-white px-3 py-1 border border-slate-200 rounded-xl">
+                          <span className="text-[10px] font-black text-slate-400 uppercase font-mono whitespace-nowrap">Jump:</span>
+                          <input
+                            type="date"
+                            value={selectedHistoryDate}
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                setSelectedHistoryDate(e.target.value);
+                                setShowAllHistoryDates(false);
+                              }
+                            }}
+                            className="w-full text-xs font-extrabold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                        {/* Status Filter */}
+                        <div className="flex flex-col space-y-1">
+                          <label className="text-[9px] text-slate-400 font-black uppercase font-mono">Order Status</label>
+                          <select
+                            value={historyStatusFilter}
+                            onChange={(e) => setHistoryStatusFilter(e.target.value as any)}
+                            className="bg-white border border-slate-200 rounded-xl p-2 text-xs font-semibold focus:outline-none text-slate-800"
+                          >
+                            <option value="all">All Order Statuses</option>
+                            <option value="pending">Pending Only</option>
+                            <option value="accepted">Accepted / Cooking</option>
+                            <option value="completed">Completed Only</option>
+                            <option value="rejected">Rejected Only</option>
+                          </select>
+                        </div>
+
+                        {/* Table Release Settle Filter */}
+                        <div className="flex flex-col space-y-1">
+                          <label className="text-[9px] text-slate-400 font-black uppercase font-mono">Billed State</label>
+                          <select
+                            value={historyReleaseFilter}
+                            onChange={(e) => setHistoryReleaseFilter(e.target.value as any)}
+                            className="bg-white border border-slate-200 rounded-xl p-2 text-xs font-semibold focus:outline-none text-slate-800"
+                          >
+                            <option value="all">All States (Active + Cleared)</option>
+                            <option value="active">Active Dining Bills Only</option>
+                            <option value="cleared">Cleared / Released Only</option>
+                          </select>
+                        </div>
+
+                        {/* Price Range */}
+                        <div className="flex flex-col space-y-1">
+                          <label className="text-[9px] text-slate-400 font-black uppercase font-mono">Bill Range (INR)</label>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              placeholder="Min ₹"
+                              value={historyMinAmount}
+                              onChange={(e) => setHistoryMinAmount(e.target.value)}
+                              className="bg-white border border-slate-200 rounded-xl p-2 text-xs font-semibold focus:outline-none w-full text-slate-800"
+                            />
+                            <span className="text-slate-300 text-xs">-</span>
+                            <input
+                              type="number"
+                              placeholder="Max ₹"
+                              value={historyMaxAmount}
+                              onChange={(e) => setHistoryMaxAmount(e.target.value)}
+                              className="bg-white border border-slate-200 rounded-xl p-2 text-xs font-semibold focus:outline-none w-full text-slate-800"
+                            />
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="pt-1.5 border-t border-slate-100 mt-1.5 md:mt-2.5">
-                      <button
-                        type="button"
-                        onClick={() => handleDismissBuzzer(b.id)}
-                        className="w-full bg-slate-900 hover:bg-rose-600 text-white font-extrabold uppercase text-[7px] md:text-[8px] py-1 rounded-md md:rounded-lg transition shadow-xs flex items-center justify-center gap-0.5 cursor-pointer"
-                      >
-                        <Check size={7} className="stroke-[3]" />
-                        <span>Resolve ✔</span>
-                      </button>
+                    {/* Selected Day / Range Context Label */}
+                    <div className="flex justify-between items-center bg-indigo-50/50 px-4 py-2.5 rounded-2xl border border-indigo-100">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 bg-indigo-600 rounded-full"></span>
+                        <span className="text-xs font-bold text-slate-700">
+                          Viewing: <strong className="text-indigo-950">{showAllHistoryDates ? "All Available Dates (Eco-timeline)" : formatHistoryDate(selectedHistoryDate)}</strong>
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-black uppercase font-mono text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-lg">
+                        {filteredHistoryOrders.length} matching tickets
+                      </span>
+                    </div>
+
+                    <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                      {filteredHistoryOrders.length === 0 ? (
+                        <div className="text-center py-10 bg-slate-50 border rounded-2xl border-slate-200">
+                          <p className="text-xs font-bold text-slate-500">No orders match the current active log filters.</p>
+                          <p className="text-[10px] text-slate-400 mt-1">Try to clear some filters or select "All Records Combined".</p>
+                        </div>
+                      ) : (
+                        filteredHistoryOrders.map((ord) => (
+                          <div
+                            key={ord.id}
+                            className="p-4 bg-slate-50/50 border border-slate-200 rounded-2xl hover:border-slate-300 hover:bg-slate-50 transition"
+                          >
+                            <div className="flex justify-between items-start gap-2 flex-wrap pb-2 border-b border-slate-100 mb-2">
+                              <div>
+                                <span className="text-[9px] font-mono font-bold text-indigo-600 block">
+                                  #ID: {ord.id.split('-')[1] || ord.id}
+                                </span>
+                                <span className="text-xs font-black text-slate-900 mt-0.5 inline-block font-sans">
+                                  Table #{ord.tableNumber}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${ord.status === 'completed' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                                    ord.status === 'accepted' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
+                                      ord.status === 'pending' ? 'bg-yellow-50 text-yellow-600 border border-yellow-200' :
+                                        'bg-rose-50 text-rose-500 border border-rose-200'
+                                  }`}>
+                                  {ord.status}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${ord.released === true
+                                    ? 'bg-slate-100 text-slate-500 border border-slate-200'
+                                    : 'bg-orange-50 text-orange-600 border border-orange-200'
+                                  }`}>
+                                  {ord.released === true ? 'Cleared' : 'Active'}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-sans">
+                              <div>
+                                <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wide font-mono">
+                                  Guest details
+                                </p>
+                                <p className="font-extrabold text-slate-800 mt-0.5">{ord.userName}</p>
+                                <p className="text-slate-500 font-mono text-[10px]">{ord.userPhone}</p>
+                                <span className="text-[9px] text-slate-400 font-bold block mt-1.5">
+                                  Ordered: {new Date(ord.createdAt).toLocaleString()}
+                                </span>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wide font-mono">
+                                  Dishes ordered
+                                </p>
+                                <div className="mt-1 space-y-1">
+                                  {ord.items.map((it, idx) => (
+                                    <div key={idx} className="flex justify-between font-bold text-slate-700">
+                                      <span>{it.quantity}x {it.name}</span>
+                                      <span>₹{(it.price * it.quantity).toFixed(2)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="pt-1.5 mt-1.5 border-t border-dashed border-slate-200 flex justify-between font-black text-slate-900">
+                                  <span>Total Amount:</span>
+                                  <span>₹{ord.totalAmount.toFixed(2)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB: ANALYTICS DASHBOARD */}
+          {activeTab === 'analytics' && (
+            <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+              <AnalyticsDashboard restaurantId={restaurant.id} restaurantName={restaurant.name} />
+            </div>
+          )}
+
         </div>
+
+        {/* Conditional Right Side Panel: Live Guest Service Buzzers & Stats (Only on Orders Tab) */}
+        {activeTab === 'orders' && (
+          <div className="lg:col-span-1 space-y-4 lg:sticky lg:top-24 order-1 lg:order-2 w-full">
+
+            {/* Dynamic Operations Summary Stack (Similar to Active Buzzer, styled premium) */}
+            <div className="bg-gradient-to-b from-blue-50/80 to-indigo-50/60 border border-blue-200/80 p-4 rounded-3xl shadow-sm animate-fade-in space-y-4">
+              <div className="flex items-center justify-between border-b border-blue-200/50 pb-2.5">
+                <div className="flex items-center gap-1.5">
+                  <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-1">
+                    <LayoutGrid size={12} className="text-indigo-600" /> Operations Hub
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('tables')}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-305 font-bold text-[11px] uppercase font-mono px-3 py-0.8 rounded-full shadow-xs transition cursor-pointer"
+                >
+                  Key: <span className="font-black text-indigo-650">{restaurant?.verificationPin || '1234'}</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                {/* Net Income Card */}
+                <button
+                  onClick={() => setActiveTab('analytics')}
+                  className="bg-white border border-blue-100 hover:border-indigo-400 hover:shadow-xs p-3 rounded-2xl text-left transition-all duration-300 group cursor-pointer"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Net Income</span>
+                    <DollarSign size={12} className="text-emerald-500 group-hover:scale-110 transition" />
+                  </div>
+                  <div className="mt-1.5 font-black text-sm text-slate-900 tracking-tight">
+                    ₹{stats.revenue.toFixed(2)}
+                  </div>
+                  <span className="text-[8px] text-indigo-550 font-semibold mt-1 block group-hover:underline">Analytics →</span>
+                </button>
+
+                {/* Pending Orders Card */}
+                <button
+                  onClick={() => scrollToOrderSection('pending')}
+                  className="bg-white border border-blue-100 hover:border-indigo-400 hover:shadow-xs p-3 rounded-2xl text-left transition-all duration-300 group cursor-pointer"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Pending</span>
+                    <ClipboardList size={12} className="text-amber-500 group-hover:scale-110 transition" />
+                  </div>
+                  <div className="mt-1.5 font-black text-sm text-slate-900 tracking-tight">
+                    {stats.pending}
+                  </div>
+                  <span className="text-[8px] text-indigo-555 font-semibold mt-1 block group-hover:underline">View Queue →</span>
+                </button>
+
+                {/* Completed Orders Card */}
+                <button
+                  onClick={() => scrollToOrderSection('completed')}
+                  className="bg-white border border-blue-100 hover:border-indigo-400 hover:shadow-xs p-3 rounded-2xl text-left transition-all duration-300 group cursor-pointer"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Completed</span>
+                    <CheckCircle size={12} className="text-emerald-500 group-hover:scale-110 transition" />
+                  </div>
+                  <div className="mt-1.5 font-black text-sm text-slate-900 tracking-tight">
+                    {stats.completed}
+                  </div>
+                  <span className="text-[8px] text-indigo-555 font-semibold mt-1 block group-hover:underline">View Served →</span>
+                </button>
+
+                {/* Seats Occupied Card */}
+                <button
+                  onClick={() => setActiveTab('floor')}
+                  className="bg-white border border-blue-100 hover:border-indigo-400 hover:shadow-xs p-3 rounded-2xl text-left transition-all duration-300 group cursor-pointer"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Occupied</span>
+                    <Utensils size={12} className="text-indigo-500 group-hover:scale-110 transition" />
+                  </div>
+                  <div className="mt-1.5 font-black text-sm text-slate-900 tracking-tight">
+                    {floorTableData.filter(t => t.isOccupied).length} / {restaurant.totalTables}
+                  </div>
+                  <span className="text-[8px] text-indigo-550 font-semibold mt-1 block group-hover:underline">Floor Plan →</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Live Guest Service Buzzers Widget */}
+            <div className="bg-gradient-to-b from-rose-50 to-amber-50/60 border border-amber-200 p-4 rounded-3xl shadow-sm animate-fade-in space-y-4">
+              <div className="flex items-center justify-between border-b border-amber-200/50 pb-2.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="flex h-2.0 w-2.0 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                  </span>
+                  <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-1">
+                    <Bell size={12} className="text-rose-500" /> Floor Buzzers
+                  </h3>
+                </div>
+                <span className="bg-rose-600 text-white font-black text-[9px] uppercase font-mono px-2 py-0.5 rounded-full shadow-xs">
+                  {pendingBuzzers.length} Active
+                </span>
+              </div>
+
+              <div className="space-y-3 lg:overflow-y-auto lg:max-h-[550px] pr-1">
+                {pendingBuzzers.length === 0 ? (
+                  <div className="text-center py-6 px-3 bg-white/50 rounded-2xl border border-dashed border-amber-150">
+                    <p className="text-[11px] text-slate-400 italic">
+                      🎉 No active table chimes. All guests are dining peacefully!
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex flex-row overflow-x-auto gap-2 lg:flex-col pb-2 lg:pb-0 scrollbar-none snap-x">
+                    {pendingBuzzers.map((b) => (
+                      <div key={b.id} className="bg-white border border-amber-200/80 hover:border-amber-400/80 hover:shadow-xs rounded-2xl p-2 md:p-3 flex flex-none w-[190px] sm:w-[220px] lg:w-full flex-col justify-between transition snap-start">
+                        <div className="space-y-1.5 md:space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[8px] md:text-[9px] font-black uppercase bg-indigo-50 text-indigo-700 px-1.5 md:px-2 py-0.5 rounded-full font-mono border border-indigo-100">
+                              Table #{b.tableNumber}
+                            </span>
+                            <span className="text-[7px] md:text-[8px] font-mono text-slate-400">
+                              {new Date(b.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+
+                          <div className="flex items-start gap-1 md:gap-1.5 pt-0.5 text-slate-800">
+                            <div className="w-4 h-4 md:w-5 md:h-5 flex items-center justify-center bg-amber-50 text-amber-600 rounded-full flex-shrink-0 border border-amber-100">
+                              <Bell size={8} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h4 className="text-[9px] md:text-[10px] font-black text-slate-900 uppercase tracking-wide truncate">
+                                {b.requestType === 'Request Table Service' ? '🤵 Table' :
+                                  b.requestType === 'Bring Extra Water' ? '🥛 Water' :
+                                    b.requestType === 'Table Clean Up' ? '🧹 Clean' :
+                                      '🧾 Bill'}
+                              </h4>
+                              <p className="text-[8px] md:text-[9px] text-slate-500 italic leading-snug truncate">
+                                "{b.requestType}"
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="pt-1.5 border-t border-slate-100 mt-1.5 md:mt-2.5">
+                          <button
+                            type="button"
+                            onClick={() => handleDismissBuzzer(b.id)}
+                            className="w-full bg-slate-900 hover:bg-rose-600 text-white font-extrabold uppercase text-[7px] md:text-[8px] py-1 rounded-md md:rounded-lg transition shadow-xs flex items-center justify-center gap-0.5 cursor-pointer"
+                          >
+                            <Check size={7} className="stroke-[3]" />
+                            <span>Resolve ✔</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
+        )}
       </div>
 
       {/* DETAILED GROSS SALES ACCOUNTING LEDGER MODAL */}
       {isSalesLedgerOpen && (
         <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-[32px] w-full max-w-4xl shadow-2xl p-6 border border-slate-100 flex flex-col max-h-[85vh]">
-            <div className="flex justify-between items-center border-b border-slate-205 pb-3">
+            <div className="flex justify-between items-center border-b border-slate-200 pb-3">
               <div className="flex items-center gap-2">
                 <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
                   <FileText size={20} />
                 </div>
                 <div>
-                  <h4 className="text-base font-black text-slate-900">Gross Sales Audit desk</h4>
-                  <p className="text-[11px] text-slate-500 leading-normal">Operational audit ledger. Highlights base subtotals, promotional exclusions, and actual received cash.</p>
+                  <h4 className="text-base font-black text-slate-900">Sales Ledger</h4>
+                  <p className="text-[11px] text-slate-500 leading-normal">Audit ledger showing subtotals, promotional deductions, and received amounts.</p>
                 </div>
               </div>
-              <button 
-                onClick={() => setIsSalesLedgerOpen(false)} 
+              <button
+                onClick={() => setIsSalesLedgerOpen(false)}
                 className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition"
               >
                 <X size={18} />
@@ -2302,7 +2178,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                 <p className="text-base font-black text-slate-900 mt-1">₹{ledgerBreakdown.totalOriginalSubtotal.toFixed(2)}</p>
               </div>
               <div className="bg-rose-50 p-4 border border-rose-100 rounded-2xl">
-                <span className="text-[10px] uppercase tracking-wider font-extrabold text-rose-500 block">Excluded LTO Offers</span>
+                <span className="text-[10px] uppercase tracking-wider font-extrabold text-rose-500 block">Special Offer Deductions</span>
                 <p className="text-base font-black text-rose-600 mt-1">-₹{ledgerBreakdown.totalDeductionsExcluded.toFixed(2)}</p>
               </div>
               <div className="bg-emerald-50 p-4 border border-emerald-100 rounded-2xl">
@@ -2312,53 +2188,53 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
             </div>
 
             <div className="relative mb-3 flex-shrink-0">
-              <div className="text-[10px] font-bold text-slate-500 mb-1">Hold Him Home - Operational Ledger</div>
+              <div className="text-[10px] font-bold text-slate-500 mb-1">Sales Ledger</div>
               <div className="flex gap-2">
                 <Search className="text-slate-400 mt-2 ml-2" size={14} />
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   placeholder="Search ledger entries..."
                   value={ledgerSearch}
                   onChange={(e) => setLedgerSearch(e.target.value)}
                   className="flex-1 bg-slate-50 border border-slate-200 rounded-xl py-2 pl-7 pr-4 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800"
                 />
-                <input 
-                  type="date" 
+                <input
+                  type="date"
                   value={ledgerFromDate}
                   onChange={(e) => setLedgerFromDate(e.target.value)}
                   className="bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 text-xs font-semibold text-slate-800"
                 />
-                <input 
-                  type="date" 
+                <input
+                  type="date"
                   value={ledgerToDate}
                   onChange={(e) => setLedgerToDate(e.target.value)}
                   className="bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 text-xs font-semibold text-slate-800"
                 />
-                <button 
-                 onClick={() => { setLedgerFromDate(''); setLedgerToDate(''); }}
-                 className="bg-slate-900 text-white rounded-xl px-3 py-1 text-xs font-bold"
+                <button
+                  onClick={() => { setLedgerFromDate(''); setLedgerToDate(''); }}
+                  className="bg-slate-900 text-white rounded-xl px-3 py-1 text-xs font-bold"
                 >Clear</button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto min-h-0 border border-slate-150 rounded-2xl">
+            <div className="flex-1 overflow-y-auto min-h-0 border border-slate-200 rounded-2xl">
               <table className="w-full text-left border-collapse text-xs text-slate-700">
-                <thead className="bg-slate-50 font-bold uppercase tracking-wider text-[10px] text-slate-500 sticky top-0 border-b border-slate-150">
+                <thead className="bg-slate-50 font-bold uppercase tracking-wider text-[10px] text-slate-500 sticky top-0 border-b border-slate-200">
                   <tr>
                     <th className="py-2.5 px-3">Ticket ID</th>
                     <th className="py-2.5 px-3">Seat</th>
                     <th className="py-2.5 px-3">Customer Profile</th>
                     <th className="py-2.5 px-3">Base Price</th>
-                    <th className="py-2.5 px-3">Promo Exclusion</th>
-                    <th className="py-2.5 px-3 border-r border-slate-100">Received Cost</th>
+                    <th className="py-2.5 px-3">Offer Deduction</th>
+                    <th className="py-2.5 px-3 border-r border-slate-100">Amount Received</th>
                     <th className="py-2.5 px-3 text-right">Fulfillment</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {ledgerBreakdown.validOrders
-                    .filter(o => 
-                      o.userName.toLowerCase().includes(ledgerSearch.toLowerCase()) || 
-                      o.id.includes(ledgerSearch) || 
+                    .filter(o =>
+                      o.userName.toLowerCase().includes(ledgerSearch.toLowerCase()) ||
+                      o.id.includes(ledgerSearch) ||
                       o.tableNumber.toString() === ledgerSearch
                     )
                     .map(ord => {
@@ -2377,7 +2253,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                           </td>
                           <td className="py-2.5 px-3 font-black text-emerald-600 border-r border-slate-100">₹{ord.totalAmount.toFixed(2)}</td>
                           <td className="py-2.5 px-3 text-right">
-                            <span className={`px-2 py-0.5 rounded-full font-black text-[9px] uppercase ${ord.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : 'bg-yellow-105 text-yellow-600'}`}>
+                            <span className={`px-2 py-0.5 rounded-full font-black text-[9px] uppercase ${ord.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : 'bg-yellow-100 text-yellow-600'}`}>
                               {ord.status}
                             </span>
                           </td>
@@ -2394,7 +2270,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
             </div>
 
             <div className="pt-4 border-t border-slate-100 flex justify-end mt-3 flex-shrink-0">
-              <button 
+              <button
                 onClick={() => setIsSalesLedgerOpen(false)}
                 className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-6 py-2.5 rounded-xl transition"
               >
@@ -2407,9 +2283,9 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
 
       {/* DISH CREATE & EDIT MODAL (INTEGRATES SERVER-SIDE GEMINI COPYWRITER) */}
       {isMenuModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-6 border border-slate-100 space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-150 pb-3">
+        <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-6 border border-slate-100 flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center border-b border-slate-200 pb-3 shrink-0">
               <h4 className="text-base font-black text-slate-900">
                 {editingItem ? `Modify ${editingItem.name}` : "Create Catalog Option"}
               </h4>
@@ -2418,29 +2294,29 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
               </button>
             </div>
 
-            <form onSubmit={handleSaveMenuItem} className="space-y-3.5 text-xs text-slate-800">
-              <div className="space-y-3">
-                
+            <form onSubmit={handleSaveMenuItem} className="flex-1 flex flex-col min-h-0 text-xs text-slate-800 mt-3">
+              <div className="flex-1 overflow-y-auto space-y-3 pr-1.5 py-1 min-h-0 scrollbar-thin">
+
                 <div>
-                  <label className="block font-bold text-slate-450 uppercase mb-1">Dish Name *</label>
-                  <input 
-                    type="text" 
+                  <label className="block font-bold text-slate-400 uppercase mb-1">Dish Name *</label>
+                  <input
+                    type="text"
                     required
                     placeholder="e.g. Handmade Fettuccine"
                     value={menuForm.name}
                     onChange={(e) => setMenuForm({ ...menuForm, name: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-205 rounded-xl px-3 py-2 font-semibold text-slate-800"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-semibold text-slate-800"
                   />
                 </div>
 
                 <div>
                   <div className="flex justify-between items-center mb-1">
-                    <label className="block font-bold text-slate-450 uppercase">Ingredients & Descriptions</label>
+                    <label className="block font-bold text-slate-400 uppercase">Ingredients & Descriptions</label>
                     <button
                       type="button"
                       onClick={handleAiWriteDescription}
                       disabled={isAiWritingDescription || !menuForm.name}
-                      className="bg-indigo-50 hover:bg-indigo-100 text-indigo-650 border border-indigo-200 font-black px-2.5 py-1 text-[10px] rounded-lg transition disabled:opacity-50 flex items-center gap-1 shadow-sm"
+                      className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-200 font-black px-2.5 py-1 text-[10px] rounded-lg transition disabled:opacity-50 flex items-center gap-1 shadow-sm"
                     >
                       {isAiWritingDescription ? (
                         <>
@@ -2460,29 +2336,29 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                     placeholder="Enter details or let Gemini write copy..."
                     value={menuForm.description}
                     onChange={(e) => setMenuForm({ ...menuForm, description: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-205 rounded-xl px-3 py-2 font-semibold text-slate-850"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-semibold text-slate-850"
                   ></textarea>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-bold text-slate-450 uppercase mb-1">Price (₹) *</label>
-                    <input 
-                      type="text" 
+                    <label className="block font-bold text-slate-400 uppercase mb-1">Price (₹) *</label>
+                    <input
+                      type="text"
                       required
                       placeholder="e.g. 299.00"
                       value={menuForm.price}
                       onChange={(e) => setMenuForm({ ...menuForm, price: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-205 rounded-xl px-3 py-2 font-black text-slate-850"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-black text-slate-850"
                     />
                   </div>
 
                   <div>
-                    <label className="block font-bold text-slate-450 uppercase mb-1">Menu Category</label>
+                    <label className="block font-bold text-slate-400 uppercase mb-1">Menu Category</label>
                     <select
                       value={['Starters', 'Mains', 'Desserts', 'Drinks'].includes(menuForm.category) ? menuForm.category : 'Custom...'}
                       onChange={(e) => setMenuForm({ ...menuForm, category: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-205 rounded-xl px-2 py-2 font-bold text-slate-705"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 font-bold text-slate-700"
                     >
                       <option value="Starters">Starters</option>
                       <option value="Mains">Mains</option>
@@ -2495,25 +2371,25 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
 
                 {(!['Starters', 'Mains', 'Desserts', 'Drinks'].includes(menuForm.category) || menuForm.category === 'Custom...') && (
                   <div className="mt-2.5">
-                    <label className="block font-bold text-slate-450 uppercase mb-1">Custom Category Name *</label>
-                    <input 
-                      type="text" 
+                    <label className="block font-bold text-slate-400 uppercase mb-1">Custom Category Name *</label>
+                    <input
+                      type="text"
                       required
                       placeholder="e.g. Breads"
                       value={menuForm.category === 'Custom...' ? '' : menuForm.category}
                       onChange={(e) => setMenuForm({ ...menuForm, category: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-205 rounded-xl px-3 py-2 font-bold text-slate-850"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold text-slate-850"
                     />
                   </div>
                 )}
 
                 {/* Visual Food Photography & AI Shoot Studio */}
                 <div className="pt-2.5 border-t border-slate-100 space-y-2 relative overflow-hidden">
-                  
+
                   {/* Shutter Camera Flash effect */}
                   {shootFlash && (
                     <div className="absolute inset-0 bg-white z-40 flex flex-col items-center justify-center animate-pulse">
-                      <div className="text-indigo-650 flex flex-col items-center gap-1 font-black text-xs">
+                      <div className="text-indigo-600 flex flex-col items-center gap-1 font-black text-xs">
                         <Camera size={36} className="animate-bounce" />
                         <span>*SHUTTER FLASH*</span>
                       </div>
@@ -2525,15 +2401,14 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                       <span className="font-extrabold text-slate-700 block text-xs">📸 Food Photography</span>
                       <span className="text-[10px] text-slate-400 block leading-none mt-0.5">Apply a high-quality dish profile</span>
                     </div>
-                    
+
                     <button
                       type="button"
                       onClick={() => setIsPhotoStudioOpen(!isPhotoStudioOpen)}
-                      className={`font-black text-[10px] px-2.5 py-1 rounded-lg border transition duration-150 flex items-center gap-1 shadow-sm ${
-                        isPhotoStudioOpen 
+                      className={`font-black text-[10px] px-2.5 py-1 rounded-lg border transition duration-150 flex items-center gap-1 shadow-sm ${isPhotoStudioOpen
                           ? 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100'
-                          : 'bg-indigo-50 text-indigo-650 border-indigo-200 hover:bg-indigo-100'
-                      }`}
+                          : 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100'
+                        }`}
                     >
                       <Camera size={11} />
                       <span>{isPhotoStudioOpen ? "Hide Studio" : "✨ AI Photo Shoot"}</span>
@@ -2541,13 +2416,13 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                   </div>
 
                   {/* Image input and current preview */}
-                  <div className="flex gap-2.5 items-center bg-slate-50 p-2 rounded-xl border border-slate-150">
+                  <div className="flex gap-2.5 items-center bg-slate-50 p-2 rounded-xl border border-slate-200">
                     <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-slate-200 border border-slate-300 shrink-0 shadow-xs flex items-center justify-center">
                       {menuForm.imageUrl ? (
-                        <img 
-                          src={menuForm.imageUrl} 
-                          alt="Dish Preview" 
-                          className="w-full h-full object-cover" 
+                        <img
+                          src={menuForm.imageUrl}
+                          alt="Dish Preview"
+                          className="w-full h-full object-cover"
                           referrerPolicy="no-referrer"
                         />
                       ) : (
@@ -2558,20 +2433,20 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                     </div>
                     <div className="flex-1">
                       <label className="block text-[9px] font-bold text-slate-400 mb-0.5">Image Location URL</label>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         placeholder="Paste image address or use AI Studio..."
                         value={menuForm.imageUrl}
                         onChange={(e) => setMenuForm({ ...menuForm, imageUrl: e.target.value })}
-                        className="w-full bg-white border border-slate-205 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-750"
+                        className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-750"
                       />
                     </div>
                   </div>
 
                   {/* AI Studio Expanded Panel */}
                   {isPhotoStudioOpen && (
-                    <div className="bg-gradient-to-br from-indigo-50/40 to-slate-50 border border-indigo-150/70 rounded-xl p-3 space-y-2.5 transition-all duration-300">
-                      
+                    <div className="bg-gradient-to-br from-indigo-50/40 to-slate-50 border border-indigo-200/70 rounded-xl p-3 space-y-2.5 transition-all duration-300">
+
                       {/* Interactive Lighting Selection */}
                       <div>
                         <label className="block text-[10px] font-extrabold text-slate-600 mb-1">STYLING DIRECTING & LIGHTING</label>
@@ -2581,11 +2456,10 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                               type="button"
                               key={style}
                               onClick={() => setSelectedStudioLighting(style)}
-                              className={`p-1.5 rounded-lg border text-left flex flex-col justify-between transition-all ${
-                                selectedStudioLighting === style
+                              className={`p-1.5 rounded-lg border text-left flex flex-col justify-between transition-all ${selectedStudioLighting === style
                                   ? 'bg-white border-indigo-550 text-indigo-900 shadow-xs ring-1 ring-indigo-100'
                                   : 'bg-white/60 border-slate-200 text-slate-600 hover:bg-white hover:border-slate-300'
-                              }`}
+                                }`}
                             >
                               <span className="font-extrabold text-[10px]">
                                 {style === 'moody' && "🌟 Fine-Dining Moody"}
@@ -2610,12 +2484,12 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                           <label className="block text-[9px] font-extrabold text-slate-500">CUSTOM SHOOT KEYWORD (OPTIONAL)</label>
                           <span className="text-[8px] text-slate-400">Defaults to dish name</span>
                         </div>
-                        <input 
+                        <input
                           type="text"
                           placeholder={`e.g. ${menuForm.name || "Handmade Pasta"}`}
                           value={customShootQuery}
                           onChange={(e) => setCustomShootQuery(e.target.value)}
-                          className="w-full bg-white border border-slate-202 rounded-lg px-2.5 py-1 text-[11px] font-semibold text-slate-750"
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-[11px] font-semibold text-slate-750"
                         />
                       </div>
 
@@ -2625,7 +2499,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                           type="button"
                           onClick={handleFormulatePhotographyPrompt}
                           disabled={isFormulatingPrompt || !menuForm.name}
-                          className="w-1/3 bg-white border border-slate-350 hover:bg-slate-50 text-slate-700 text-[9px] font-extrabold py-1.5 px-2 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-1 shadow-xs"
+                          className="w-1/3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-[9px] font-extrabold py-1.5 px-2 rounded-lg transition disabled:opacity-50 flex items-center justify-center gap-1 shadow-xs"
                         >
                           {isFormulatingPrompt ? (
                             <>
@@ -2653,7 +2527,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                             </>
                           ) : (
                             <>
-                              <Sparkles size={11} className="text-indigo-200 fill-indigo-200 animate-pulse" />
+                              <Sparkles size={11} className="text-indigo-200 fill-indigo-200" />
                               <span>📸 Execute Food Photography Shoot</span>
                             </>
                           )}
@@ -2671,7 +2545,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                       {/* Candidates Visual Selection pool */}
                       {shootResults.length > 0 && (
                         <div className="space-y-1.5 pt-1 border-t border-slate-200">
-                          <span className="block text-[9px] font-extrabold text-slate-550">SELECT DEVELOPED PHOTO (CLICK TO ASSIGN)</span>
+                          <span className="block text-[9px] font-extrabold text-slate-500">SELECT DEVELOPED PHOTO (CLICK TO ASSIGN)</span>
                           <div className="grid grid-cols-4 gap-1.5">
                             {shootResults.map((url, i) => (
                               <button
@@ -2681,16 +2555,15 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                                   setMenuForm({ ...menuForm, imageUrl: url });
                                   triggerAppAlert("Shot Assigned", "Item image set to this professional culinary variant!", "success");
                                 }}
-                                className={`relative aspect-square rounded-lg overflow-hidden border-2 transition duration-200 hover:scale-105 ${
-                                  menuForm.imageUrl === url 
-                                    ? 'border-indigo-600 ring-2 ring-indigo-200' 
+                                className={`relative aspect-square rounded-lg overflow-hidden border-2 transition duration-200 hover:scale-105 ${menuForm.imageUrl === url
+                                    ? 'border-indigo-600 ring-2 ring-indigo-200'
                                     : 'border-slate-100 hover:border-slate-300'
-                                }`}
+                                  }`}
                               >
-                                <img 
-                                  src={url} 
-                                  alt={`Shot Variant ${i+1}`} 
-                                  className="w-full h-full object-cover" 
+                                <img
+                                  src={url}
+                                  alt={`Shot Variant ${i + 1}`}
+                                  className="w-full h-full object-cover"
                                   referrerPolicy="no-referrer"
                                 />
                                 {menuForm.imageUrl === url && (
@@ -2713,8 +2586,8 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
 
                 <div className="pt-2 border-t border-slate-100 flex justify-between items-center">
                   <span className="font-extrabold text-slate-700">Is Pure Vegetarian (Veg)?</span>
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     checked={menuForm.isVeg}
                     onChange={(e) => setMenuForm({ ...menuForm, isVeg: e.target.checked })}
                     className="w-4 h-4 text-emerald-600 rounded"
@@ -2729,8 +2602,8 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                       <span className="font-extrabold text-slate-700 block">Apply Flash LTO Promo?</span>
                       <span className="text-[10px] text-slate-400">Flag instant value save to patrons</span>
                     </div>
-                    <input 
-                      type="checkbox" 
+                    <input
+                      type="checkbox"
                       checked={menuForm.isLimitedTimeOffer}
                       onChange={(e) => setMenuForm({ ...menuForm, isLimitedTimeOffer: e.target.checked })}
                       className="w-4 h-4 text-emerald-655 rounded"
@@ -2741,8 +2614,8 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
                         <label className="block font-bold text-amber-800 mb-0.5">Promo Details Headline</label>
-                        <input 
-                          type="text" 
+                        <input
+                          type="text"
                           placeholder="e.g. Save ₹50 Today!"
                           value={menuForm.offerDetails}
                           onChange={(e) => setMenuForm({ ...menuForm, offerDetails: e.target.value })}
@@ -2751,8 +2624,8 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                       </div>
                       <div>
                         <label className="block font-bold text-amber-800 mb-0.5">Deduction Value (₹)</label>
-                        <input 
-                          type="text" 
+                        <input
+                          type="text"
                           placeholder="e.g. 50.00"
                           value={menuForm.promoValue}
                           onChange={(e) => setMenuForm({ ...menuForm, promoValue: e.target.value })}
@@ -2765,15 +2638,15 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
 
               </div>
 
-              <div className="pt-4 border-t border-slate-105 flex gap-2">
-                <button 
-                  type="button" 
+              <div className="pt-4 border-t border-slate-105 flex gap-2 shrink-0 mt-3">
+                <button
+                  type="button"
                   onClick={() => setIsMenuModalOpen(false)}
                   className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-651 py-2 rounded-xl font-bold transition"
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   type="submit"
                   className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-bold shadow transition text-sm"
                 >
@@ -2787,9 +2660,9 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
 
       {/* EXPLICIT TABLE SETTLE & RELEASE OPTIONS CHOOSER MODAL */}
       {releasingTableNum !== null && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-6 border border-slate-150 space-y-5">
-            <div className="flex justify-between items-center border-b border-slate-150 pb-3">
+        <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-6 border border-slate-200 space-y-5">
+            <div className="flex justify-between items-center border-b border-slate-200 pb-3">
               <h4 className="text-base font-black text-slate-900 flex items-center gap-2">
                 <ArrowLeftRight size={18} className="text-indigo-600" />
                 Settle & Release Table #{releasingTableNum}
@@ -2803,7 +2676,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
               <p className="text-xs text-slate-600 leading-relaxed">
                 Choose how you want to settle any outstanding tickets or orders for <strong className="text-slate-900">Table #{releasingTableNum}</strong> prior to discharging the customer and clearing the table.
               </p>
-              
+
               {(() => {
                 const tableData = floorTableData.find(t => t.tableNum === releasingTableNum);
                 if (!tableData) return null;
@@ -2827,7 +2700,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                 <CheckCircle size={15} />
                 Prepare and Release
               </button>
-              
+
               <button
                 type="button"
                 onClick={() => handleCancelAndRelease(releasingTableNum)}

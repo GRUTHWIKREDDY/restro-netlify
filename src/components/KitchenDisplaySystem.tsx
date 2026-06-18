@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
-import { ChefHat, Clock, AlertTriangle, Check, X, ClipboardList, Info, ArrowLeftRight, AlertOctagon } from 'lucide-react';
+import { ChefHat, Clock, AlertTriangle, Check, X, ClipboardList, Info, ArrowLeftRight, AlertOctagon, Volume2, VolumeX } from 'lucide-react';
 import { Restaurant, Order, Buzzer } from '../types';
 
 interface KdsProps {
@@ -71,50 +71,95 @@ export default function KitchenDisplaySystem({
     return () => clearInterval(timer);
   }, []);
 
-  // Audio system chime alert for incoming pending tickets
+  // Audio system: "Dong" bell alert for new incoming orders
   const prevPendingCount = useRef(0);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const pendingOrdersCount = useMemo(() => {
     return activeRestaurantOrders.filter(o => o.status === 'pending').length;
   }, [activeRestaurantOrders]);
 
+  const getAudioCtx = () => {
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume();
+    }
+    return audioCtxRef.current;
+  };
+
+  const playDongSound = () => {
+    if (!soundEnabled) return;
+    try {
+      const ctx = getAudioCtx();
+      const now = ctx.currentTime;
+
+      // Deep bell "dong" — low fundamental + harmonics for resonance
+      const notes = [
+        { freq: 329.63, start: 0, dur: 1.2 },   // E4 — warm low bell
+        { freq: 659.25, start: 0, dur: 1.0 },   // E5 — octave harmonic
+        { freq: 987.77, start: 0.08, dur: 0.8 }, // B5 — fifth shimmer
+        { freq: 1318.51, start: 0.15, dur: 0.6 }, // E6 — bright ring
+      ];
+
+      notes.forEach(({ freq, start, dur }) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + start);
+        gain.gain.setValueAtTime(0.18, now + start);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + start + dur);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + start);
+        osc.stop(now + start + dur);
+      });
+    } catch (err) {
+      console.error("Audio dong error:", err);
+    }
+  };
+
+  const playBuzzerAlert = () => {
+    if (!soundEnabled) return;
+    try {
+      const ctx = getAudioCtx();
+      const now = ctx.currentTime;
+
+      // Rapid double-tap alert for buzzer
+      for (let i = 0; i < 3; i++) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(880, now + i * 0.18);
+        gain.gain.setValueAtTime(0.12, now + i * 0.18);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.18 + 0.12);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + i * 0.18);
+        osc.stop(now + i * 0.18 + 0.12);
+      }
+    } catch (err) {
+      console.error("Audio buzzer error:", err);
+    }
+  };
+
   useEffect(() => {
     if (pendingOrdersCount > prevPendingCount.current) {
-      try {
-        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        
-        // Ring tone 1 (D5 key chord)
-        const osc1 = audioCtx.createOscillator();
-        const gain1 = audioCtx.createGain();
-        osc1.type = 'sine';
-        osc1.frequency.setValueAtTime(587.33, audioCtx.currentTime);
-        gain1.gain.setValueAtTime(0.08, audioCtx.currentTime);
-        gain1.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.6);
-        osc1.connect(gain1);
-        gain1.connect(audioCtx.destination);
-        osc1.start();
-        osc1.stop(audioCtx.currentTime + 0.6);
-
-        // Ring tone 2 (A5 chime key chord) delayed by 150ms
-        setTimeout(() => {
-          try {
-            const osc2 = audioCtx.createOscillator();
-            const gain2 = audioCtx.createGain();
-            osc2.type = 'sine';
-            osc2.frequency.setValueAtTime(880.00, audioCtx.currentTime);
-            gain2.gain.setValueAtTime(0.08, audioCtx.currentTime);
-            gain2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
-            osc2.connect(gain2);
-            gain2.connect(audioCtx.destination);
-            osc2.start();
-            osc2.stop(audioCtx.currentTime + 0.8);
-          } catch (err) {}
-        }, 150);
-      } catch (err) {
-        console.error("Audio API warning:", err);
-      }
+      playDongSound();
     }
     prevPendingCount.current = pendingOrdersCount;
   }, [pendingOrdersCount]);
+
+  // Buzzer alert sound
+  const prevBuzzerCount = useRef(0);
+  const pendingBuzzersCount = pendingKitchenBuzzers.length;
+  useEffect(() => {
+    if (pendingBuzzersCount > prevBuzzerCount.current) {
+      playBuzzerAlert();
+    }
+    prevBuzzerCount.current = pendingBuzzersCount;
+  }, [pendingBuzzersCount]);
 
   return (
     <div id="kitchen-display-system-root" className="flex-1 bg-slate-950 text-slate-100 p-4 sm:p-6 lg:p-8 flex flex-col space-y-4">
@@ -132,8 +177,15 @@ export default function KitchenDisplaySystem({
           </div>
         </div>
 
-        <div className="text-[10px] text-slate-455 font-mono tracking-wide uppercase bg-slate-950/80 px-3.5 py-1.5 rounded-xl border border-slate-850">
+        <div className="text-[10px] text-slate-455 font-mono tracking-wide uppercase bg-slate-950/80 px-3.5 py-1.5 rounded-xl border border-slate-850 flex items-center gap-3">
           🔒 Secure Authenticated Workspace
+          <button
+            onClick={() => setSoundEnabled(p => !p)}
+            className={`text-sm px-2 py-0.5 rounded-lg border transition cursor-pointer ${soundEnabled ? 'bg-emerald-950/60 border-emerald-700/50 text-emerald-400 hover:bg-emerald-900/60' : 'bg-slate-800 border-slate-700 text-slate-500 hover:bg-slate-700'}`}
+            title={soundEnabled ? 'Sound ON — click to mute' : 'Sound OFF — click to unmute'}
+          >
+            {soundEnabled ? '🔔 Sound ON' : '🔕 Muted'}
+          </button>
         </div>
       </div>
 
