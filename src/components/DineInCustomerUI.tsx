@@ -135,7 +135,7 @@ export default function DineInCustomerUI({
       const activeSessionOrders = sessionOrders.filter(o => o.released !== true);
       if (activeSessionOrders.length === 0) {
         setCustomerSession(null);
-        triggerAppAlert("Session Completed", "Your dining session has been released by the restaurant.", "info");
+        triggerAppAlert("Dining Finished", "The restaurant has closed your session.", "info");
       }
     }
   }, [orders, restaurant.id, tableNumber, customerSession, setCustomerSession]);
@@ -220,11 +220,11 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
         body: JSON.stringify(newBuzzer)
       });
 
-      triggerAppAlert("Buzzer Signal Dispatched", `A staff member has been notified for "${type}".`, "success");
+      triggerAppAlert("Waiter Notified", `A staff member has been notified for "${type}".`, "success");
       setIsBuzzerOpen(false);
     } catch (err) {
       console.error("Buzzer summon error:", err);
-      triggerAppAlert("Wireless Error", "Could not send waiter beep.", "error");
+      triggerAppAlert("Connection Error", "We couldn't send the call to the waiter.", "error");
     } finally {
       setIsSubmittingBuzzer(false);
     }
@@ -278,7 +278,7 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
         ratingsCount: newCount
       }), { onConflict: 'id' });
 
-      triggerAppAlert("Feedback Recorded", `Thank you for rating ${item.name} with ${stars} stars!`, "success");
+      triggerAppAlert("Thank you for your feedback!", `Thank you for rating ${item.name} with ${stars} stars!`, "success");
       setRatingItemMenuId(null);
     } catch (e) {
       triggerAppAlert("Rating Error", "Could not submit review scale.", "error");
@@ -316,7 +316,7 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
       });
 
       triggerAppAlert(
-        isFav ? "Removed" : "Favourited ❤️",
+        isFav ? "Removed" : "Favourited ",
         isFav ? "Dish removed from favourites." : "Dish added to favourites.",
         "success"
       );

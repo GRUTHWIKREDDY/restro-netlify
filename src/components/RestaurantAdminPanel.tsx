@@ -87,9 +87,9 @@ export default function RestaurantAdminPanel({
   const handleDismissBuzzer = async (buzzerId: string) => {
     try {
       await supabase.from('buzzers').delete().eq('id', buzzerId);
-      triggerAppAlert("Summon Cleared", "Table waiter call has been verified and settled.", "success");
+      triggerAppAlert("Table Call Cleared", "The waiter has responded to the table.", "success");
     } catch (e) {
-      triggerAppAlert("Buzzer Settle Error", "Could not remove chime signal.", "error");
+      triggerAppAlert("Alert Clear Error", "We couldn't clear the alert.", "error");
     }
   };
 
@@ -293,8 +293,8 @@ export default function RestaurantAdminPanel({
   const handleToggleOperationalStatus = () => {
     if (restaurant.lockedBySuperAdmin) {
       triggerAppAlert(
-        "Administrative Hold Lock",
-        "Administrative Hold: Your kitchen operational privileges are currently locked by kCodeIT Super Admin. Please contact APP Admins to reactivate.",
+        "System Paused",
+        "Your kitchen access is currently paused by the system manager. Please contact the main administrator.",
         "error"
       );
       return;
@@ -303,7 +303,7 @@ export default function RestaurantAdminPanel({
     const nextStatus = restaurant.status === 'active' ? 'inactive' : 'active';
     onChangeRestaurantStatus(nextStatus);
     triggerAppAlert(
-      "Operational Configuration Updated",
+      "Settings Updated",
       `Your kitchen status has been updated to ${nextStatus.toUpperCase()} successfully.`,
       "success"
     );
@@ -322,7 +322,7 @@ export default function RestaurantAdminPanel({
 
   const handleAiWriteDescription = async () => {
     if (!menuForm.name) {
-      triggerAppAlert("Parameters Required", "Please specify a Dish Title to allow Gemini to analyze gourmet descriptors.", "error");
+      triggerAppAlert("Missing Dish Details", "Please enter a dish name so the AI can write a tasty description.", "error");
       return;
     }
 
@@ -413,7 +413,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
 
   const handleFormulatePhotographyPrompt = async () => {
     if (!menuForm.name) {
-      triggerAppAlert("Parameters Required", "Please specify a Dish Title to instruct the AI Photography Director.", "error");
+      triggerAppAlert("Missing Dish Details", "Please specify a Dish Title to instruct the AI Photography Director.", "error");
       return;
     }
     setIsFormulatingPrompt(true);
@@ -589,7 +589,7 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
       const totalOrdersCount = orders.length;
       const completedOrdersCount = orders.filter(o => o.status === 'completed').length;
       const totalRevenue = orders.filter(o => o.status === 'completed').reduce((sum, o) => sum + o.totalAmount, 0);
-      
+
       const itemCounts: Record<string, number> = {};
       orders.filter(o => o.status === 'completed').forEach(o => {
         o.items.forEach(it => {
@@ -820,12 +820,12 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                     className="bg-white p-3.5 rounded-2xl border border-slate-200 flex flex-col space-y-3 transition-all duration-300"
                   >
                     <span className={`text-xs font-black uppercase flex items-center gap-1 pb-2 border-b border-slate-100 ${sectionStatus === 'pending' ? 'text-yellow-600' :
-                        sectionStatus === 'accepted' ? 'text-blue-600' :
-                          sectionStatus === 'completed' ? 'text-emerald-600' : 'text-rose-600'
+                      sectionStatus === 'accepted' ? 'text-blue-600' :
+                        sectionStatus === 'completed' ? 'text-emerald-600' : 'text-rose-600'
                       }`}>
-                      {sectionStatus === 'pending' ? 'Pending Queue' :
-                        sectionStatus === 'accepted' ? 'Preparing (Cooking)' :
-                          sectionStatus === 'completed' ? 'Completed (Served)' : 'Rejected / Cancelled'} ({list.length})
+                      {sectionStatus === 'pending' ? 'Pending' :
+                        sectionStatus === 'accepted' ? 'Cooking' :
+                          sectionStatus === 'completed' ? 'Served' : 'Cancelled'} ({list.length})
                     </span>
 
                     <div className="space-y-3 overflow-y-auto max-h-[calc(100vh-285px)] scrollbar-none">
@@ -833,8 +833,8 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                         <div
                           key={o.id}
                           className={`bg-white p-4 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300 space-y-4 relative border-l-4 ${o.status === 'pending' ? 'border-l-amber-500 bg-amber-50/5' :
-                              o.status === 'accepted' ? 'border-l-blue-500 bg-blue-50/5' :
-                                o.status === 'completed' ? 'border-l-emerald-500 bg-emerald-50/5' : 'border-l-rose-500 bg-rose-50/5'
+                            o.status === 'accepted' ? 'border-l-blue-500 bg-blue-50/5' :
+                              o.status === 'completed' ? 'border-l-emerald-500 bg-emerald-50/5' : 'border-l-rose-500 bg-rose-50/5'
                             }`}
                         >
                           <div className="flex justify-between font-bold text-[11px]">
@@ -861,8 +861,8 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                                     </button>
                                   )}
                                   <span className={`px-1.5 py-0.5 text-[9px] font-black rounded ${o.status === 'pending' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                                      o.status === 'accepted' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
-                                        'bg-slate-100 text-slate-700 border border-slate-200'
+                                    o.status === 'accepted' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                                      'bg-slate-100 text-slate-700 border border-slate-200'
                                     }`}>
                                     {it.quantity}x
                                   </span>
@@ -998,8 +998,8 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                   }}
                   disabled={!!restaurant.lockAllItems}
                   className={`font-bold text-xs py-2 px-4 rounded-xl transition flex items-center gap-1 self-start ${restaurant.lockAllItems
-                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
-                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                     }`}
                 >
                   <Plus size={15} />
@@ -1113,7 +1113,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                                 }
                               }}
                               className={`px-1.5 py-0.5 text-[10px] rounded font-black uppercase ${item.isAvailable ? 'bg-emerald-50 text-emerald-600 border border-emerald-250' :
-                                  'bg-rose-50 text-rose-500 border border-rose-200'
+                                'bg-rose-50 text-rose-500 border border-rose-200'
                                 } ${restaurant.lockAllItems ? 'opacity-60 cursor-not-allowed' : ''}`}
                             >
                               {item.isAvailable ? "Available" : "Sold Out"}
@@ -1221,8 +1221,8 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                             onClick={handleCommitTableCount}
                             disabled={!!restaurant.disableQrGeneration}
                             className={`flex-1 py-1.5 px-3 rounded-xl font-bold transition text-xs shadow-xs ${restaurant.disableQrGeneration
-                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
-                                : 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer'
+                              ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                              : 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer'
                               }`}
                           >
                             Set Global Table Count
@@ -1288,7 +1288,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                         </div>
                       )}
                       <p className="text-[9.5px] text-slate-400 leading-normal">
-                        Scale your physical seats dynamically. Max: 200. Code routes are created live.
+                        Scale your physical seats dynamically. Max: 200.
                       </p>
                     </div>
 
@@ -1637,18 +1637,18 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                               <div
                                 key={t.tableNum}
                                 className={`p-3 rounded-2xl border flex flex-col justify-between h-[145px] transition-all duration-300 relative ${t.floorState === 'empty' ? 'bg-slate-50 border-slate-200 opacity-60' :
-                                    t.floorState === 'pending' ? 'bg-yellow-50 border-yellow-300 shadow-sm shadow-yellow-100' :
-                                      t.floorState === 'preparing' ? 'bg-blue-50 border-blue-300 shadow-sm shadow-blue-105' :
-                                        'bg-emerald-50 border-emerald-200 shadow-sm shadow-emerald-100'
+                                  t.floorState === 'pending' ? 'bg-yellow-50 border-yellow-300 shadow-sm shadow-yellow-100' :
+                                    t.floorState === 'preparing' ? 'bg-blue-50 border-blue-300 shadow-sm shadow-blue-105' :
+                                      'bg-emerald-50 border-emerald-200 shadow-sm shadow-emerald-100'
                                   }`}
                               >
                                 <div>
                                   <div className="flex justify-between items-center text-[8.5px] text-slate-400">
                                     <span className="font-mono">TABLE</span>
                                     <span className={`w-2 h-2 rounded-full ${t.floorState === 'empty' ? 'bg-slate-300' :
-                                        t.floorState === 'pending' ? 'bg-yellow-500 animate-pulse' :
-                                          t.floorState === 'preparing' ? 'bg-blue-500 animate-pulse' :
-                                            'bg-emerald-500'
+                                      t.floorState === 'pending' ? 'bg-yellow-500 animate-pulse' :
+                                        t.floorState === 'preparing' ? 'bg-blue-500 animate-pulse' :
+                                          'bg-emerald-500'
                                       }`}></span>
                                   </div>
                                   <h4 className="text-sm font-black text-slate-900 mt-0.5">Seat #{t.tableNum}</h4>
@@ -1706,18 +1706,18 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                         <div
                           key={t.tableNum}
                           className={`p-3 rounded-2xl border flex flex-col justify-between h-[145px] transition-all duration-300 relative ${t.floorState === 'empty' ? 'bg-slate-50 border-slate-200 opacity-60' :
-                              t.floorState === 'pending' ? 'bg-yellow-50 border-yellow-300 shadow-sm shadow-yellow-100' :
-                                t.floorState === 'preparing' ? 'bg-blue-50 border-blue-300 shadow-sm shadow-blue-105' :
-                                  'bg-emerald-50 border-emerald-200 shadow-sm shadow-emerald-100'
+                            t.floorState === 'pending' ? 'bg-yellow-50 border-yellow-300 shadow-sm shadow-yellow-100' :
+                              t.floorState === 'preparing' ? 'bg-blue-50 border-blue-300 shadow-sm shadow-blue-105' :
+                                'bg-emerald-50 border-emerald-200 shadow-sm shadow-emerald-100'
                             }`}
                         >
                           <div>
                             <div className="flex justify-between items-center text-[8.5px] text-slate-400">
                               <span className="font-mono">TABLE</span>
                               <span className={`w-2 h-2 rounded-full ${t.floorState === 'empty' ? 'bg-slate-300' :
-                                  t.floorState === 'pending' ? 'bg-yellow-500 animate-pulse' :
-                                    t.floorState === 'preparing' ? 'bg-blue-500 animate-pulse' :
-                                      'bg-emerald-500'
+                                t.floorState === 'pending' ? 'bg-yellow-500 animate-pulse' :
+                                  t.floorState === 'preparing' ? 'bg-blue-500 animate-pulse' :
+                                    'bg-emerald-500'
                                 }`}></span>
                             </div>
                             <h4 className="text-sm font-black text-slate-900 mt-0.5">Seat #{t.tableNum}</h4>
@@ -1763,7 +1763,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                 <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-slate-300 rounded-full"></span> Empty Unoccupied</span>
                 <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-yellow-500 rounded-full"></span> Customer Pending Order</span>
                 <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-blue-500 rounded-full"></span> Kitchen Cooking</span>
-                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-emerald-500 rounded-full"></span> Delivered / Unsettled Tab</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 bg-emerald-500 rounded-full"></span> Delivered</span>
               </div>
             </div>
           )}
@@ -1784,7 +1784,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                     className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5"
                   >
                     <FileText size={14} />
-                    <span>View Detailed Sales Ledger</span>
+                    <span>View Detailed Sales</span>
                   </button>
                 </div>
 
@@ -1826,8 +1826,8 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                         setShowAllHistoryDates(true);
                       }}
                       className={`w-full text-left p-4 rounded-2xl border transition-all duration-200 flex justify-between items-center cursor-pointer mb-2 ${showAllHistoryDates
-                          ? 'bg-slate-900 border-slate-950 text-white shadow-md'
-                          : 'bg-indigo-50 border-indigo-100 text-indigo-900 hover:bg-indigo-100/50'
+                        ? 'bg-slate-900 border-slate-950 text-white shadow-md'
+                        : 'bg-indigo-50 border-indigo-100 text-indigo-900 hover:bg-indigo-100/50'
                         }`}
                     >
                       <div className="flex items-center gap-2.5">
@@ -1853,8 +1853,8 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                           setShowAllHistoryDates(false);
                         }}
                         className={`w-full text-left p-4 rounded-2xl border transition-all duration-200 flex justify-between items-center cursor-pointer ${(!showAllHistoryDates && selectedHistoryDate === day.dateStr)
-                            ? 'bg-indigo-600 border-indigo-650 text-white shadow-md'
-                            : 'bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100 hover:border-slate-300'
+                          ? 'bg-indigo-600 border-indigo-650 text-white shadow-md'
+                          : 'bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100 hover:border-slate-300'
                           }`}
                       >
                         <div>
@@ -1876,7 +1876,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                   <div className="lg:col-span-2 space-y-4">
                     {/* Advanced Search & Filtering Console */}
                     <div className="bg-slate-50 p-4 border border-slate-200 rounded-3xl space-y-3">
-                      <span className="text-[9px] uppercase font-black text-slate-400 tracking-wider block font-mono">Advanced Filters Console</span>
+                      <span className="text-[9px] uppercase font-black text-slate-400 tracking-wider block font-mono">Filters</span>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {/* Text Search */}
@@ -1999,15 +1999,15 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                               </div>
                               <div className="flex items-center gap-1.5">
                                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${ord.status === 'completed' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
-                                    ord.status === 'accepted' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
-                                      ord.status === 'pending' ? 'bg-yellow-50 text-yellow-600 border border-yellow-200' :
-                                        'bg-rose-50 text-rose-500 border border-rose-200'
+                                  ord.status === 'accepted' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
+                                    ord.status === 'pending' ? 'bg-yellow-50 text-yellow-600 border border-yellow-200' :
+                                      'bg-rose-50 text-rose-500 border border-rose-200'
                                   }`}>
                                   {ord.status}
                                 </span>
                                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${ord.released === true
-                                    ? 'bg-slate-100 text-slate-500 border border-slate-200'
-                                    : 'bg-orange-50 text-orange-600 border border-orange-200'
+                                  ? 'bg-slate-100 text-slate-500 border border-slate-200'
+                                  : 'bg-orange-50 text-orange-600 border border-orange-200'
                                   }`}>
                                   {ord.released === true ? 'Cleared' : 'Active'}
                                 </span>
@@ -2149,7 +2149,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
             {/* AI-Powered Daily Business Briefing Card */}
             <div className="bg-gradient-to-br from-indigo-900 via-indigo-950 to-slate-950 text-white p-4.5 rounded-3xl shadow-lg border border-indigo-950 space-y-3.5 relative overflow-hidden animate-fade-in">
               <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/10 rounded-full blur-xl pointer-events-none"></div>
-              
+
               <div className="flex items-center justify-between border-b border-indigo-800/40 pb-2">
                 <div className="flex items-center gap-1.5">
                   <Sparkles size={14} className="text-amber-400 animate-pulse" />
@@ -2289,8 +2289,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                   <FileText size={20} />
                 </div>
                 <div>
-                  <h4 className="text-base font-black text-slate-900">Sales Ledger</h4>
-                  <p className="text-[11px] text-slate-500 leading-normal">Audit ledger showing subtotals, promotional deductions, and received amounts.</p>
+                  <h4 className="text-base font-black text-slate-900">Sales</h4>
                 </div>
               </div>
               <button
@@ -2318,7 +2317,6 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
             </div>
 
             <div className="relative mb-3 flex-shrink-0">
-              <div className="text-[10px] font-bold text-slate-500 mb-1">Sales Ledger</div>
               <div className="flex gap-2">
                 <Search className="text-slate-400 mt-2 ml-2" size={14} />
                 <input
@@ -2351,7 +2349,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
               <table className="w-full text-left border-collapse text-xs text-slate-700">
                 <thead className="bg-slate-50 font-bold uppercase tracking-wider text-[10px] text-slate-500 sticky top-0 border-b border-slate-200">
                   <tr>
-                    <th className="py-2.5 px-3">Ticket ID</th>
+                    <th className="py-2.5 px-3">Sale ID</th>
                     <th className="py-2.5 px-3">Seat</th>
                     <th className="py-2.5 px-3">Customer Profile</th>
                     <th className="py-2.5 px-3">Base Price</th>
@@ -2404,7 +2402,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                 onClick={() => setIsSalesLedgerOpen(false)}
                 className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs px-6 py-2.5 rounded-xl transition"
               >
-                Close Audit Screen
+                Close
               </button>
             </div>
           </div>
@@ -2536,8 +2534,8 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                       type="button"
                       onClick={() => setIsPhotoStudioOpen(!isPhotoStudioOpen)}
                       className={`font-black text-[10px] px-2.5 py-1 rounded-lg border transition duration-150 flex items-center gap-1 shadow-sm ${isPhotoStudioOpen
-                          ? 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100'
-                          : 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100'
+                        ? 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100'
+                        : 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100'
                         }`}
                     >
                       <Camera size={11} />
@@ -2587,8 +2585,8 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                               key={style}
                               onClick={() => setSelectedStudioLighting(style)}
                               className={`p-1.5 rounded-lg border text-left flex flex-col justify-between transition-all ${selectedStudioLighting === style
-                                  ? 'bg-white border-indigo-550 text-indigo-900 shadow-xs ring-1 ring-indigo-100'
-                                  : 'bg-white/60 border-slate-200 text-slate-600 hover:bg-white hover:border-slate-300'
+                                ? 'bg-white border-indigo-550 text-indigo-900 shadow-xs ring-1 ring-indigo-100'
+                                : 'bg-white/60 border-slate-200 text-slate-600 hover:bg-white hover:border-slate-300'
                                 }`}
                             >
                               <span className="font-extrabold text-[10px]">
@@ -2686,8 +2684,8 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                                   triggerAppAlert("Shot Assigned", "Item image set to this professional culinary variant!", "success");
                                 }}
                                 className={`relative aspect-square rounded-lg overflow-hidden border-2 transition duration-200 hover:scale-105 ${menuForm.imageUrl === url
-                                    ? 'border-indigo-600 ring-2 ring-indigo-200'
-                                    : 'border-slate-100 hover:border-slate-300'
+                                  ? 'border-indigo-600 ring-2 ring-indigo-200'
+                                  : 'border-slate-100 hover:border-slate-300'
                                   }`}
                               >
                                 <img

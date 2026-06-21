@@ -52,7 +52,7 @@ export default function StaffPortalLogin({
 
     setIsAuthenticating(true);
     setErrorMessage('');
-    
+
     if (selectedRole === 'superadmin') {
       try {
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -72,7 +72,7 @@ export default function StaffPortalLogin({
 
         if (roleError || !roleData) {
           await supabase.auth.signOut();
-          throw new Error("No authorized role found for this user.");
+          throw new Error("You do not have permission to access this area.");
         }
 
         if (roleData.role !== selectedRole) {
@@ -148,7 +148,7 @@ export default function StaffPortalLogin({
             transition={{ duration: 0.5, delay: 0.2 }}
             className="text-xs text-slate-500 max-w-lg mx-auto leading-relaxed"
           >
-            Access restaurant administration tools, Live Kitchen Display Systems, or high-tier SaaS subscription controls.
+            Access restaurant administration tools, Live Kitchen Display Systems, high-tier SaaS subscription controls.
           </motion.p>
         </div>
 
@@ -165,15 +165,13 @@ export default function StaffPortalLogin({
               {/* Card 1: Restaurant Admin */}
               <button
                 onClick={() => handleSelectRole('restadmin')}
-                className={`relative p-5 rounded-[24px] border text-left flex flex-col justify-between gap-5 transition-all duration-350 transform hover:-translate-y-1 ${
-                  selectedRole === 'restadmin'
-                    ? 'bg-white border-indigo-500 shadow-[0_0_20px_rgba(79,70,229,0.1)] ring-1 ring-indigo-500/30'
-                    : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-slate-300 shadow-sm'
+                className={`relative p-5 rounded-[24px] border text-left flex flex-col justify-between gap-5 transition-all duration-350 transform hover:-translate-y-1 ${selectedRole === 'restadmin'
+                  ? 'bg-white border-indigo-500 shadow-[0_0_20px_rgba(79,70,229,0.1)] ring-1 ring-indigo-500/30'
+                  : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-slate-300 shadow-sm'
                   }`}
               >
                 <div className="space-y-3">
-                  <div className={`w-10 h-10 rounded-1.5xl flex items-center justify-center border transition ${
-                    selectedRole === 'restadmin' ? 'bg-indigo-600 border-indigo-500' : 'bg-slate-100 border-slate-200'
+                  <div className={`w-10 h-10 rounded-1.5xl flex items-center justify-center border transition ${selectedRole === 'restadmin' ? 'bg-indigo-600 border-indigo-500' : 'bg-slate-100 border-slate-200'
                     }`}>
                     <Store size={20} className={selectedRole === 'restadmin' ? 'text-white' : 'text-slate-500'} />
                   </div>
@@ -189,20 +187,18 @@ export default function StaffPortalLogin({
               {/* Card 2: Chefs Kitchen */}
               <button
                 onClick={() => handleSelectRole('kitchen')}
-                className={`relative p-5 rounded-[24px] border text-left flex flex-col justify-between gap-5 transition-all duration-350 transform hover:-translate-y-1 ${
-                  selectedRole === 'kitchen'
-                    ? 'bg-white border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.1)] ring-1 ring-amber-500/30'
-                    : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-slate-300 shadow-sm'
+                className={`relative p-5 rounded-[24px] border text-left flex flex-col justify-between gap-5 transition-all duration-350 transform hover:-translate-y-1 ${selectedRole === 'kitchen'
+                  ? 'bg-white border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.1)] ring-1 ring-amber-500/30'
+                  : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-slate-300 shadow-sm'
                   }`}
               >
                 <div className="space-y-3">
-                  <div className={`w-10 h-10 rounded-1.5xl flex items-center justify-center border transition ${
-                    selectedRole === 'kitchen' ? 'bg-amber-500 border-amber-400' : 'bg-slate-100 border-slate-200'
+                  <div className={`w-10 h-10 rounded-1.5xl flex items-center justify-center border transition ${selectedRole === 'kitchen' ? 'bg-amber-500 border-amber-400' : 'bg-slate-100 border-slate-200'
                     }`}>
                     <ChefHat size={20} className={selectedRole === 'kitchen' ? 'text-white' : 'text-slate-500'} />
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-sm text-slate-800">Chefs' Kitchen (KDS)</h3>
+                    <h3 className="font-extrabold text-sm text-slate-800">Chef's Kitchen Portal</h3>
                   </div>
                 </div>
                 <div className="flex items-center justify-between text-[10px] pt-2 border-t border-slate-100">
@@ -214,15 +210,13 @@ export default function StaffPortalLogin({
               {forceRole === 'superadmin' && (
                 <button
                   onClick={() => handleSelectRole('superadmin')}
-                  className={`relative p-5 rounded-[24px] border text-left flex flex-col justify-between gap-5 transition-all duration-350 transform hover:-translate-y-1 ${
-                    selectedRole === 'superadmin'
-                      ? 'bg-white border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.1)] ring-1 ring-purple-500/30'
-                      : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-slate-300 shadow-sm'
+                  className={`relative p-5 rounded-[24px] border text-left flex flex-col justify-between gap-5 transition-all duration-350 transform hover:-translate-y-1 ${selectedRole === 'superadmin'
+                    ? 'bg-white border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.1)] ring-1 ring-purple-500/30'
+                    : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-slate-300 shadow-sm'
                     }`}
                 >
                   <div className="space-y-3">
-                    <div className={`w-10 h-10 rounded-1.5xl flex items-center justify-center border transition ${
-                      selectedRole === 'superadmin' ? 'bg-purple-600 border-purple-500' : 'bg-slate-100 border-slate-200'
+                    <div className={`w-10 h-10 rounded-1.5xl flex items-center justify-center border transition ${selectedRole === 'superadmin' ? 'bg-purple-600 border-purple-500' : 'bg-slate-100 border-slate-200'
                       }`}>
                       <Building2 size={20} className={selectedRole === 'superadmin' ? 'text-white' : 'text-slate-500'} />
                     </div>
@@ -260,7 +254,7 @@ export default function StaffPortalLogin({
                   <KeyRound size={16} className="text-indigo-600" />
                   <div>
                     <h4 className="font-extrabold text-sm text-slate-800">
-                      {selectedRole === "restadmin" ? "Admin Portal Login" : selectedRole === "kitchen" ? "Kitchen Portal Login" : "Super Admin Login"}
+                      {selectedRole === "restadmin" ? "Business Admin Login" : selectedRole === "kitchen" ? "Kitchen Staff Login" : "System Manager Login"}
                     </h4>
                   </div>
                 </div>
