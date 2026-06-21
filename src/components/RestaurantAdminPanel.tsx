@@ -4,7 +4,7 @@ import {
   AlertTriangle, DollarSign, QrCode, Plus, Edit, Trash2, Search,
   Wand2, FileText, X, Sparkles, RefreshCw,
   AlertOctagon, ArrowLeftRight, Bell, Camera, Check, Loader2, Utensils,
-  LayoutGrid, History, BarChart3
+  LayoutGrid, History, BarChart3, Clock
 } from 'lucide-react';
 import { Restaurant, MenuItem, Order, Buzzer, FloorDef } from '../types';
 import { supabase } from '../supabase';
@@ -103,6 +103,8 @@ export default function RestaurantAdminPanel({
   const [isAiWritingDescription, setIsAiWritingDescription] = useState(false);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [aiReportOutput, setAiReportOutput] = useState('');
+  const [aiDailyBriefing, setAiDailyBriefing] = useState('');
+  const [isGeneratingBriefing, setIsGeneratingBriefing] = useState(false);
 
   // Menu Modal states
   const [isMenuModalOpen, setIsMenuModalOpen] = useState(false);
@@ -110,7 +112,7 @@ export default function RestaurantAdminPanel({
   const [menuForm, setMenuForm] = useState({
     name: '', description: '', price: '', category: 'Mains',
     isAvailable: true, isLimitedTimeOffer: false, offerDetails: '', promoValue: '2.00', isVeg: true,
-    imageUrl: ''
+    imageUrl: '', availableFromHour: '', availableUntilHour: ''
   });
 
   // Food Photography AI Studio States
@@ -391,7 +393,9 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
         offerDetails: item.offerDetails || '',
         promoValue: (item.promoValue || 2.00).toString(),
         isVeg: item.isVeg !== undefined ? item.isVeg : true,
-        imageUrl: item.imageUrl || ''
+        imageUrl: item.imageUrl || '',
+        availableFromHour: item.availableFromHour !== undefined && item.availableFromHour !== null ? item.availableFromHour.toString() : '',
+        availableUntilHour: item.availableUntilHour !== undefined && item.availableUntilHour !== null ? item.availableUntilHour.toString() : ''
       });
     } else {
       setEditingItem(null);
@@ -399,7 +403,9 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
         name: '', description: '', price: '', category: 'Mains',
         isAvailable: true, isLimitedTimeOffer: false, offerDetails: '', promoValue: '2.00',
         isVeg: true,
-        imageUrl: ''
+        imageUrl: '',
+        availableFromHour: '',
+        availableUntilHour: ''
       });
     }
     setIsMenuModalOpen(true);
@@ -552,6 +558,9 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
       return;
     }
 
+    const fromHour = menuForm.availableFromHour !== '' ? parseInt(menuForm.availableFromHour) : undefined;
+    const untilHour = menuForm.availableUntilHour !== '' ? parseInt(menuForm.availableUntilHour) : undefined;
+
     const itemToSave: MenuItem = {
       id: editingItem ? editingItem.id : "menu-" + Math.floor(100 + Math.random() * 900) + "-" + Date.now().toString().slice(-4),
       restaurantId: restaurant.id,
@@ -564,11 +573,68 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
       offerDetails: menuForm.isLimitedTimeOffer ? menuForm.offerDetails : '',
       promoValue: menuForm.isLimitedTimeOffer ? promoNum : 0,
       isVeg: menuForm.isVeg,
-      imageUrl: menuForm.imageUrl || ''
+      imageUrl: menuForm.imageUrl || '',
+      availableFromHour: fromHour,
+      availableUntilHour: untilHour
     };
 
     onMenuItemSave(itemToSave, !!editingItem);
     setIsMenuModalOpen(false);
+  };
+
+  const handleGenerateDailyBriefing = async () => {
+    setIsGeneratingBriefing(true);
+    setAiDailyBriefing('');
+    try {
+      const totalOrdersCount = orders.length;
+      const completedOrdersCount = orders.filter(o => o.status === 'completed').length;
+      const totalRevenue = orders.filter(o => o.status === 'completed').reduce((sum, o) => sum + o.totalAmount, 0);
+      
+      const itemCounts: Record<string, number> = {};
+      orders.filter(o => o.status === 'completed').forEach(o => {
+        o.items.forEach(it => {
+          itemCounts[it.name] = (itemCounts[it.name] || 0) + it.quantity;
+        });
+      });
+      const topItems = Object.entries(itemCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([name, count]) => `${name} (${count} units)`)
+        .join(', ');
+
+      const statsSummary = {
+        restaurantName: restaurant.name,
+        totalOrdersCount,
+        completedOrdersCount,
+        totalRevenue,
+        topItems: topItems || "None yet",
+        activeBuzzersCount: buzzers.filter(b => b.status === 'pending').length
+      };
+
+      const prompt = `You are the chief operations analyst AI for restaurant "${restaurant.name}".
+Construct a highly professional, motivating "Daily Morning Operations Briefing" dashboard checklist card using standard bullet points (no markdown tables, keep it concise under 4 key areas):
+1. **Sales & Orders Performance**: Highlight ₹${totalRevenue.toFixed(2)} in completed sales across ${completedOrdersCount} orders (total: ${totalOrdersCount}).
+2. **Top Dishes**: Mention the top 3 high-volume items: ${topItems}.
+3. **Staff Alert & Buzzer Service**: Provide guidance based on ${statsSummary.activeBuzzersCount} pending floor buzzer chimes.
+4. **Actionable Operations Optimization**: Give 1 or 2 high-impact operational recommendations for today (e.g. kitchen prep suggestions, menu adjustment or discount strategy).
+Keep the tone energetic, clear, and highly professional. Avoid placeholders. Make it under 150 words.`;
+
+      const res = await fetch("/api/gemini/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userPrompt: prompt,
+          systemInstruction: "You are the chief operations analyst AI. Output a neat, premium daily checklist format operations summary."
+        })
+      });
+      const data = await res.json();
+      setAiDailyBriefing(data.text || "Could not synthesize report from the transaction engine.");
+    } catch (err) {
+      console.error("AI Briefing Error:", err);
+      setAiDailyBriefing("Could not connect to operational AI assistant.");
+    } finally {
+      setIsGeneratingBriefing(false);
+    }
   };
 
   const handleCommitTableCount = () => {
@@ -1021,36 +1087,44 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                           )}
                         </td>
                         <td className="py-3 px-1.5">
-                          <button
-                            onClick={() => {
-                              if (restaurant.lockAllItems) {
-                                triggerAppAlert("Action Blocked", "Your recipe catalog is currently locked as Read-Only.", "error");
-                                return;
-                              }
-                              onMenuItemSave({ ...item, isAvailable: !item.isAvailable }, true);
-                              // If marking as sold out, cancel pending orders with this item
-                              if (item.isAvailable) {
-                                fetch("/api/menus/sold-out/" + item.id, {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({ restaurantId: restaurant.id })
-                                }).then(r => r.json()).then(data => {
-                                  if (data.affectedOrders?.length > 0) {
-                                    triggerAppAlert(
-                                      "Items Auto-Cancelled",
-                                      `Marked "${item.name}" as sold out. ${data.cancelledItems} item(s) auto-cancelled from ${data.affectedOrders.length} order(s).`,
-                                      "info"
-                                    );
-                                  }
-                                }).catch(() => { });
-                              }
-                            }}
-                            className={`px-1.5 py-0.5 text-[10px] rounded font-black uppercase ${item.isAvailable ? 'bg-emerald-50 text-emerald-600 border border-emerald-250' :
-                                'bg-rose-50 text-rose-500 border border-rose-200'
-                              } ${restaurant.lockAllItems ? 'opacity-60 cursor-not-allowed' : ''}`}
-                          >
-                            {item.isAvailable ? "Available" : "Sold Out"}
-                          </button>
+                          <div className="space-y-1">
+                            <button
+                              onClick={() => {
+                                if (restaurant.lockAllItems) {
+                                  triggerAppAlert("Action Blocked", "Your recipe catalog is currently locked as Read-Only.", "error");
+                                  return;
+                                }
+                                onMenuItemSave({ ...item, isAvailable: !item.isAvailable }, true);
+                                // If marking as sold out, cancel pending orders with this item
+                                if (item.isAvailable) {
+                                  fetch("/api/menus/sold-out/" + item.id, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ restaurantId: restaurant.id })
+                                  }).then(r => r.json()).then(data => {
+                                    if (data.affectedOrders?.length > 0) {
+                                      triggerAppAlert(
+                                        "Items Auto-Cancelled",
+                                        `Marked "${item.name}" as sold out. ${data.cancelledItems} item(s) auto-cancelled from ${data.affectedOrders.length} order(s).`,
+                                        "info"
+                                      );
+                                    }
+                                  }).catch(() => { });
+                                }
+                              }}
+                              className={`px-1.5 py-0.5 text-[10px] rounded font-black uppercase ${item.isAvailable ? 'bg-emerald-50 text-emerald-600 border border-emerald-250' :
+                                  'bg-rose-50 text-rose-500 border border-rose-200'
+                                } ${restaurant.lockAllItems ? 'opacity-60 cursor-not-allowed' : ''}`}
+                            >
+                              {item.isAvailable ? "Available" : "Sold Out"}
+                            </button>
+                            {item.availableFromHour !== undefined && item.availableFromHour !== null && (
+                              <div className="text-[10px] font-semibold text-slate-500 flex items-center gap-0.5 mt-0.5">
+                                <Clock size={10} />
+                                <span>{item.availableFromHour.toString().padStart(2, '0')}:00 - {item.availableUntilHour?.toString().padStart(2, '0')}:00</span>
+                              </div>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 px-1.5 text-right space-x-1 whitespace-nowrap">
                           <button
@@ -2072,6 +2146,62 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
               </div>
             </div>
 
+            {/* AI-Powered Daily Business Briefing Card */}
+            <div className="bg-gradient-to-br from-indigo-900 via-indigo-950 to-slate-950 text-white p-4.5 rounded-3xl shadow-lg border border-indigo-950 space-y-3.5 relative overflow-hidden animate-fade-in">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/10 rounded-full blur-xl pointer-events-none"></div>
+              
+              <div className="flex items-center justify-between border-b border-indigo-800/40 pb-2">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-amber-400 animate-pulse" />
+                  <h3 className="text-xs font-black uppercase tracking-widest text-slate-100">
+                    AI Business Briefing
+                  </h3>
+                </div>
+                <span className="text-[8px] bg-indigo-500/20 text-indigo-300 font-extrabold uppercase px-2 py-0.5 rounded border border-indigo-500/30">
+                  Operations Desk
+                </span>
+              </div>
+
+              {aiDailyBriefing ? (
+                <div className="space-y-3">
+                  <div className="text-[11px] text-slate-200 leading-relaxed font-sans font-medium select-text whitespace-pre-wrap">
+                    {aiDailyBriefing}
+                  </div>
+                  <button
+                    onClick={handleGenerateDailyBriefing}
+                    disabled={isGeneratingBriefing}
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold uppercase text-[9px] tracking-widest py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 shadow-sm border border-indigo-500 cursor-pointer"
+                  >
+                    <RefreshCw size={11} className={isGeneratingBriefing ? "animate-spin" : ""} />
+                    Refresh Briefing
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2.5 py-1 text-center">
+                  <p className="text-[11px] text-indigo-200 leading-normal max-w-xs mx-auto font-medium">
+                    Analyze sales metrics, top menu items, and active floor chimes to generate your operations report.
+                  </p>
+                  <button
+                    onClick={handleGenerateDailyBriefing}
+                    disabled={isGeneratingBriefing}
+                    className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-black uppercase text-[9.5px] tracking-wider py-3 rounded-xl transition flex items-center justify-center gap-1.5 shadow-md border border-amber-400 cursor-pointer"
+                  >
+                    {isGeneratingBriefing ? (
+                      <>
+                        <RefreshCw size={11} className="animate-spin text-slate-950" />
+                        Analyzing operations ledger...
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 size={12} className="text-slate-950" />
+                        Generate Morning Briefing
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Live Guest Service Buzzers Widget */}
             <div className="bg-gradient-to-b from-rose-50 to-amber-50/60 border border-amber-200 p-4 rounded-3xl shadow-sm animate-fade-in space-y-4">
               <div className="flex items-center justify-between border-b border-amber-200/50 pb-2.5">
@@ -2631,6 +2761,57 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
                           onChange={(e) => setMenuForm({ ...menuForm, promoValue: e.target.value })}
                           className="w-full bg-amber-50 border border-amber-200 text-amber-950 rounded-xl px-3 py-1.5 font-bold"
                         />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Auto-Scheduler Availability */}
+                <div className="pt-2.5 border-t border-slate-100 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="font-extrabold text-slate-700 block">Set Service Hours Schedule?</span>
+                      <span className="text-[10px] text-slate-400">Dim item & disable ordering outside these hours</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={menuForm.availableFromHour !== '' || menuForm.availableUntilHour !== ''}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setMenuForm({ ...menuForm, availableFromHour: '11', availableUntilHour: '23' });
+                        } else {
+                          setMenuForm({ ...menuForm, availableFromHour: '', availableUntilHour: '' });
+                        }
+                      }}
+                      className="w-4 h-4 text-emerald-600 rounded"
+                    />
+                  </div>
+
+                  {(menuForm.availableFromHour !== '' || menuForm.availableUntilHour !== '') && (
+                    <div className="grid grid-cols-2 gap-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                      <div>
+                        <label className="block font-bold text-slate-500 mb-1">From Hour (0-23)</label>
+                        <select
+                          value={menuForm.availableFromHour}
+                          onChange={(e) => setMenuForm({ ...menuForm, availableFromHour: e.target.value })}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 font-semibold text-slate-700"
+                        >
+                          {Array.from({ length: 24 }).map((_, h) => (
+                            <option key={h} value={h.toString()}>{h.toString().padStart(2, '0')}:00</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block font-bold text-slate-500 mb-1">Until Hour (0-23)</label>
+                        <select
+                          value={menuForm.availableUntilHour}
+                          onChange={(e) => setMenuForm({ ...menuForm, availableUntilHour: e.target.value })}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 font-semibold text-slate-700"
+                        >
+                          {Array.from({ length: 24 }).map((_, h) => (
+                            <option key={h} value={h.toString()}>{h.toString().padStart(2, '0')}:00</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                   )}

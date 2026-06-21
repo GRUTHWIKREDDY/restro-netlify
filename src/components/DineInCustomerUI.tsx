@@ -8,6 +8,7 @@ import {
 import { Restaurant, MenuItem, Order, DineInUser, ChatMessage, Buzzer } from '../types';
 import { supabase, toSnake } from '../supabase';
 import { calculateBillSummary } from '../utils/billing';
+import html2canvas from 'html2canvas';
 
 interface DineInProps {
   restaurant: Restaurant;
@@ -44,6 +45,21 @@ const getFoodFallbackImage = (name: string, category: string) => {
     return 'https://images.unsplash.com/photo-1541014711125-365ab8b7fb22?w=200&auto=format&fit=crop&q=80';
   }
   return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&auto=format&fit=crop&q=80';
+};
+
+const isMenuItemInServiceHours = (item: MenuItem) => {
+  if (item.availableFromHour === undefined || item.availableUntilHour === undefined) return true;
+  if (item.availableFromHour === null || item.availableUntilHour === null) return true;
+  
+  const currentHour = new Date().getHours();
+  const from = item.availableFromHour;
+  const until = item.availableUntilHour;
+  
+  if (from <= until) {
+    return currentHour >= from && currentHour < until;
+  } else {
+    return currentHour >= from || currentHour < until;
+  }
 };
 
 export default function DineInCustomerUI({
@@ -95,6 +111,8 @@ export default function DineInCustomerUI({
   const [selectedSplitItems, setSelectedSplitItems] = useState<{ [index: number]: boolean }>({});
   // Bill summary drawer
   const [isBillSummaryOpen, setIsBillSummaryOpen] = useState(false);
+  const [isPrepTrackerOpen, setIsPrepTrackerOpen] = useState(false);
+  const billRef = useRef<HTMLDivElement>(null);
 
   // Custom modal PIN handshake state
   const [activeHandshakeOrderId, setActiveHandshakeOrderId] = useState<string | null>(null);
@@ -264,6 +282,97 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
       setRatingItemMenuId(null);
     } catch (e) {
       triggerAppAlert("Rating Error", "Could not submit review scale.", "error");
+    }
+  };
+
+  const handleToggleFavourite = async (menuId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!customerSession) {
+      triggerAppAlert("Login Required", "Please log in to add items to your favourites.", "info");
+      return;
+    }
+    try {
+      const currentUserObj = users?.find(u => u.phone === customerSession.phone);
+      const ratedDishes = currentUserObj?.ratedDishes || [];
+      const isFav = ratedDishes.includes(menuId);
+      
+      const updatedRatedDishes = isFav 
+        ? ratedDishes.filter(id => id !== menuId)
+        : [...ratedDishes, menuId];
+
+      const userPayload = {
+        phone: customerSession.phone,
+        name: customerSession.name,
+        globalOrderHistory: currentUserObj?.globalOrderHistory || [],
+        ratedDishes: updatedRatedDishes
+      };
+
+      await supabase.from('dine_in_users').upsert(toSnake(userPayload), { onConflict: 'phone' });
+      
+      await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(userPayload)
+      });
+
+      triggerAppAlert(
+        isFav ? "Removed" : "Favourited ❤️",
+        isFav ? "Dish removed from favourites." : "Dish added to favourites.",
+        "success"
+      );
+    } catch (err) {
+      console.error("Failed to toggle favourite:", err);
+      triggerAppAlert("Error", "Could not update favourites.", "error");
+    }
+  };
+
+  const handleDownloadReceipt = async () => {
+    if (!billRef.current) return;
+    try {
+      const element = billRef.current;
+      const canvas = await html2canvas(element, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        logging: false,
+        useCORS: true
+      });
+      const dataUrl = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = `Receipt-${restaurant.name.replace(/\s+/g, '-')}-Table-${tableNumber}.png`;
+      link.href = dataUrl;
+      link.click();
+      triggerAppAlert("Downloaded PNG", "The receipt image has been saved to your device.", "success");
+    } catch (err) {
+      console.error("Failed to generate receipt image:", err);
+      triggerAppAlert("Download Error", "Could not generate PNG receipt.", "error");
+    }
+  };
+
+  const handleShareBillWhatsApp = () => {
+    if (customerOrders.length === 0) return;
+    try {
+      let text = `*RECEIPT FROM ${restaurant.name.toUpperCase()}*\n`;
+      text += `Table Number: #${tableNumber}\n`;
+      text += `Date: ${new Date().toLocaleDateString()}\n`;
+      text += `---------------------------\n`;
+      
+      allOrderedItems.forEach(item => {
+        text += `• ${item.quantity}x ${item.name} - ₹${(item.price * item.quantity).toFixed(2)}\n`;
+      });
+      
+      text += `---------------------------\n`;
+      if (cumulativeBill.totalDeductions > 0) {
+        text += `Subtotal: ₹${cumulativeBill.originalSubtotal.toFixed(2)}\n`;
+        text += `Savings: -₹${cumulativeBill.totalDeductions.toFixed(2)}\n`;
+      }
+      text += `*Total Payable: ₹${cumulativeBill.finalPayable.toFixed(2)}*\n\n`;
+      text += `Thank you for dining with us! 🙏`;
+
+      const encodedText = encodeURIComponent(text);
+      const url = `https://wa.me/?text=${encodedText}`;
+      window.open(url, '_blank');
+    } catch (err) {
+      console.error("Failed to share via WhatsApp:", err);
     }
   };
 
@@ -448,7 +557,7 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
       return;
     }
     const item = restaurantMenus.find(m => m.id === menuId);
-    if (!item || !item.isAvailable) return;
+    if (!item || !item.isAvailable || !isMenuItemInServiceHours(item)) return;
 
     setCart(prev => {
       const current = prev[menuId] || 0;
@@ -604,6 +713,36 @@ ${JSON.stringify(liveMenuContext)}
       !o.id.startsWith("seat-")
     );
   }, [orders, restaurant, tableNumber, customerSession]);
+
+  const pastOrderedItems = useMemo(() => {
+    if (!customerSession || !users) return [];
+    const currentUser = users.find(u => u.phone === customerSession.phone);
+    if (!currentUser || !currentUser.globalOrderHistory) return [];
+    
+    const historyOrderIds = new Set(currentUser.globalOrderHistory);
+    const userPastOrders = orders.filter(o => historyOrderIds.has(o.id));
+    
+    const uniqueMenuIds = new Set<string>();
+    userPastOrders.forEach(o => {
+      o.items.forEach(it => {
+        if (it.menuId) {
+          uniqueMenuIds.add(it.menuId);
+        }
+      });
+    });
+    
+    return restaurantMenus.filter(m => uniqueMenuIds.has(m.id) && m.isAvailable && isMenuItemInServiceHours(m));
+  }, [customerSession, users, orders, restaurantMenus]);
+
+  const activePrepOrders = useMemo(() => {
+    return customerOrders.filter(o => o.status === 'pending' || o.status === 'accepted');
+  }, [customerOrders]);
+
+  const activePrepItemsCount = useMemo(() => {
+    return activePrepOrders.reduce((total, order) => {
+      return total + order.items.reduce((sum, item) => sum + item.quantity, 0);
+    }, 0);
+  }, [activePrepOrders]);
 
   // Aggregate bill tracking
   const activeUnrejectedOrders = useMemo(() => {
@@ -1141,11 +1280,20 @@ ${JSON.stringify(liveMenuContext)}
                 </div>
 
                 <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-1">
+                  {customerSession && (
+                    <button
+                      onClick={() => setSelectedCategory(selectedCategory === 'Favourites' ? 'All' : 'Favourites')}
+                      className={`px-4 py-2 rounded-full text-[10px] font-extrabold uppercase tracking-widest transition-all duration-155 whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${selectedCategory === 'Favourites' ? 'bg-rose-500 text-white shadow-xs ring-2 ring-rose-500/10' : 'bg-white text-slate-500 hover:bg-slate-50 border border-slate-200'}`}
+                    >
+                      <Heart size={10} className={selectedCategory === 'Favourites' ? 'fill-white text-white' : 'text-rose-500'} />
+                      Favourites
+                    </button>
+                  )}
                   {categories.map(cat => (
                     <button
                       key={cat}
                       onClick={() => setSelectedCategory(cat)}
-                      className={`px-4 py-2 rounded-full text-[10px] font-extrabold uppercase tracking-widest transition-all duration-150 whitespace-nowrap ${selectedCategory === cat ? 'bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-600/10' : 'bg-white text-slate-500 hover:bg-slate-50 border border-slate-200'}`}
+                      className={`px-4 py-2 rounded-full text-[10px] font-extrabold uppercase tracking-widest transition-all duration-150 whitespace-nowrap cursor-pointer ${selectedCategory === cat ? 'bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-600/10' : 'bg-white text-slate-500 hover:bg-slate-50 border border-slate-200'}`}
                     >
                       {cat}
                     </button>
@@ -1153,13 +1301,46 @@ ${JSON.stringify(liveMenuContext)}
                 </div>
               </div>
 
+              {/* Order Again Carousel */}
+              {pastOrderedItems.length > 0 && (
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center gap-1.5">
+                    <RefreshCw className="text-indigo-650 animate-spin-slow" size={13} />
+                    <h4 className="text-[10px] font-black tracking-widest uppercase text-slate-400">Order Again</h4>
+                  </div>
+                  <div className="flex gap-3 overflow-x-auto scrollbar-none pb-1">
+                    {pastOrderedItems.map(item => (
+                      <div 
+                        key={`repeat-${item.id}`}
+                        onClick={() => updateCartQty(item.id, 1)}
+                        className="bg-white border border-slate-200 p-2.5 rounded-xl flex items-center gap-2.5 flex-shrink-0 w-[180px] hover:border-indigo-300 hover:shadow-xs cursor-pointer transition-all duration-300 relative"
+                      >
+                        <img 
+                          src={item.imageUrl || getFoodFallbackImage(item.name, item.category)} 
+                          alt={item.name}
+                          className="w-10 h-10 object-cover rounded-lg border border-slate-100 flex-shrink-0"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <h5 className="font-extrabold text-[10px] text-slate-900 truncate leading-tight">{item.name}</h5>
+                          <span className="text-[10px] font-black text-indigo-650 block mt-0.5">₹{item.price.toFixed(2)}</span>
+                        </div>
+                        <span className="text-[9px] text-indigo-700 font-extrabold bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-200 select-none">
+                          + Add
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Menu locked banner */}
               {restaurant?.lockAllItems && (
                 <div className="bg-amber-50 border border-amber-200 text-amber-950 rounded-2xl p-4 flex gap-3 text-xs leading-relaxed animate-pulse">
                   <div className="p-1 px-2 font-black rounded bg-amber-600 text-white shrink-0 self-start">CATALOG READ-ONLY</div>
                   <div className="space-y-0.5">
                     <h4 className="font-extrabold text-amber-950">Dishes under administrative lock</h4>
-                    <p className="text-amber-800 font-medium font-semibold">This brand has its recipes set to read-only. Customers can browse ingredients and average reviews, but active checkout commands are disabled.</p>
+                    <p className="text-amber-800 font-semibold">This brand has its recipes set to read-only. Customers can browse ingredients and average reviews, but active checkout commands are disabled.</p>
                   </div>
                 </div>
               )}
@@ -1168,7 +1349,14 @@ ${JSON.stringify(liveMenuContext)}
               <div className="space-y-3" data-testid="menu-listings">
                 {restaurantMenus
                   .filter(m => m.isAvailable !== false)
-                  .filter(m => selectedCategory === 'All' || m.category === selectedCategory)
+                  .filter(m => {
+                    if (selectedCategory === 'All') return true;
+                    if (selectedCategory === 'Favourites') {
+                      const currentUserObj = users?.find(u => u.phone === customerSession?.phone);
+                      return (currentUserObj?.ratedDishes || []).includes(m.id);
+                    }
+                    return m.category === selectedCategory;
+                  })
                   .filter(m => m.name.toLowerCase().includes(searchQuery.toLowerCase()))
                   .sort((a, b) => {
                     if (sortBy === 'priceAsc') return a.price - b.price;
@@ -1177,10 +1365,12 @@ ${JSON.stringify(liveMenuContext)}
                   })
                   .map(item => {
                     const quantityInCart = cart[item.id] || 0;
+                    const inService = isMenuItemInServiceHours(item);
+                    const isActuallyAvailable = item.isAvailable && inService;
                     return (
                       <div 
                         key={item.id}
-                        className={`bg-white p-3.5 rounded-2xl border flex items-center gap-3.5 transition-all duration-300 transform hover:-translate-y-0.5 ${!item.isAvailable ? 'opacity-55 border-slate-100' : 'border-slate-150/70 hover:border-indigo-200 shadow-xs hover:shadow-sm'}`}
+                        className={`bg-white p-3.5 rounded-2xl border flex items-center gap-3.5 transition-all duration-300 transform hover:-translate-y-0.5 ${!isActuallyAvailable ? 'opacity-50 border-slate-100' : 'border-slate-150/70 hover:border-indigo-200 shadow-xs hover:shadow-sm'}`}
                       >
                         {/* Professional Food Photograph */}
                         <div className="relative w-18 h-18 rounded-xl overflow-hidden bg-slate-50 border border-slate-100 shrink-0 shadow-xs">
@@ -1196,6 +1386,26 @@ ${JSON.stringify(liveMenuContext)}
                                 <div className={`w-1 h-1 rounded-full ${item.isVeg ? 'bg-emerald-600' : 'bg-rose-600'}`}></div>
                               </div>
                             </div>
+                          )}
+                          {customerSession && (
+                            <button
+                              onClick={(e) => handleToggleFavourite(item.id, e)}
+                              className="absolute top-1 right-1 bg-white/80 backdrop-blur-xs p-1 rounded-full shadow-xs flex items-center justify-center border border-slate-100/60 z-10 hover:bg-white transition-colors cursor-pointer"
+                              title={
+                                (users?.find(u => u.phone === customerSession.phone)?.ratedDishes || []).includes(item.id)
+                                  ? "Remove from Favourites"
+                                  : "Add to Favourites"
+                              }
+                            >
+                              <Heart 
+                                size={10} 
+                                className={
+                                  (users?.find(u => u.phone === customerSession.phone)?.ratedDishes || []).includes(item.id)
+                                    ? "fill-rose-500 text-rose-500"
+                                    : "text-slate-400"
+                                }
+                              />
+                            </button>
                           )}
                         </div>
 
@@ -1241,18 +1451,23 @@ ${JSON.stringify(liveMenuContext)}
                             <span className="text-[9px] bg-rose-50 text-rose-500 font-black px-2 py-1 rounded-full uppercase tracking-wider border border-rose-100">
                               Sold Out
                             </span>
+                          ) : !inService ? (
+                            <span className="text-[8.5px] bg-amber-50 text-amber-700 font-black px-2 py-1.5 rounded-xl border border-amber-100 flex items-center gap-1 leading-tight text-center max-w-[90px] justify-center" title="Outside scheduled hours">
+                              <Clock size={10} className="shrink-0" />
+                              {item.availableFromHour?.toString().padStart(2, '0')}:00 - {item.availableUntilHour?.toString().padStart(2, '0')}:00
+                            </span>
                           ) : quantityInCart > 0 ? (
                             <div className="flex items-center bg-blue-600 text-white rounded-full p-0.5 border border-blue-700 shadow-sm shrink-0">
                               <button 
                                 onClick={() => updateCartQty(item.id, -1)}
-                                className="w-6 h-6 flex items-center justify-center font-bold text-xs hover:bg-blue-750 rounded-full transition-colors"
+                                className="w-6 h-6 flex items-center justify-center font-bold text-xs hover:bg-blue-750 rounded-full transition-colors cursor-pointer"
                               >
                                 -
                               </button>
                               <span className="px-1 text-[10px] font-black w-4 text-center">{quantityInCart}</span>
                               <button 
                                 onClick={() => updateCartQty(item.id, 1)}
-                                className="w-6 h-6 flex items-center justify-center font-bold text-xs hover:bg-blue-750 rounded-full transition-colors"
+                                className="w-6 h-6 flex items-center justify-center font-bold text-xs hover:bg-blue-750 rounded-full transition-colors cursor-pointer"
                               >
                                 +
                               </button>
@@ -1944,7 +2159,7 @@ ${JSON.stringify(liveMenuContext)}
         {isBillSummaryOpen && (
           <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm z-50 flex flex-col justify-end">
             <div 
-              className="bg-white rounded-t-[28px] w-full max-h-[80%] shadow-2xl border-t border-slate-200 flex flex-col overflow-hidden"
+              className="bg-white rounded-t-[28px] w-full max-h-[80%] shadow-2xl border-t border-slate-200 flex flex-col overflow-hidden animate-slide-up"
             >
               {/* Header */}
               <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100 shrink-0">
@@ -1955,64 +2170,199 @@ ${JSON.stringify(liveMenuContext)}
                 <button 
                   type="button"
                   onClick={() => setIsBillSummaryOpen(false)}
-                  className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer"
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-650 transition cursor-pointer"
                 >
                   <X size={15} />
                 </button>
               </div>
 
-              {/* Scrollable Content */}
-              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 scrollbar-none">
-                {customerOrders.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-xs text-slate-400 font-semibold">No orders placed yet.</p>
+              {/* Scrollable Content Wrapper for screenshot */}
+              <div className="flex-1 overflow-y-auto scrollbar-none">
+                <div ref={billRef} className="p-5 space-y-4 bg-white">
+                  {/* Digital Receipt Styling */}
+                  <div className="text-center pb-3 border-b border-dashed border-slate-200 shrink-0">
+                    <h4 className="font-black text-sm uppercase text-slate-900 tracking-widest">{restaurant.name}</h4>
+                    <p className="text-[9px] text-indigo-650 font-bold uppercase tracking-wider mt-0.5">Table #{tableNumber} • Digital Receipt</p>
+                    <p className="text-[8px] text-slate-400 font-mono mt-0.5">Date: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
                   </div>
-                ) : (
-                  <>
-                    {customerOrders.map((order, idx) => (
-                      <div key={order.id} className="bg-slate-50 rounded-xl border border-slate-100 p-3.5 space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Order #{idx + 1}</span>
-                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
-                            order.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
-                            order.status === 'accepted' ? 'bg-blue-100 text-blue-700' :
-                            order.status === 'rejected' ? 'bg-rose-100 text-rose-700' :
-                            'bg-amber-100 text-amber-700'
-                          }`}>
-                            {order.status}
-                          </span>
-                        </div>
-                        {order.items.map((item, iIdx) => (
-                          <div key={iIdx} className="flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold text-slate-700">{item.name}</span>
-                              <span className="text-slate-400 text-[10px]">×{item.quantity}</span>
-                            </div>
-                            <span className="font-bold text-slate-900">₹{(item.price * item.quantity).toFixed(2)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ))}
 
-                    {/* Totals */}
-                    <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 space-y-2.5">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-slate-600 font-semibold">Subtotal</span>
-                        <span className="font-bold text-slate-900">₹{cumulativeBill.originalSubtotal.toFixed(2)}</span>
-                      </div>
-                      {cumulativeBill.totalDeductions > 0 && (
-                        <div className="flex justify-between text-xs">
-                          <span className="text-emerald-600 font-semibold">Promo Savings</span>
-                          <span className="font-bold text-emerald-600">-₹{cumulativeBill.totalDeductions.toFixed(2)}</span>
+                  {customerOrders.length === 0 ? (
+                    <div className="text-center py-8">
+                      <p className="text-xs text-slate-400 font-semibold">No orders placed yet.</p>
+                    </div>
+                  ) : (
+                    <>
+                      {customerOrders.map((order, idx) => (
+                        <div key={order.id} className="bg-slate-50 rounded-xl border border-slate-100 p-3.5 space-y-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Order #{idx + 1}</span>
+                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
+                              order.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
+                              order.status === 'accepted' ? 'bg-blue-100 text-blue-700' :
+                              order.status === 'rejected' ? 'bg-rose-100 text-rose-700' :
+                              'bg-amber-100 text-amber-700'
+                            }`}>
+                              {order.status}
+                            </span>
+                          </div>
+                          {order.items.map((item, iIdx) => (
+                            <div key={iIdx} className="flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-slate-700">{item.name}</span>
+                                <span className="text-slate-400 text-[10px]">×{item.quantity}</span>
+                              </div>
+                              <span className="font-bold text-slate-900">₹{(item.price * item.quantity).toFixed(2)}</span>
+                            </div>
+                          ))}
                         </div>
-                      )}
-                      <div className="flex justify-between text-sm pt-2 border-t border-indigo-200">
-                        <span className="font-extrabold text-slate-900">Total Payable</span>
-                        <span className="font-extrabold text-indigo-600">₹{cumulativeBill.finalPayable.toFixed(2)}</span>
+                      ))}
+
+                      {/* Totals */}
+                      <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 space-y-2.5">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-600 font-semibold">Subtotal</span>
+                          <span className="font-bold text-slate-900">₹{cumulativeBill.originalSubtotal.toFixed(2)}</span>
+                        </div>
+                        {cumulativeBill.totalDeductions > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-emerald-600 font-semibold">Promo Savings</span>
+                            <span className="font-bold text-emerald-600">-₹{cumulativeBill.totalDeductions.toFixed(2)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-sm pt-2 border-t border-indigo-200">
+                          <span className="font-extrabold text-slate-900">Total Payable</span>
+                          <span className="font-extrabold text-indigo-600">₹{cumulativeBill.finalPayable.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Share & Download Actions Footer */}
+              {customerOrders.length > 0 && (
+                <div className="px-5 pb-5 pt-3 border-t border-slate-100 flex gap-2 shrink-0">
+                  <button
+                    onClick={handleShareBillWhatsApp}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10.5px] uppercase tracking-wider py-3.5 rounded-xl transition shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Send size={13} />
+                    WhatsApp Bill
+                  </button>
+                  <button
+                    onClick={handleDownloadReceipt}
+                    className="flex-1 bg-slate-900 hover:bg-slate-805 text-white font-extrabold text-[10.5px] uppercase tracking-wider py-3.5 rounded-xl transition shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <FileText size={13} />
+                    Download PNG
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Real-Time Table Status & Order Tracker (Floating Capsule & Slide-up Drawer) */}
+        {customerSession && activePrepOrders.length > 0 && (
+          <button
+            onClick={() => setIsPrepTrackerOpen(true)}
+            className="absolute bottom-4 left-4 right-4 bg-indigo-950 text-white rounded-full py-3.5 px-5 shadow-xl border border-indigo-800 hover:bg-indigo-900 transition flex items-center justify-between z-30 cursor-pointer animate-pulse"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-indigo-400 animate-spin-slow">🍳</span>
+              <span className="text-[10px] font-black tracking-widest uppercase text-slate-100">
+                Prep Tracker: {activePrepItemsCount} Item{activePrepItemsCount !== 1 ? 's' : ''} cooking...
+              </span>
+            </div>
+            <ChevronRight size={14} className="text-indigo-400" />
+          </button>
+        )}
+
+        {isPrepTrackerOpen && (
+          <div className="absolute inset-0 bg-slate-950/65 backdrop-blur-sm z-50 flex flex-col justify-end">
+            <div className="bg-white rounded-t-[28px] w-full max-h-[80%] shadow-2xl border-t border-slate-200 flex flex-col overflow-hidden animate-slide-up">
+              <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100 shrink-0">
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Clock size={15} className="text-indigo-600 animate-spin-slow" />
+                    Kitchen Order Tracker
+                  </h3>
+                  <p className="text-[10px] text-slate-500 font-semibold mt-0.5">Real-time status of your cooking dishes</p>
+                </div>
+                <button 
+                  type="button"
+                  onClick={() => setIsPrepTrackerOpen(false)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-650 transition cursor-pointer"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 scrollbar-none">
+                {activePrepOrders.map((order, idx) => (
+                  <div key={order.id} className="bg-slate-50 rounded-2xl border border-slate-150 p-4 space-y-3">
+                    <div className="flex justify-between items-center pb-2 border-b border-slate-200/60">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                        Order #{order.id.split('-')[1] || order.id}
+                      </span>
+                      <span className="text-[9px] font-mono text-slate-400 font-bold">
+                        {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      {order.items.map((it, itemIdx) => (
+                        <div key={itemIdx} className="flex justify-between items-center text-xs">
+                          <span className="font-semibold text-slate-800">{it.quantity}x {it.name}</span>
+                          {it.notes && (
+                            <span className="text-[9px] text-slate-400 italic">({it.notes})</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="pt-4 pb-2">
+                      <div className="relative flex items-center justify-between">
+                        <div className="absolute left-3 right-3 top-1/2 -translate-y-1/2 h-0.5 bg-slate-200 z-0">
+                          <div 
+                            className="h-full bg-indigo-600 transition-all duration-550" 
+                            style={{ width: order.status === 'pending' ? '0%' : '50%' }}
+                          />
+                        </div>
+
+                        {[
+                          { label: "Sent", statusKey: "pending" },
+                          { label: "Cooking", statusKey: "accepted" },
+                          { label: "Served", statusKey: "completed" }
+                        ].map((step, stepIdx) => {
+                          const isActive = 
+                            (step.statusKey === 'pending' && (order.status === 'pending' || order.status === 'accepted' || order.status === 'completed')) ||
+                            (step.statusKey === 'accepted' && (order.status === 'accepted' || order.status === 'completed')) ||
+                            (step.statusKey === 'completed' && order.status === 'completed');
+                          
+                          const isCurrent = order.status === step.statusKey;
+
+                          return (
+                            <div key={stepIdx} className="relative z-10 flex flex-col items-center">
+                              <div 
+                                className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${
+                                  isActive 
+                                    ? 'bg-indigo-600 text-white shadow-sm ring-4 ring-indigo-150' 
+                                    : 'bg-slate-100 text-slate-400 border border-slate-200'
+                                }`}
+                              >
+                                {stepIdx + 1}
+                              </div>
+                              <span className={`text-[9px] font-black uppercase mt-1 tracking-wider ${isActive ? 'text-indigo-650 font-extrabold' : 'text-slate-400'}`}>
+                                {step.label}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                  </>
-                )}
+                  </div>
+                ))}
               </div>
             </div>
           </div>

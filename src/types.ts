@@ -44,6 +44,8 @@ export interface MenuItem {
   avgRating?: number; // Average star feedback score
   ratingsCount?: number; // Total count of rated feedback
   imageUrl?: string; // High-quality food photopragh URL
+  availableFromHour?: number;
+  availableUntilHour?: number;
 }
 
 export interface OrderItem {
