@@ -477,32 +477,32 @@ export default function SuperAdminDashboard({
       }
 
       triggerAppAlert(
-        "Tenant Managed Successfully", 
+        "Restaurant Updated Successfully", 
         `Administrative policies, capabilities, portal lockdowns, and credentials have been updated live for ${selectedManageTenant.name}.`, 
         "success"
       );
       setIsManageTenantOpen(false);
     } catch (err: any) {
-      triggerAppAlert("Write Failure", err.message || "Failed to compile the merchant policy updates to the database.", "error");
+      triggerAppAlert("Save Error", err.message || "We couldn't save the restaurant settings. Please try again.", "error");
     }
   };
 
   const handleSaveEditTenant = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editTenantName.trim()) {
-      triggerAppAlert("Validation Warning", "A descriptive Tenant Restaurant name is mandatory.", "error");
+      triggerAppAlert("Missing Information", "Please enter a name for the restaurant.", "error");
       return;
     }
 
     const tQty = parseInt(editTenantTables);
     if (isNaN(tQty) || tQty < 1 || tQty > 50) {
-      triggerAppAlert("Configuration limits", "Set allocated table nodes count between 1 and 50 seats.", "error");
+      triggerAppAlert("Setting Limits", "Please set tables between 1 and 50.", "error");
       return;
     }
 
     const pin = editTenantVerificationPin.trim() || "1234";
     if (pin.length !== 4 || isNaN(parseInt(pin))) {
-      triggerAppAlert("Validation Warning", "Verification code must be exactly 4 digits.", "error");
+      triggerAppAlert("Missing Information", "Verification code must be exactly 4 digits.", "error");
       return;
     }
 
@@ -577,19 +577,19 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
     if (isOnboarding) return;
 
     if (!tenantName.trim()) {
-      triggerAppAlert("Validation Warning", "A descriptive Tenant Restaurant name is mandatory.", "error");
+      triggerAppAlert("Missing Information", "Please enter a name for the restaurant.", "error");
       return;
     }
 
     const tQty = parseInt(tenantTables);
     if (isNaN(tQty) || tQty < 1 || tQty > 50) {
-      triggerAppAlert("Configuration limits", "Set allocated table nodes count between 1 and 50 seats.", "error");
+      triggerAppAlert("Setting Limits", "Please set tables between 1 and 50.", "error");
       return;
     }
 
     const pin = tenantVerificationPin.trim() || "1234";
     if (pin.length !== 4 || isNaN(parseInt(pin))) {
-      triggerAppAlert("Validation Warning", "Verification code must be exactly 4 digits.", "error");
+      triggerAppAlert("Missing Information", "Verification code must be exactly 4 digits.", "error");
       return;
     }
 

@@ -651,8 +651,8 @@ export default function App() {
                           handleToggleOperationalStatusHeader();
                         }}
                         className={`px-2 py-0.5 rounded-full text-[10px] font-black tracking-wide border transition flex items-center gap-1 cursor-pointer ${activeRestaurantObj.lockedBySuperAdmin ? 'bg-rose-100 border-rose-300 text-rose-800' :
-                            activeRestaurantObj.status === 'active' ? 'bg-emerald-100 border-emerald-300 text-emerald-800 hover:bg-emerald-200' :
-                              'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200'
+                          activeRestaurantObj.status === 'active' ? 'bg-emerald-100 border-emerald-300 text-emerald-800 hover:bg-emerald-200' :
+                            'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200'
                           }`}
                       >
                         {activeRestaurantObj.lockedBySuperAdmin ? (
@@ -685,7 +685,7 @@ export default function App() {
                       orders: { label: 'Live Orders', icon: ClipboardList },
                       floor: { label: 'Floor & Seating', icon: LayoutGrid },
                       menu: { label: 'Menu Management', icon: Utensils },
-                      tables: { label: 'QR Flyers', icon: QrCode },
+                      tables: { label: 'QR', icon: QrCode },
                       history: { label: 'Sales History', icon: History },
                       analytics: { label: 'Analytics', icon: BarChart3 }
                     }[tab];
@@ -697,8 +697,8 @@ export default function App() {
                         key={tab}
                         onClick={() => setAdminActiveTab(tab)}
                         className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider rounded-xl transition-all duration-205 flex items-center gap-2 cursor-pointer relative ${isActive
-                            ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-250/30 scale-[1.01]'
-                            : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
+                          ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-250/30 scale-[1.01]'
+                          : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
                           }`}
                       >
                         <div className="relative flex items-center justify-center">
@@ -740,7 +740,7 @@ export default function App() {
                     orders: { label: 'Live Orders', icon: ClipboardList },
                     floor: { label: 'Floor & Seating', icon: LayoutGrid },
                     menu: { label: 'Menu Management', icon: Utensils },
-                    tables: { label: 'QR Flyers', icon: QrCode },
+                    tables: { label: 'QR', icon: QrCode },
                     history: { label: 'Sales History', icon: History },
                     analytics: { label: 'Analytics', icon: BarChart3 }
                   }[tab];
@@ -752,8 +752,8 @@ export default function App() {
                       key={tab}
                       onClick={() => setAdminActiveTab(tab)}
                       className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center gap-1.5 shrink-0 cursor-pointer relative ${isActive
-                          ? 'bg-slate-900 text-white shadow-sm'
-                          : 'text-slate-500 hover:bg-slate-100'
+                        ? 'bg-slate-900 text-white shadow-sm'
+                        : 'text-slate-500 hover:bg-slate-100'
                         }`}
                     >
                       <Icon size={12} />
