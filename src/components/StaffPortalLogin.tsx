@@ -25,7 +25,7 @@ export default function StaffPortalLogin({
   forceRole
 }: StaffPortalLoginProps) {
   const [selectedRole, setSelectedRole] = useState<'restadmin' | 'kitchen' | 'superadmin' | null>('restadmin');
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
@@ -38,7 +38,7 @@ export default function StaffPortalLogin({
 
   const handleSelectRole = (role: 'restadmin' | 'kitchen' | 'superadmin') => {
     setSelectedRole(role);
-    setEmail('');
+    setUsername('');
     setPassword('');
     setErrorMessage('');
   };
@@ -57,7 +57,7 @@ export default function StaffPortalLogin({
     if (selectedRole === 'superadmin') {
       try {
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-          email,
+          email: username,
           password
         });
 
@@ -101,7 +101,7 @@ export default function StaffPortalLogin({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            email,
+            username,
             password,
             role: selectedRole
           })
@@ -277,14 +277,14 @@ export default function StaffPortalLogin({
 
                 <form onSubmit={handleLoginSubmit} className="space-y-4">
                   <div className="space-y-1.5">
-                    <label className="text-[9px] font-extrabold text-slate-500 uppercase tracking-widest block">Email</label>
+                    <label className="text-[9px] font-extrabold text-slate-500 uppercase tracking-widest block">Username</label>
                     <input
-                      type="email"
+                      type="text"
                       required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
                       className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition placeholder:text-slate-400"
-                      placeholder="you@restaurant.com"
+                      placeholder="Enter username"
                       disabled={isAuthenticating}
                     />
                   </div>

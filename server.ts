@@ -890,19 +890,19 @@ export async function configureApp(isNetlify = false) {
   // Backend-verified merchant/chef login endpoint
   app.post("/api/auth/merchant-login", async (req, res) => {
     try {
-      const { email, password, role } = req.body;
+      const { username, password, role } = req.body;
       
       console.log("[MERCHANT LOGIN] body:", JSON.stringify(req.body));
       
-      if (!email || !password || !role) {
+      if (!username || !password || !role) {
         return res.status(400).json({ error: "Missing required credentials." });
       }
       
-      // 1. Resolve restaurant identity based on email and role
+      // 1. Resolve restaurant identity based on username and role
       const { data: staff, error: staffErr } = await db
         .from("staff_credentials")
         .select("password_hash, salt, restaurant_id")
-        .eq("email", email)
+        .eq("email", username)
         .eq("role", role)
         .maybeSingle();
       
