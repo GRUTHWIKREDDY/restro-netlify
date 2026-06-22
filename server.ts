@@ -1246,14 +1246,42 @@ export async function configureApp(isNetlify = false) {
 
   app.post("/api/reset", async (req, res) => {
     try {
-      const tables = ['restaurants', 'menu_items', 'orders', 'buzzers'];
+      const tables = ['restaurants', 'menu_items', 'orders', 'buzzers', 'staff_credentials'];
       for (const table of tables) {
         const { error } = await db.from(table).delete().neq('id', '__nonexistent__');
         if (error) console.error(`Error clearing ${table}:`, error);
       }
       await db.from('dine_in_users').delete().neq('phone', '__nonexistent__');
       for (const r of INITIAL_RESTAURANTS) {
-        await db.from('restaurants').upsert(toSnake(r), { onConflict: 'id' });
+        const { adminUsername, adminPassword, chefUsername, chefPassword, ...restObj } = r;
+        const { error } = await db.from('restaurants').upsert(toSnake(restObj), { onConflict: 'id' });
+        if (error) console.error('Reset error restaurants:', error);
+
+        // Re-seed staff credentials with hashed passwords
+        if (adminUsername && adminPassword) {
+          const salt = generateSalt();
+          const hash = hashPassword(adminPassword, salt);
+          await db.from('staff_credentials').upsert({
+            id: `staff-${r.id}-admin`,
+            restaurant_id: r.id,
+            email: adminUsername,
+            password_hash: hash,
+            salt: salt,
+            role: 'restadmin'
+          }, { onConflict: 'id' });
+        }
+        if (chefUsername && chefPassword) {
+          const salt = generateSalt();
+          const hash = hashPassword(chefPassword, salt);
+          await db.from('staff_credentials').upsert({
+            id: `staff-${r.id}-chef`,
+            restaurant_id: r.id,
+            email: chefUsername,
+            password_hash: hash,
+            salt: salt,
+            role: 'kitchen'
+          }, { onConflict: 'id' });
+        }
       }
       for (const m of INITIAL_MENUS) {
         await db.from('menu_items').upsert(toSnake(m), { onConflict: 'id' });

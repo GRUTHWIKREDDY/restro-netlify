@@ -56,7 +56,7 @@ describe('KitchenDisplaySystem - VIGOROUS QA', () => {
   it('should transition order status from pending -> preparing -> ready', async () => {
     render(<KitchenDisplaySystem {...props} />);
 
-    const acceptBtn = screen.getByRole('button', { name: /Accept Order/i });
+    const acceptBtn = screen.getByRole('button', { name: /Start Cooking/i });
     fireEvent.click(acceptBtn);
 
     expect(props.onUpdateOrderStatus).toHaveBeenCalledWith('ord-1', 'accepted');
@@ -71,8 +71,8 @@ describe('KitchenDisplaySystem - VIGOROUS QA', () => {
     ];
     render(<KitchenDisplaySystem {...{...props, orders: oldOrders}} />);
 
-    const orderCard = screen.getByText(/Sanjay/i).closest('.rounded-2xl');
+    const orderCard = screen.getByText(/Sanjay/i).closest('.rounded-xl');
     expect(orderCard).toBeInTheDocument();
-    expect(orderCard).toHaveClass('border-rose-600');
+    expect(orderCard).toHaveClass('border-rose-400');
   });
 });

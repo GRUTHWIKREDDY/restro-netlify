@@ -51,14 +51,14 @@ export default function KitchenDisplaySystem({
       const oneDayAgo = new Date().getTime() - (24 * 60 * 60 * 1000);
       filtered = filtered.filter(o => {
         const orderTime = new Date(o.createdAt).getTime();
-        return orderTime >= oneDayAgo || o.status === 'Waiting' || o.status === 'accepted';
+        return orderTime >= oneDayAgo || o.status === 'pending' || o.status === 'accepted';
       });
     }
     return filtered;
   }, [orders, restaurant]);
 
   const WaitingKitchenBuzzers = useMemo(() => {
-    return (buzzers || []).filter(b => b.restaurantId === restaurant?.id && b.status === 'Waiting');
+    return (buzzers || []).filter(b => b.restaurantId === restaurant?.id && b.status === 'pending');
   }, [buzzers, restaurant]);
 
   // Local seconds ticker for ticket duration age calculation
@@ -76,7 +76,7 @@ export default function KitchenDisplaySystem({
   const audioCtxRef = useRef<AudioContext | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const WaitingOrdersCount = useMemo(() => {
-    return activeRestaurantOrders.filter(o => o.status === 'Waiting').length;
+    return activeRestaurantOrders.filter(o => o.status === 'pending').length;
   }, [activeRestaurantOrders]);
 
   const getAudioCtx = () => {
@@ -180,7 +180,7 @@ export default function KitchenDisplaySystem({
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="text-[10px] text-slate-500 font-mono font-bold">New Orders: {activeRestaurantOrders.filter(o => o.status === 'Waiting').length}</span>
+          <span className="text-[10px] text-slate-500 font-mono font-bold">New Orders: {activeRestaurantOrders.filter(o => o.status === 'pending').length}</span>
           <span className="text-[10px] text-slate-500 font-mono font-bold">Cooking: {activeRestaurantOrders.filter(o => o.status === 'accepted').length}</span>
           <span className="text-[10px] text-slate-500 font-mono font-bold">Done: {activeRestaurantOrders.filter(o => o.status === 'completed').length}</span>
           <div className="h-4 w-px bg-slate-200"></div>
@@ -221,13 +221,13 @@ export default function KitchenDisplaySystem({
               New Orders
             </h3>
             <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
-              {activeRestaurantOrders.filter(o => o.status === 'Waiting').length}
+              {activeRestaurantOrders.filter(o => o.status === 'pending').length}
             </span>
           </div>
 
           <div className="flex-1 space-y-4 overflow-y-auto max-h-[640px] scrollbar-none pr-0.5">
             {activeRestaurantOrders
-              .filter(o => o.status === 'Waiting')
+              .filter(o => o.status === 'pending')
               .map(o => (
                 <KdsTicketCard
                   key={o.id}
@@ -239,7 +239,7 @@ export default function KitchenDisplaySystem({
                 />
               ))}
 
-            {activeRestaurantOrders.filter(o => o.status === 'Waiting').length === 0 && (
+            {activeRestaurantOrders.filter(o => o.status === 'pending').length === 0 && (
               <div className="flex-1 flex flex-col items-center justify-center p-8 text-center border border-dashed border-slate-300 rounded-xl">
                 <ClipboardList className="text-slate-300 mb-2" size={32} />
                 <p className="text-xs font-bold text-slate-500">Queue is completely clear.</p>
@@ -377,7 +377,7 @@ function KdsTicketCard({ order, onStatusUpdate, onCancelDish, ticker, enableSlaW
         <div className="space-y-0.5">
           <div className="flex items-center gap-1.5">
             <h4 className="text-base font-black text-slate-800">Table #{order.tableNumber}</h4>
-            <span className={`px-2 py-0.2 rounded-full font-bold text-[9px] uppercase ${order.status === 'Waiting' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+            <span className={`px-2 py-0.2 rounded-full font-bold text-[9px] uppercase ${order.status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
               {order.status}
             </span>
           </div>
@@ -455,7 +455,7 @@ function KdsTicketCard({ order, onStatusUpdate, onCancelDish, ticker, enableSlaW
 
       {/* State actions */}
       <div className="pt-2 border-t border-slate-100 flex gap-1.5">
-        {order.status === 'Waiting' && (
+        {order.status === 'pending' && (
           <>
             <button
               onClick={() => onStatusUpdate(order.id, 'rejected')}

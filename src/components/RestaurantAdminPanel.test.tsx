@@ -57,22 +57,14 @@ describe('RestaurantAdminPanel - VIGOROUS QA', () => {
   });
 
   it('should render the admin dashboard with menu management tools', () => {
-    render(<RestaurantAdminPanel {...props} />);
-    
-    // Switch to Menu & Promos tab
-    const menuTabBtn = screen.getAllByRole('button', { name: /Menu & Promos/i })[0];
-    fireEvent.click(menuTabBtn);
+    render(<RestaurantAdminPanel {...props} activeTab="menu" />);
 
-    expect(screen.getByText(/Custom Brand Catalog/i)).toBeInTheDocument();
+    expect(screen.getByText(/Menu Items/i)).toBeInTheDocument();
     expect(screen.getByText('Butter Chicken')).toBeInTheDocument();
   });
 
   it('should allow toggling item availability', async () => {
-    render(<RestaurantAdminPanel {...props} />);
-
-    // Switch to Menu & Promos tab
-    const menuTabBtn = screen.getAllByRole('button', { name: /Menu & Promos/i })[0];
-    fireEvent.click(menuTabBtn);
+    render(<RestaurantAdminPanel {...props} activeTab="menu" />);
 
     // Find the availability toggle button for Butter Chicken
     const toggleBtn = screen.getByRole('button', { name: 'Available' });
@@ -85,16 +77,12 @@ describe('RestaurantAdminPanel - VIGOROUS QA', () => {
   });
 
   it('should allow updating the restaurant verification pin', async () => {
-    render(<RestaurantAdminPanel {...props} />);
-
-    // Switch to QR Code Suite tab
-    const qrTabBtn = screen.getAllByRole('button', { name: /QR Code Suite/i })[0];
-    fireEvent.click(qrTabBtn);
+    render(<RestaurantAdminPanel {...props} activeTab="tables" />);
 
     const pinInput = screen.getByPlaceholderText('1234');
     fireEvent.change(pinInput, { target: { value: '5678' } });
 
-    const saveBtn = screen.getByRole('button', { name: 'Save PIN' });
+    const saveBtn = screen.getByRole('button', { name: 'Save Key' });
     fireEvent.click(saveBtn);
 
     expect(props.onUpdateRestaurantPin).toHaveBeenCalledWith('rest-123', '5678');

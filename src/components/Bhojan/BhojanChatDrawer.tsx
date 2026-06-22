@@ -36,7 +36,9 @@ export default function BhojanChatDrawer({
 
   useEffect(() => {
     if (chatBottomRef.current && isChatOpen) {
-      chatBottomRef.current.scrollIntoView({ behavior: 'smooth' });
+      if (typeof chatBottomRef.current.scrollIntoView === 'function') {
+        chatBottomRef.current.scrollIntoView({ behavior: 'smooth' });
+      }
     }
   }, [aiChatHistory, isChatOpen]);
 

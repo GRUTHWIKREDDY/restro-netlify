@@ -366,14 +366,17 @@ Explicitly check and highlight veg vs non-veg. Answer strictly in a brief style 
     window.getComputedStyle = function (elt, pseudoElt) {
       const style = originalGetComputedStyle.call(window, elt, pseudoElt);
       return new Proxy(style, {
-        get(target, prop, receiver) {
-          if (prop === 'getPropertyValue') {
-            return function (propertyName: string) {
-              const originalValue = target.getPropertyValue(propertyName);
-              return cleanOklch(originalValue, propertyName);
-            };
+        get(target, prop) {
+          const val = target[prop as keyof typeof target];
+          if (typeof val === 'function') {
+            if (prop === 'getPropertyValue') {
+              return function (propertyName: string) {
+                const originalValue = target.getPropertyValue(propertyName);
+                return cleanOklch(originalValue, propertyName);
+              };
+            }
+            return val.bind(target);
           }
-          const val = Reflect.get(target, prop, receiver);
           return cleanOklch(val, String(prop));
         }
       });

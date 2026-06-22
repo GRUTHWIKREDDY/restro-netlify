@@ -94,6 +94,8 @@ describe('DineInCustomerUI - VIGOROUS QA SUITE', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
+    localStorage.setItem('bhojan_welcome_seen', 'true');
   });
 
   describe('1. AUTHENTICATION & GATEKEEPING (FUNCTIONAL + UI)', () => {
@@ -211,8 +213,8 @@ describe('DineInCustomerUI - VIGOROUS QA SUITE', () => {
       // Add Paneer Tikka (LTO: 350, Promo: 50 -> Final: 300) from the menu listings
       const menuListings = screen.getByTestId('menu-listings');
       const paneerCard = within(menuListings as HTMLElement).getByText('Paneer Tikka').closest('.bg-white');
-      const paneerBtn = paneerCard!.querySelector('button');
-      await user.click(paneerBtn!);
+      const paneerBtn = within(paneerCard as HTMLElement).getByRole('button', { name: /\+ Add/i });
+      await user.click(paneerBtn);
 
       const cartBtn = screen.getByRole('button', { name: /Verify Basket/i });
       await user.click(cartBtn);
@@ -226,8 +228,9 @@ describe('DineInCustomerUI - VIGOROUS QA SUITE', () => {
       const user = userEvent.setup();
       render(<DineInCustomerUI {...loggedInProps} />);
 
-      const addBtn = screen.getByText('Butter Chicken').closest('.bg-white').querySelector('button');
-      await user.click(addBtn!);
+      const butterCard = screen.getByText('Butter Chicken').closest('.bg-white');
+      const addBtn = within(butterCard as HTMLElement).getByRole('button', { name: /\+ Add/i });
+      await user.click(addBtn);
 
       const minusBtn = screen.getByRole('button', { name: '-' });
       await user.click(minusBtn);
@@ -235,7 +238,7 @@ describe('DineInCustomerUI - VIGOROUS QA SUITE', () => {
       // Counter should disappear or return to "+ Add" inside the Butter Chicken card
       await waitFor(() => {
         const itemCard = screen.getByText('Butter Chicken').closest('.bg-white');
-        expect(within(itemCard as HTMLElement).getByText(/\+ Add/i)).toBeInTheDocument();
+        expect(within(itemCard as HTMLElement).getByRole('button', { name: /\+ Add/i })).toBeInTheDocument();
       });
     });
 
@@ -260,16 +263,14 @@ describe('DineInCustomerUI - VIGOROUS QA SUITE', () => {
       const user = userEvent.setup();
       render(<DineInCustomerUI {...loggedInProps} />);
 
-      // The sparkle button has no text, we can find it by class or icon
-      const buttons = screen.getAllByRole('button');
-      const sparkleBtn = buttons.find(b => b.innerHTML.includes('sparkle-shiver'));
-      await user.click(sparkleBtn!);
+      const sparkleBtn = screen.getAllByTitle('Talk to Bhojan')[0];
+      await user.click(sparkleBtn);
 
-      expect(screen.getByText(/AI Maitre D' Concierge/i)).toBeInTheDocument();
+      expect(screen.getByText(/Your Digital Khansama/i)).toBeInTheDocument();
 
-      const input = screen.getByPlaceholderText(/Ask about pairings/i);
+      const input = screen.getByPlaceholderText(/Ask Bhojan/i);
       await user.type(input, 'I want something spicy');
-      await user.click(screen.getByRole('button', { name: /Send message/i })); // Send button
+      await user.click(screen.getByRole('button', { name: /Send message/i }));
 
       expect(global.fetch).toHaveBeenCalledWith('/api/gemini/chat', expect.any(Object));
     });
@@ -287,7 +288,7 @@ describe('DineInCustomerUI - VIGOROUS QA SUITE', () => {
 
       await waitFor(() => {
         expect(mockProps.triggerAppAlert).toHaveBeenCalledWith(
-          "Buzzer Signal Dispatched",
+          "Waiter Notified",
           expect.stringContaining("Bring Extra Water"),
           "success"
         );
