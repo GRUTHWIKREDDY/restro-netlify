@@ -146,8 +146,8 @@ export default function AnalyticsDashboard({ restaurantId, restaurantName }: Ana
       {/* Header + Range Selector */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h3 className="text-base font-black text-slate-900">📊 {restaurantName} Analytics</h3>
-          <p className="text-xs text-slate-500 mt-0.5">Real-time KPIs and performance metrics</p>
+          <h3 className="text-base font-black text-slate-900">{restaurantName} Analytics</h3>
+          <p className="text-xs text-slate-500 mt-0.5">Real-time business health and sales track</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex bg-slate-100 rounded-xl p-0.5 border border-slate-200">
@@ -444,20 +444,20 @@ function MenuView({ data }: { data: any }) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard label="Total Items" value={fmtNum(data.totalItems)} color="indigo" />
-        <KpiCard label="High Performers" value={fmtNum(data.matrix?.star || 0)} sub={`${(data.matrixPercent?.star || 0).toFixed(0)}% of menu`} color="emerald" />
-        <KpiCard label="Review Candidates" value={fmtNum(data.matrix?.dog || 0)} sub={`${(data.matrixPercent?.dog || 0).toFixed(0)}% of menu`} color="rose" />
-        <KpiCard label="Avg Rating" value={(data.avgRating || 0).toFixed(1)} sub="★ customer score" color="amber" />
+        <KpiCard label="Best Sellers" value={fmtNum(data.matrix?.star || 0)} sub={`${(data.matrixPercent?.star || 0).toFixed(0)}% of menu`} color="emerald" />
+        <KpiCard label="Low Profit, Low Sales" value={fmtNum(data.matrix?.dog || 0)} sub={`${(data.matrixPercent?.dog || 0).toFixed(0)}% of menu`} color="rose" />
+        <KpiCard label="Average Star Rating" value={(data.avgRating || 0).toFixed(1)} sub="★ customer score" color="amber" />
       </div>
 
-      {/* Menu Engineering Matrix */}
+      {/* Dish Performance Chart */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4">
-        <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3">Menu Engineering Matrix</h4>
+        <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3">Dish Performance Chart</h4>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { key: 'star', label: '⭐ High Performers', desc: 'High profit + High sales — Promote actively', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
-            { key: 'plowhorse', label: '🐴 Volume Drivers', desc: 'Low profit + High sales — Consider repricing upward', color: 'bg-amber-100 text-amber-800 border-amber-200' },
-            { key: 'puzzle', label: '🧩 Hidden Gems', desc: 'High profit + Low sales — Market more aggressively', color: 'bg-blue-100 text-blue-800 border-blue-200' },
-            { key: 'dog', label: '🐕 Review Candidates', desc: 'Low profit + Low sales — Consider removing or reworking', color: 'bg-rose-100 text-rose-800 border-rose-200' },
+            { key: 'star', label: 'Best Sellers', desc: 'High profit + High sales — Promote actively', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+            { key: 'plowhorse', label: 'Popular but Low Profit', desc: 'Low profit + High sales — Consider repricing upward', color: 'bg-amber-100 text-amber-800 border-amber-200' },
+            { key: 'puzzle', label: 'High Profit, Low Sales', desc: 'High profit + Low sales — Market more aggressively', color: 'bg-blue-100 text-blue-800 border-blue-200' },
+            { key: 'dog', label: 'Low Profit, Low Sales', desc: 'Low profit + Low sales — Consider removing or reworking', color: 'bg-rose-100 text-rose-800 border-rose-200' },
           ].map(m => (
             <div key={m.key} className={`${m.color} border rounded-2xl p-3`}>
               <span className="text-xs font-black block">{m.label}</span>
@@ -471,7 +471,7 @@ function MenuView({ data }: { data: any }) {
       {/* Item List */}
       {data.items?.length > 0 && (
         <div className="bg-white rounded-2xl border border-slate-200 p-4">
-          <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3">All Menu Items</h4>
+          <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider mb-3">Full Menu List</h4>
           <div className="overflow-x-auto">
             <table className="w-full text-[11px]">
               <thead><tr className="text-left text-slate-400 font-bold uppercase tracking-wider text-[9px]">
@@ -571,7 +571,7 @@ function CustomerView({ data }: { data: any }) {
         <KpiCard label="Total Customers" value={fmtNum(data.totalCustomers)} color="indigo" />
         <KpiCard label="Repeat Rate" value={fmtPct(data.repeatRate)} sub="returning within 30d" color="emerald" />
         <KpiCard label="Est. CLV" value={fmt(data.estimatedCLV)} sub="lifetime value estimate" color="amber" />
-        <KpiCard label="Churn Candidates" value={fmtNum(data.churnCandidates)} sub="inactive 45+ days" color="rose" />
+        <KpiCard label="Inactive Guests" value={fmtNum(data.churnCandidates)} sub="inactive 45+ days" color="rose" />
       </div>
       {data.visitFrequency && (
         <div className="bg-white rounded-2xl border border-slate-200 p-4">
@@ -596,7 +596,7 @@ function FeedbackView({ data }: { data: any }) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard label="Total Feedback" value={fmtNum(data.total)} color="indigo" />
-        <KpiCard label="Avg Rating" value={(data.avgRating || 0).toFixed(1)} sub="★ out of 5" color="amber" />
+        <KpiCard label="Average Star Rating" value={(data.avgRating || 0).toFixed(1)} sub="★ out of 5" color="amber" />
         <KpiCard label="Positive" value={fmtPct(data.sentimentBreakdown?.positive || 0)} color="emerald" />
         <KpiCard label="Actionable" value={fmtNum(data.actionableCount)} sub="needs response" color="rose" />
       </div>
