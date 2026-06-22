@@ -5,6 +5,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { Restaurant } from '../types';
 import { supabase } from '../supabase';
+import bhojanFull from '../assets/bhojan-full.png';
 
 interface StaffPortalLoginProps {
   onLoginSuccess: (mode: 'restadmin' | 'kitchen' | 'superadmin') => void;
@@ -134,6 +135,21 @@ export default function StaffPortalLogin({
 
         {/* Brand Header */}
         <div className="text-center space-y-2.5">
+          {/* Bhojan Welcome Avatar */}
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.5, type: 'spring', bounce: 0.3 }}
+            className="flex justify-center mb-3"
+          >
+            <div className="relative">
+              <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-white shadow-xl shadow-indigo-200/50">
+                <img src={bhojanFull} alt="Bhojan — Your Digital Khansama" className="w-full h-full object-cover" />
+              </div>
+              <span className="absolute -bottom-1 -right-1 w-6 h-6 bg-emerald-400 border-2 border-white rounded-full flex items-center justify-center text-white text-[10px]">👋</span>
+            </div>
+          </motion.div>
+          
           <motion.h2
             initial={{ y: -10, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}

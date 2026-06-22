@@ -794,6 +794,89 @@ async function callDeepSeek(prompt: string, systemInstruction: string): Promise<
   return data.choices?.[0]?.message?.content?.trim() || "";
 }
 
+// OpenRouter AI client — OpenAI-compatible, uses native fetch
+const OPENROUTER_API_BASE = "https://openrouter.ai/api/v1";
+const OPENROUTER_MODEL = "google/gemini-2.5-flash";
+
+async function callOpenRouter(prompt: string, systemInstruction: string): Promise<string> {
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!key) {
+    console.warn("WARNING: OPENROUTER_API_KEY is not defined.");
+    return "";
+  }
+
+  const response = await fetch(`${OPENROUTER_API_BASE}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${key}`,
+      "HTTP-Referer": "https://github.com/gruthwikreddy/Restro",
+      "X-Title": "Restro App"
+    },
+    body: JSON.stringify({
+      model: OPENROUTER_MODEL,
+      messages: [
+        { role: "system", content: systemInstruction },
+        { role: "user", content: prompt }
+      ],
+      max_tokens: 1024,
+      temperature: 0.7
+    })
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`OpenRouter API error ${response.status}: ${errorBody}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content?.trim() || "";
+}
+
+// Unified AI client calling function with fallback
+async function callAI(prompt: string, systemInstruction: string): Promise<string> {
+  const openRouterKey = process.env.OPENROUTER_API_KEY;
+  const deepSeekKey = process.env.DEEPSEEK_API_KEY;
+
+  if (!openRouterKey && !deepSeekKey) {
+    console.warn("WARNING: Neither OPENROUTER_API_KEY nor DEEPSEEK_API_KEY is defined.");
+    return "";
+  }
+
+  const attempts = [
+    {
+      name: "OpenRouter",
+      key: openRouterKey,
+      fn: () => callOpenRouter(prompt, systemInstruction)
+    },
+    {
+      name: "DeepSeek",
+      key: deepSeekKey,
+      fn: () => callDeepSeek(prompt, systemInstruction)
+    }
+  ];
+
+  let lastError: Error | null = null;
+
+  for (const attempt of attempts) {
+    if (attempt.key) {
+      try {
+        console.log(`[AI Routing] Attempting AI call via ${attempt.name}...`);
+        const result = await attempt.fn();
+        if (result) {
+          console.log(`[AI Routing] ${attempt.name} API call succeeded.`);
+          return result;
+        }
+      } catch (err: any) {
+        console.error(`[AI Routing] ${attempt.name} API call failed:`, err.message || err);
+        lastError = err;
+      }
+    }
+  }
+
+  throw lastError || new Error("All configured AI API calls failed.");
+}
+
 export async function configureApp(isNetlify = false) {
   const app = express();
 
@@ -1918,19 +2001,19 @@ export async function configureApp(isNetlify = false) {
     }
 
     try {
-      const key = process.env.DEEPSEEK_API_KEY;
-      if (!key) {
+      const hasKey = process.env.OPENROUTER_API_KEY || process.env.DEEPSEEK_API_KEY;
+      if (!hasKey) {
         return res.json({
-          text: `[Offline Maitre D' AI Assistant]: Namaste! I am running in local safe-mode. Based on our delicious menu, I highly recommend our Chef's legendary Murgh Makhani (Butter Chicken) (₹380.00) paired with sweet, chilled Alphonso Mango Lassi (₹120.00)! Or for vegetarian diners, the Ghee Roast Dosa with fresh coconut chutney is an absolute must. May I add any of these to your basket?`
+          text: `[Bhojan Offline Concierge 🧑‍🍳]: Namaste! I am running in local safe-mode. Based on our delicious menu, I highly recommend our Chef's legendary Murgh Makhani (Butter Chicken) (₹380.00) paired with sweet, chilled Alphonso Mango Lassi (₹120.00)! Or for vegetarian diners, the Ghee Roast Dosa with fresh coconut chutney is an absolute must. May I add any of these to your basket?`
         });
       }
 
-      const result = await callDeepSeek(userPrompt, systemInstruction || "You are a professional hospitality digital dining guide.");
+      const result = await callAI(userPrompt, systemInstruction || "You are a professional hospitality digital dining guide.");
       res.json({ text: result });
     } catch (err: any) {
-      console.error("DeepSeek AI API Error in server.ts:", err);
+      console.error("AI API Error in server.ts:", err);
       res.json({
-        text: `[Dining AI Assistant Error]: Sorry! I couldn't reach the celestial servers. The current menu consists of standard artisan entrees. How can I assist you manually?`
+        text: `[Bhojan Offline Concierge 🧑‍🍳]: Namaste! I couldn't reach the celestial servers, but I am here to help you manually. How can I assist you today?`
       });
     }
   });
@@ -1942,21 +2025,27 @@ export async function configureApp(isNetlify = false) {
     }
 
     try {
-      const key = process.env.DEEPSEEK_API_KEY;
-      if (!key) {
+      const hasKey = process.env.OPENROUTER_API_KEY || process.env.DEEPSEEK_API_KEY;
+      if (!hasKey) {
         return res.json({
-          text: `### 🇮🇳 Strategic Restaurant Performance Report
+          text: `### 🧑‍🍳 Bhojan's Strategic Restaurant Performance Report (Offline Mode)
 - **UPI Digital Checkout Traction**: Push instant QR-code tab settlement to minimize billing queues during peak rush hours.
 - **Combo Upgrades**: Combine Mains like *Paneer Lababdar* or *Butter Chicken* with premium drinks like *Alphonso Mango Lassi* to lift average order value by 18%.
-- **Kitchen Hot-Station SLAs**: Optimize clay-tandoor and dosa-tava dispatch lines to complete dining tickets under 8 minutes, maintaining crispness and steam.`
+- **Kitchen Hot-Station SLAs**: Optimize clay-tandoor and dosa-tava dispatch lines to complete dining tickets under 8 minutes, maintaining strategic freshness.`
         });
       }
 
-      const result = await callDeepSeek(userPrompt, systemInstruction || "You are an elite Michelin-star restaurant consultant generating detailed business performance reports in markdown.");
+      const result = await callAI(userPrompt, systemInstruction || "You are an elite Michelin-star restaurant consultant generating detailed business performance reports in markdown.");
       res.json({ text: result });
     } catch (err: any) {
-      console.error("DeepSeek AI report error in server.ts:", err);
-      res.status(500).json({ error: err.message });
+      console.error("AI report error in server.ts:", err);
+      res.json({
+        text: `### 🧑‍🍳 Bhojan's Strategic Restaurant Performance Report (Offline Mode)
+*I'm currently unable to connect to the strategic servers to analyze live data, but here are the core operations optimizations to check:*
+- **UPI Digital Checkout Traction**: Push instant QR-code tab settlement to minimize billing queues during peak rush hours.
+- **Combo Upgrades**: Combine Mains like *Paneer Lababdar* or *Butter Chicken* with premium drinks like *Alphonso Mango Lassi* to lift average order value by 18%.
+- **Kitchen Hot-Station SLAs**: Optimize clay-tandoor and dosa-tava dispatch lines to complete dining tickets under 8 minutes, maintaining strategic freshness.`
+      });
     }
   });
 

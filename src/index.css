@@ -124,3 +124,160 @@
     background: transparent !important;
   }
 }
+
+/* html2canvas safe receipt layout to bypass tailwind v4 oklch() color issues */
+.receipt-capture-area {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+}
+
+.receipt-capture-area .receipt-hdr {
+  text-align: center !important;
+  border-bottom: 2px dashed #cbd5e1 !important;
+  padding-bottom: 12px !important;
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+.receipt-capture-area .receipt-title {
+  font-weight: 900 !important;
+  font-size: 14px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.1em !important;
+  color: #0f172a !important;
+  background-color: #ffffff !important;
+}
+
+.receipt-capture-area .receipt-meta {
+  font-size: 9px !important;
+  font-weight: 700 !important;
+  color: #dc2626 !important;
+  text-transform: uppercase !important;
+  margin-top: 4px !important;
+  background-color: #ffffff !important;
+}
+
+.receipt-capture-area .receipt-date {
+  font-size: 8px !important;
+  color: #64748b !important;
+  font-family: monospace !important;
+  margin-top: 4px !important;
+  background-color: #ffffff !important;
+}
+
+.receipt-capture-area .receipt-item-card {
+  background-color: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 12px !important;
+  padding: 14px !important;
+  color: #0f172a !important;
+}
+
+.receipt-capture-area .receipt-card-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  margin-bottom: 10px !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  padding-bottom: 6px !important;
+  background-color: #f8fafc !important;
+}
+
+.receipt-capture-area .receipt-card-title {
+  font-size: 10px !important;
+  font-weight: 900 !important;
+  color: #64748b !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  background-color: #f8fafc !important;
+}
+
+.receipt-capture-area .receipt-status-badge {
+  font-size: 8px !important;
+  font-weight: 950 !important;
+  text-transform: uppercase !important;
+  padding: 2px 8px !important;
+  border-radius: 9999px !important;
+}
+
+.receipt-capture-area .badge-completed {
+  background-color: #d1fae5 !important;
+  color: #065f46 !important;
+}
+
+.receipt-capture-area .badge-accepted {
+  background-color: #dbeafe !important;
+  color: #1e40af !important;
+}
+
+.receipt-capture-area .badge-pending {
+  background-color: #fef3c7 !important;
+  color: #92400e !important;
+}
+
+.receipt-capture-area .badge-rejected {
+  background-color: #ffe4e6 !important;
+  color: #9f1239 !important;
+}
+
+.receipt-capture-area .receipt-item-row {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  font-size: 12px !important;
+  margin-top: 6px !important;
+  background-color: #f8fafc !important;
+}
+
+.receipt-capture-area .receipt-item-name {
+  font-weight: 600 !important;
+  color: #334155 !important;
+  background-color: #f8fafc !important;
+}
+
+.receipt-capture-area .receipt-item-qty {
+  color: #94a3b8 !important;
+  font-size: 10px !important;
+  margin-left: 6px !important;
+  background-color: #f8fafc !important;
+}
+
+.receipt-capture-area .receipt-item-price {
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  background-color: #f8fafc !important;
+}
+
+.receipt-capture-area .receipt-totals-card {
+  background-color: #fef2f2 !important;
+  border: 1px solid #fee2e2 !important;
+  border-radius: 12px !important;
+  padding: 16px !important;
+  color: #0f172a !important;
+}
+
+.receipt-capture-area .receipt-total-row {
+  display: flex !important;
+  justify-content: space-between !important;
+  font-size: 12px !important;
+  margin-top: 6px !important;
+}
+
+.receipt-capture-area .receipt-tax-row {
+  display: flex !important;
+  justify-content: space-between !important;
+  font-size: 10px !important;
+  color: #475569 !important;
+  margin-top: 4px !important;
+}
+
+.receipt-capture-area .receipt-final-row {
+  display: flex !important;
+  justify-content: space-between !important;
+  font-size: 14px !important;
+  font-weight: 900 !important;
+  margin-top: 10px !important;
+  border-top: 1px solid #fee2e2 !important;
+  padding-top: 8px !important;
+}

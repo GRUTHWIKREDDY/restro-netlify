@@ -9,6 +9,8 @@ import { Restaurant, MenuItem, Order, DineInUser, ChatMessage, Buzzer } from '..
 import { supabase, toSnake } from '../supabase';
 import { calculateBillSummary } from '../utils/billing';
 import html2canvas from 'html2canvas';
+import { BhojanProvider, BhojanFloatingWidget, BhojanWelcome, BhojanChatDrawer, useBhojan } from './Bhojan';
+import bhojanHead from '../assets/bhojan-head.png';
 
 interface DineInProps {
   restaurant: Restaurant;
@@ -152,7 +154,7 @@ export default function DineInCustomerUI({
   const [isAiConciergeOpen, setIsAiConciergeOpen] = useState(false);
   const [aiInputMessage, setAiInputMessage] = useState('');
   const [aiChatHistory, setAiChatHistory] = useState<ChatMessage[]>([
-    { role: 'assistant', text: `Namaste! I am your AI Khansama & Maitre D' today at ${restaurant?.name || "The Royal Clay Oven"}. 🙏 Please let me know what flavor profile you are craving today—whether you prefer mild buttery comforting gravies, sizzling tandoori spices, or gluten-free, pure-vegetarian options!` }
+    { role: 'assistant', text: `Namaste Ji! 🙏 I'm Bhojan, your digital Khansama here at ${restaurant?.name || "The Royal Clay Oven"}. I know every recipe on our menu inside-out! Tell me what you're craving — buttery comfort, fiery tandoori, or something light and refreshing — and I'll craft the perfect meal for you!` }
   ]);
   const [isAiTyping, setIsAiTyping] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
@@ -185,7 +187,7 @@ Client seating context: Table #${tableNumber}, Guest Name: ${customerSession?.na
 Speak with extreme warmth and absolute hospitality (referring to guests with respect, utilizing phrases like "Ji", and honoring Indian culinary nuances).
 Always recommend items from this real-time localized menu options:
 ${JSON.stringify(liveMenuContext)}
-Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3 paragraphs.`
+Explicitly check and highlight veg vs non-veg. Answer strictly in a brief style under 5 to 6 lines maximum. Keep it very sweet and fast to read.`
         })
       });
 
@@ -328,6 +330,55 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
 
   const handleDownloadReceipt = async () => {
     if (!billRef.current) return;
+
+    // Save the original getComputedStyle function
+    const originalGetComputedStyle = window.getComputedStyle;
+
+    const cleanOklch = (val: any, name?: string) => {
+      if (typeof val === 'string' && val.includes('oklch')) {
+        const propName = (name || '').toLowerCase();
+        if (propName.includes('background')) {
+          // Keep backgrounds white or light
+          if (propName.includes('totals') || propName.includes('card')) {
+            return 'rgb(248, 250, 252)'; // slate-50 fallback
+          }
+          return 'rgb(255, 255, 255)';
+        }
+        if (propName.includes('border') || propName.includes('outline')) {
+          return 'rgb(226, 232, 240)'; // slate-200 fallback
+        }
+        if (propName.includes('color')) {
+          // If it's text color
+          if (propName.includes('emerald') || propName.includes('saving')) {
+            return 'rgb(4, 120, 87)'; // emerald-700 fallback
+          }
+          if (propName.includes('indigo') || propName.includes('final') || propName.includes('payable')) {
+            return 'rgb(79, 70, 229)'; // indigo-600 fallback
+          }
+          return 'rgb(15, 23, 42)'; // slate-900 fallback
+        }
+        return 'rgb(15, 23, 42)';
+      }
+      return val;
+    };
+
+    // Override window.getComputedStyle to intercept oklch computed values
+    window.getComputedStyle = function (elt, pseudoElt) {
+      const style = originalGetComputedStyle.call(window, elt, pseudoElt);
+      return new Proxy(style, {
+        get(target, prop, receiver) {
+          if (prop === 'getPropertyValue') {
+            return function (propertyName: string) {
+              const originalValue = target.getPropertyValue(propertyName);
+              return cleanOklch(originalValue, propertyName);
+            };
+          }
+          const val = Reflect.get(target, prop, receiver);
+          return cleanOklch(val, String(prop));
+        }
+      });
+    };
+
     try {
       const element = billRef.current;
       const canvas = await html2canvas(element, {
@@ -336,6 +387,10 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
         logging: false,
         useCORS: true
       });
+
+      // Restore original getComputedStyle immediately
+      window.getComputedStyle = originalGetComputedStyle;
+
       const dataUrl = canvas.toDataURL('image/png');
       const link = document.createElement('a');
       link.download = `Receipt-${restaurant.name.replace(/\s+/g, '-')}-Table-${tableNumber}.png`;
@@ -343,6 +398,8 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
       link.click();
       triggerAppAlert("Downloaded PNG", "The receipt image has been saved to your device.", "success");
     } catch (err) {
+      // Restore original getComputedStyle in case of error
+      window.getComputedStyle = originalGetComputedStyle;
       console.error("Failed to generate receipt image:", err);
       triggerAppAlert("Download Error", "Could not generate PNG receipt.", "error");
     }
@@ -684,12 +741,11 @@ Explicitly check and highlight veg vs non-veg. Answer in a concise style under 3
           systemInstruction: `You are the expert, polite Indian "Khansama & Maitre D'" AI Assistant for the prestigious restaurant "${restaurant.name}".
 Client seating context: Table #${tableNumber}, Guest Name: ${customerSession?.name || "Ji"}.
 Speak with extreme warmth and absolute hospitality (referring to guests with respect, utilizing phrases like "Ji", and honoring Indian culinary nuances).
-Always structure suggestions gracefully:
-- Recommend items from this real-time localized menu options:
+Always recommend items from this real-time localized menu options:
 ${JSON.stringify(liveMenuContext)}
-- Explicitly check and highlight "Veg" vs "Non-Vegetarian" status (highly crucial!) and suggest exact combinations (e.g., pairing Butter Naan with rich gravies, filter coffee for breakfast, or Mango Lassi for refreshers).
-- Inquire about spice tolerances (Mild, Medium, Sizzling Spicy) when suggesting dishes.
-- Maintain a concise, beautiful, elegant style under 3 paragraphs with generous greeting warmths.`
+- Explicitly check and highlight "Veg" vs "Non-Vegetarian" status and suggest combinations.
+- Inquire about spice tolerances if needed.
+- Answer strictly in a brief style under 5 to 6 lines maximum. Keep it very sweet and fast to read.`
         })
       });
 
@@ -1008,10 +1064,19 @@ ${JSON.stringify(liveMenuContext)}
     );
   }
 
+  const cartItemCount = useMemo(() => (Object.values(cart) as number[]).reduce((a, b) => a + b, 0), [cart]);
+  const activeOrderCount = useMemo(() => customerOrders.filter(o => o.status === 'pending' || o.status === 'accepted').length, [customerOrders]);
+
   return (
+    <BhojanProvider portalMode="customer">
     <div className="flex-1 bg-slate-100 flex justify-center md:py-4 md:px-2 sm:p-6 overflow-y-auto">
       {/* Visual smartphone device simulator frame */}
       <div className="w-full md:max-w-[430px] bg-white md:rounded-[40px] md:shadow-2xl md:border-[12px] md:border-slate-900 overflow-hidden flex flex-col min-h-screen md:min-h-[720px] relative text-slate-800">
+
+        {/* Bhojan Welcome Overlay for first-time visitors */}
+        {customerSession && (
+          <BhojanWelcome restaurantName={restaurant.name} tableNumber={tableNumber} />
+        )}
         
         {/* Notch speaker - only visible on md and up */}
         <div className="hidden md:flex absolute top-0 inset-x-0 h-4 bg-slate-800 justify-center items-center z-40">
@@ -1067,13 +1132,8 @@ ${JSON.stringify(liveMenuContext)}
                   )}
                 </button>
 
-                {/* AI Maitre D' chat button */}
-                <button
-                  onClick={() => setIsAiConciergeOpen(!isAiConciergeOpen)}
-                  className="p-2 bg-amber-500 text-slate-950 rounded-xl hover:bg-amber-600 transition shadow-md relative group flex items-center justify-center border border-amber-400"
-                >
-                  <Sparkles size={14} className="sparkle-shiver" />
-                </button>
+                {/* Bhojan AI Concierge button */}
+                <BhojanChatButton />
               </>
             )}
           </div>
@@ -1902,90 +1962,20 @@ ${JSON.stringify(liveMenuContext)}
               </button>
             </div>
           </div>
-        )}        {/* AI CONCIERGE CHAT SLIDEOUT OVERLAY */}
-        {isAiConciergeOpen && (
-          <div className="absolute inset-0 bg-[#0F172A] z-50 flex flex-col pt-6">
-            <div className="bg-slate-950 px-4 py-3 flex items-center justify-between border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-amber-500 text-slate-950 rounded-sm rotate-45">
-                  <Sparkles size={14} className="sparkle-shiver -rotate-45" />
-                </div>
-                <div>
-                  <h4 className="text-white font-extrabold text-xs uppercase tracking-wider leading-none">AI Maitre D' Concierge</h4>
-                  <p className="text-[9px] text-slate-400 mt-1 uppercase tracking-widest font-mono">Hospitality specialist</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setIsAiConciergeOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-white rounded-sm hover:bg-slate-850 transition"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            {/* AI Messages View Area */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#0F172A] scrollbar-none">
-              {aiChatHistory.map((msg, idx) => (
-                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] rounded-sm px-3.5 py-2.5 text-xs leading-relaxed ${msg.role === 'user' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-900 border border-slate-800 text-slate-200 shadow-inner'}`}>
-                    {msg.text}
-                  </div>
-                </div>
-              ))}
-              {isAiTyping && (
-                <div className="flex justify-start">
-                  <div className="bg-slate-900 text-slate-400 rounded-sm px-3.5 py-2.5 text-xs border border-slate-800 flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 bg-amber-500 rounded-sm animate-bounce"></span>
-                    <span className="w-1.5 h-1.5 bg-amber-500 rounded-sm animate-bounce" style={{ animationDelay: '0.2s' }}></span>
-                    <span className="w-1.5 h-1.5 bg-amber-500 rounded-sm animate-bounce" style={{ animationDelay: '0.4s' }}></span>
-                    <span className="font-bold text-[9px] text-slate-400 uppercase tracking-widest leading-none">CONSULTING RECIPES...</span>
-                  </div>
-                </div>
-              )}
-              <div ref={chatBottomRef} />
-            </div>
-
-             {/* AI Prompt suggestions buttons */}
-            <div className="flex gap-1 overflow-x-auto scrollbar-none pb-1.5 px-3 bg-[#0F172A] border-t border-slate-900/40">
-              {[
-                "🌱 Pure Veg", 
-                "🔥 Extreme Spicy", 
-                "🧒 For Kids", 
-                "🍰 Chef's Desserts"
-              ].map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  onClick={() => handleQuickAiPrompt(`Can you recommend some ${suggestion} dishes available on your menu?`)}
-                  className="flex-shrink-0 text-[9px] bg-slate-900 border border-slate-800 text-amber-400 font-extrabold px-2.5 py-1 rounded-sm hover:bg-slate-850 hover:border-amber-500/30 transition shadow-xs"
-                >
-                  {suggestion}
-                </button>
-              ))}
-            </div>
-
-            {/* AI Input Forms */}
-            <form onSubmit={handleSendAiMessage} className="p-3 bg-slate-950 border-t border-slate-850 flex gap-2">
-              <input 
-                type="text" 
-                placeholder="Ask about pairings / allergen details..."
-                value={aiInputMessage}
-                onChange={(e) => setAiInputMessage(e.target.value)}
-                disabled={isAiTyping}
-                className="flex-1 bg-slate-900 border border-slate-800 rounded-sm px-3.5 py-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-amber-500 placeholder-slate-500"
-              />
-              <button 
-                type="submit"
-                disabled={isAiTyping || !aiInputMessage.trim()}
-                title="Send message"
-                aria-label="Send message"
-                className="p-2.5 bg-amber-500 text-slate-950 font-bold rounded-sm hover:bg-amber-600 disabled:opacity-45 transition flex items-center justify-center"
-              >
-                <Send size={15} />
-              </button>
-            </form>
-          </div>
-        )}
+        )}        {/* BHOJAN AI CHAT DRAWER */}
+        <BhojanChatDrawer
+          restaurantName={restaurant.name}
+          tableNumber={tableNumber}
+          customerName={customerSession?.name}
+          menus={restaurantMenus}
+          aiChatHistory={aiChatHistory}
+          setAiChatHistory={setAiChatHistory}
+          isAiTyping={isAiTyping}
+          setIsAiTyping={setIsAiTyping}
+          aiInputMessage={aiInputMessage}
+          setAiInputMessage={setAiInputMessage}
+          onCallBuzzer={handleCallBuzzer}
+        />
 
         {/* FLOATING BUZZER SUMMON MENU */}
         {customerSession && (
@@ -2178,12 +2168,12 @@ ${JSON.stringify(liveMenuContext)}
 
               {/* Scrollable Content Wrapper for screenshot */}
               <div className="flex-1 overflow-y-auto scrollbar-none">
-                <div ref={billRef} className="p-5 space-y-4 bg-white">
+                <div ref={billRef} className="p-5 space-y-4 receipt-capture-area">
                   {/* Digital Receipt Styling */}
-                  <div className="text-center pb-3 border-b border-dashed border-slate-200 shrink-0">
-                    <h4 className="font-black text-sm uppercase text-slate-900 tracking-widest">{restaurant.name}</h4>
-                    <p className="text-[9px] text-indigo-650 font-bold uppercase tracking-wider mt-0.5">Table #{tableNumber} • Digital Receipt</p>
-                    <p className="text-[8px] text-slate-400 font-mono mt-0.5">Date: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                  <div className="receipt-hdr">
+                    <h4 className="receipt-title">{restaurant.name}</h4>
+                    <p className="receipt-meta">Table #{tableNumber} • Digital Receipt</p>
+                    <p className="receipt-date">Date: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
                   </div>
 
                   {customerOrders.length === 0 ? (
@@ -2193,47 +2183,69 @@ ${JSON.stringify(liveMenuContext)}
                   ) : (
                     <>
                       {customerOrders.map((order, idx) => (
-                        <div key={order.id} className="bg-slate-50 rounded-xl border border-slate-100 p-3.5 space-y-2.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Order #{idx + 1}</span>
-                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
-                              order.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
-                              order.status === 'accepted' ? 'bg-blue-100 text-blue-700' :
-                              order.status === 'rejected' ? 'bg-rose-100 text-rose-700' :
-                              'bg-amber-100 text-amber-700'
+                        <div key={order.id} className="receipt-item-card space-y-2.5">
+                          <div className="receipt-card-header">
+                            <span className="receipt-card-title">Order #{idx + 1}</span>
+                            <span className={`receipt-status-badge ${
+                              order.status === 'completed' ? 'badge-completed' :
+                              order.status === 'accepted' ? 'badge-accepted' :
+                              order.status === 'rejected' ? 'badge-rejected' :
+                              'badge-pending'
                             }`}>
                               {order.status}
                             </span>
                           </div>
                           {order.items.map((item, iIdx) => (
-                            <div key={iIdx} className="flex items-center justify-between text-xs">
-                              <div className="flex items-center gap-2">
-                                <span className="font-semibold text-slate-700">{item.name}</span>
-                                <span className="text-slate-400 text-[10px]">×{item.quantity}</span>
+                            <div key={iIdx} className="receipt-item-row">
+                              <div className="flex items-center">
+                                <span className="receipt-item-name">{item.name}</span>
+                                <span className="receipt-item-qty">×{item.quantity}</span>
                               </div>
-                              <span className="font-bold text-slate-900">₹{(item.price * item.quantity).toFixed(2)}</span>
+                              <span className="receipt-item-price">₹{(item.price * item.quantity).toFixed(2)}</span>
                             </div>
                           ))}
                         </div>
                       ))}
 
                       {/* Totals */}
-                      <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 space-y-2.5">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-slate-600 font-semibold">Subtotal</span>
-                          <span className="font-bold text-slate-900">₹{cumulativeBill.originalSubtotal.toFixed(2)}</span>
-                        </div>
-                        {cumulativeBill.totalDeductions > 0 && (
-                          <div className="flex justify-between text-xs">
-                            <span className="text-emerald-600 font-semibold">Promo Savings</span>
-                            <span className="font-bold text-emerald-600">-₹{cumulativeBill.totalDeductions.toFixed(2)}</span>
+                      {(() => {
+                        const postDiscountTotal = Math.max(0, cumulativeBill.originalSubtotal - cumulativeBill.totalDeductions);
+                        const taxableValue = postDiscountTotal / 1.05;
+                        const totalGst = postDiscountTotal - taxableValue;
+                        const cgstVal = totalGst / 2;
+                        const sgstVal = totalGst / 2;
+
+                        return (
+                          <div className="receipt-totals-card space-y-2">
+                            <div className="receipt-total-row">
+                              <span className="text-slate-600 font-semibold">Subtotal</span>
+                              <span className="font-bold text-slate-900">₹{cumulativeBill.originalSubtotal.toFixed(2)}</span>
+                            </div>
+                            {cumulativeBill.totalDeductions > 0 && (
+                              <div className="receipt-total-row text-emerald-700">
+                                <span className="font-semibold">Promo Savings</span>
+                                <span className="font-bold">-₹{cumulativeBill.totalDeductions.toFixed(2)}</span>
+                              </div>
+                            )}
+                            <div className="receipt-tax-row">
+                              <span>Taxable Value (excl. GST)</span>
+                              <span>₹{taxableValue.toFixed(2)}</span>
+                            </div>
+                            <div className="receipt-tax-row">
+                              <span>CGST (2.5% inclusive)</span>
+                              <span>₹{cgstVal.toFixed(2)}</span>
+                            </div>
+                            <div className="receipt-tax-row">
+                              <span>SGST (2.5% inclusive)</span>
+                              <span>₹{sgstVal.toFixed(2)}</span>
+                            </div>
+                            <div className="receipt-final-row">
+                              <span>Total Payable (incl. GST)</span>
+                              <span className="text-indigo-600">₹{cumulativeBill.finalPayable.toFixed(2)}</span>
+                            </div>
                           </div>
-                        )}
-                        <div className="flex justify-between text-sm pt-2 border-t border-indigo-200">
-                          <span className="font-extrabold text-slate-900">Total Payable</span>
-                          <span className="font-extrabold text-indigo-600">₹{cumulativeBill.finalPayable.toFixed(2)}</span>
-                        </div>
-                      </div>
+                        );
+                      })()}
                     </>
                   )}
                 </div>
@@ -2374,7 +2386,32 @@ ${JSON.stringify(liveMenuContext)}
             <span>Powered by Restro / kCodeIT Systems</span>
           </div>
         </div>
+
+        {/* Bhojan Floating Widget */}
+        {customerSession && (
+          <BhojanFloatingWidget
+            restaurantName={restaurant.name}
+            customerSession={customerSession}
+            cartItemCount={cartItemCount}
+            activeOrderCount={activeOrderCount}
+          />
+        )}
       </div>
     </div>
+    </BhojanProvider>
+  );
+}
+
+// Small internal component that uses Bhojan context for the header AI button
+function BhojanChatButton() {
+  const { toggleChat } = useBhojan();
+  return (
+    <button
+      onClick={toggleChat}
+      className="w-8 h-8 rounded-xl overflow-hidden border-2 border-amber-400 hover:border-indigo-500 transition shadow-md hover:shadow-lg hover:scale-110 flex items-center justify-center"
+      title="Talk to Bhojan"
+    >
+      <img src={bhojanHead} alt="Bhojan" className="w-full h-full object-cover" />
+    </button>
   );
 }

@@ -11,6 +11,8 @@ import { supabase } from '../supabase';
 import html2canvas from 'html2canvas';
 import AnalyticsDashboard from './analytics/AnalyticsDashboard';
 import { calculateBillSummary } from '../utils/billing';
+import { BhojanProvider, BhojanFloatingWidget, BhojanAdminChatDrawer } from './Bhojan';
+import bhojanHead from '../assets/bhojan-head.png';
 interface AdminProps {
   restaurant: Restaurant;
   restaurants: Restaurant[];
@@ -771,6 +773,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
   };
 
   return (
+    <BhojanProvider portalMode="admin">
     <div className="flex-1 max-w-full w-full mx-auto px-4 sm:px-8 lg:px-12 py-6 space-y-6 text-slate-800">
 
       {/* PRINT-ONLY STYLES - hide all admin chrome during print */}
@@ -2151,11 +2154,16 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
               <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/10 rounded-full blur-xl pointer-events-none"></div>
               
               <div className="flex items-center justify-between border-b border-indigo-800/40 pb-2">
-                <div className="flex items-center gap-1.5">
-                  <Sparkles size={14} className="text-amber-400 animate-pulse" />
-                  <h3 className="text-xs font-black uppercase tracking-widest text-slate-100">
-                    AI Business Briefing
-                  </h3>
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-indigo-400/40 shadow-lg shadow-indigo-500/20">
+                    <img src={bhojanHead} alt="Bhojan" className="w-full h-full object-cover" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-100">
+                      Bhojan's Briefing
+                    </h3>
+                    <p className="text-[8px] text-indigo-300 font-semibold uppercase tracking-widest">AI Operations Co-Pilot</p>
+                  </div>
                 </div>
                 <span className="text-[8px] bg-indigo-500/20 text-indigo-300 font-extrabold uppercase px-2 py-0.5 rounded border border-indigo-500/30">
                   Operations Desk
@@ -2903,6 +2911,14 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
         </div>
       )}
 
+      <BhojanFloatingWidget />
+      <BhojanAdminChatDrawer
+        restaurantName={restaurant.name}
+        menus={menus}
+        orders={tenantOrders}
+        buzzers={pendingBuzzers}
+      />
     </div>
+    </BhojanProvider>
   );
 }
