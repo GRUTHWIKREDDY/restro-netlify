@@ -18,6 +18,11 @@ export default function App() {
   // Path routing detection using window location
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
 
+  const navigateTo = (path: string) => {
+    window.history.pushState({}, '', path);
+    setCurrentPath(path);
+  };
+
   const [activeMode, setActiveMode] = useState<string>(() => {
     const saved = localStorage.getItem('kcode_active_mode');
     return saved || 'dinein';

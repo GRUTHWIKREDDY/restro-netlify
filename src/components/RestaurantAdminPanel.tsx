@@ -438,6 +438,14 @@ export default function RestaurantAdminPanel({
     return Object.values(groups).sort((a, b) => new Date(b.lastCheckout).getTime() - new Date(a.lastCheckout).getTime());
   }, [filteredHistoryOrders]);
 
+  const stats = useMemo(() => {
+    const pending = tenantOrders.filter(o => o.status === 'pending').length;
+    const accepted = tenantOrders.filter(o => o.status === 'accepted').length;
+    const completed = tenantOrders.filter(o => o.status === 'completed').length;
+    const revenue = tenantOrders.filter(o => o.status !== 'rejected').reduce((sum, o) => sum + o.totalAmount, 0);
+    return { pending, accepted, completed, revenue };
+  }, [tenantOrders]);
+
   const currentRestaurantMenus = useMemo(() => {
     return menus.filter(m => m.restaurantId === restaurant?.id);
   }, [menus, restaurant]);
@@ -2039,7 +2047,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                                       </div>
                                       <button
                                         type="button"
-                                        onClick={() => handleReleaseTable(t.tableNum)}
+                                        onClick={() => handleSettleAndReleaseInitiation(t.tableNum)}
                                         className={`w-full text-white font-black py-0.5 rounded-lg text-[8px] uppercase tracking-wider transition cursor-pointer text-center block ${t.floorState === 'pending' || t.floorState === 'preparing' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-900 hover:bg-rose-600'}`}
                                       >
                                         {t.floorState === 'pending' || t.floorState === 'preparing' ? 'Release' : 'Settle'}
@@ -2127,7 +2135,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={() => handleReleaseTable(t.tableNum)}
+                                  onClick={() => handleSettleAndReleaseInitiation(t.tableNum)}
                                   className={`w-full text-white font-black py-0.5 rounded-lg text-[8px] uppercase tracking-wider transition cursor-pointer text-center block ${t.floorState === 'pending' || t.floorState === 'preparing' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-slate-900 hover:bg-rose-600'}`}
                                 >
                                   {t.floorState === 'pending' || t.floorState === 'preparing' ? 'Release' : 'Settle'}
@@ -3298,17 +3306,28 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
             <div className="grid grid-cols-1 gap-2.5 pt-2">
               <button
                 type="button"
+                disabled={isSettlingTable}
                 onClick={() => handlePrepareAndRelease(releasingTableNum)}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold py-3.5 px-4 rounded-2xl text-[11px] uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
+                className={`w-full text-white font-extrabold py-3.5 px-4 rounded-2xl text-[11px] uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-2 shadow-md hover:shadow-lg ${isSettlingTable ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}
               >
-                <CheckCircle size={15} />
-                Prepare and Release
+                {isSettlingTable ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Settling Table...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle size={15} />
+                    Prepare and Release
+                  </>
+                )}
               </button>
 
               <button
                 type="button"
+                disabled={isSettlingTable}
                 onClick={() => triggerCancelSettleWarning(releasingTableNum)}
-                className="w-full bg-rose-600 hover:bg-rose-700 text-white font-extrabold py-3.5 px-4 rounded-2xl text-[11px] uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+                className={`w-full text-white font-extrabold py-3.5 px-4 rounded-2xl text-[11px] uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-2 shadow-xs ${isSettlingTable ? 'bg-rose-400 cursor-not-allowed' : 'bg-rose-600 hover:bg-rose-700'}`}
               >
                 <X size={15} />
                 Cancel and Release
@@ -3316,8 +3335,9 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
 
               <button
                 type="button"
+                disabled={isSettlingTable}
                 onClick={() => setReleasingTableNum(null)}
-                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold py-2.5 px-4 rounded-2xl text-[10px] uppercase tracking-wider transition cursor-pointer text-center"
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold py-2.5 px-4 rounded-2xl text-[10px] uppercase tracking-wider transition cursor-pointer text-center disabled:opacity-50"
               >
                 Keep Table Seated
               </button>
@@ -3331,27 +3351,28 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl p-6 border-2 border-rose-200 space-y-4 text-center">
             <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto animate-bounce">
               <AlertTriangle size={24} />
-            </div}
+            </div>
             <h4 className="text-lg font-black text-slate-900">Settle Warning</h4>
             <p className="text-xs text-slate-600 leading-relaxed">
               There are active orders in progress for Table #{releasingTableNum} that will be cancelled. <br/>Are you absolutely sure you want to proceed?
             </p>
             <div className="flex gap-3 pt-2">
               <button
+                disabled={isSettlingTable}
                 onClick={() => {
                   if (cancelTimerId) clearInterval(cancelTimerId);
                   setShowCancelWarningConfirm(false);
                 }}
-                className="flex-1 py-2.5 bg-slate-100 text-slate-600 font-bold rounded-xl text-xs uppercase tracking-wider transition cursor-pointer"
+                className="flex-1 py-2.5 bg-slate-100 text-slate-600 font-bold rounded-xl text-xs uppercase tracking-wider transition cursor-pointer disabled:opacity-50"
               >
                 Go Back
-              </button
+              </button>
               <button
-                disabled={cancelCountdown > 0}
+                disabled={cancelCountdown > 0 || isSettlingTable}
                 onClick={() => handleCancelAndRelease(releasingTableNum)}
-                className={`flex-1 py-2.5 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition cursor-pointer shadow-sm ${cancelCountdown > 0 ? 'bg-rose-300 cursor-not-allowed' : 'bg-rose-600 hover:bg-rose-700'}`}
+                className={`flex-1 py-2.5 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition cursor-pointer shadow-sm ${cancelCountdown > 0 || isSettlingTable ? 'bg-rose-300 cursor-not-allowed' : 'bg-rose-600 hover:bg-rose-700'}`}
               >
-                Yes, Cancel & Settle {cancelCountdown > 0 ? `(${cancelCountdown}s)` : ''}
+                {isSettlingTable ? 'Settling...' : `Yes, Cancel & Settle ${cancelCountdown > 0 ? `(${cancelCountdown}s)` : ''}`}
               </button>
             </div>
           </div>

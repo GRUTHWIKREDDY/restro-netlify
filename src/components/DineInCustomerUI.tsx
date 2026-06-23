@@ -127,27 +127,6 @@ export default function DineInCustomerUI({
     document.documentElement.classList.remove('dark');
   }, []);
 
-  const [hasBeenSeenInUsers, setHasBeenSeenInUsers] = useState(false);
-
-  useEffect(() => {
-    if (!customerSession) {
-      setHasBeenSeenInUsers(false);
-      return;
-    }
-    const isPresent = users.some(
-      u => u.phone === customerSession.phone &&
-           u.restaurantId === restaurant.id &&
-           u.tableNumber === tableNumber
-    );
-    if (isPresent) {
-      setHasBeenSeenInUsers(true);
-    } else if (hasBeenSeenInUsers) {
-      // They were previously seen, but now they are deleted/released by admin! They must exit!
-      setCustomerSession(null);
-      triggerAppAlert("Dining Finished", "Your dining session has been settled and closed by the restaurant. Thank you!", "info");
-    }
-  }, [users, customerSession, restaurant.id, tableNumber]);
-
   useEffect(() => {
     if (!customerSession) return;
     const sessionOrders = orders.filter(

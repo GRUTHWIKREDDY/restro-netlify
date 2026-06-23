@@ -1691,16 +1691,57 @@ export async function configureApp(isNetlify = false) {
     try {
       const { restaurantId } = req.params;
       const range = (req.query.range as string) || '30d';
-      const [{ data: custData }, { data: ordData }] = await Promise.all([
-        db.from('customer_profiles').select('*'),
-        db.from('orders').select('*'),
-      ]);
-      let customers = (custData || []).map((d: any) => toCamel(d));
+      const { data: ordData } = await db.from('orders').select('*');
       let orders = (ordData || []).map((d: any) => toCamel(d));
       if (restaurantId !== 'all') {
-        customers = customers.filter((c: any) => c.restaurantId === restaurantId);
         orders = orders.filter((o: any) => o.restaurantId === restaurantId);
       }
+      
+      // Filter out ID:rest orders and restaurant meta records
+      orders = orders.filter((o: any) => !o.id.toLowerCase().includes('rest') && o.id !== restaurantId);
+
+      // Dynamically aggregate customer profiles from the orders table
+      const customerMap: Record<string, {
+        id: string;
+        restaurantId: string;
+        phone: string;
+        name: string;
+        firstVisit: string;
+        lastVisit: string;
+        visitCount: number;
+        totalSpend: number;
+      }> = {};
+
+      orders.forEach((o: any) => {
+        if (!o.userPhone) return;
+        const phone = o.userPhone;
+        if (!customerMap[phone]) {
+          customerMap[phone] = {
+            id: phone,
+            restaurantId: o.restaurantId,
+            phone: phone,
+            name: o.userName || 'Guest',
+            firstVisit: o.createdAt,
+            lastVisit: o.createdAt,
+            visitCount: 0,
+            totalSpend: 0
+          };
+        }
+        
+        customerMap[phone].visitCount += 1;
+        if (o.status !== 'rejected') {
+          customerMap[phone].totalSpend += (o.totalAmount || 0);
+        }
+        if (new Date(o.createdAt) < new Date(customerMap[phone].firstVisit)) {
+          customerMap[phone].firstVisit = o.createdAt;
+        }
+        if (new Date(o.createdAt) > new Date(customerMap[phone].lastVisit)) {
+          customerMap[phone].lastVisit = o.createdAt;
+          customerMap[phone].name = o.userName || customerMap[phone].name; // latest known name
+        }
+      });
+
+      const customers = Object.values(customerMap);
 
       const now = new Date();
       let rangeStart = new Date(now);
