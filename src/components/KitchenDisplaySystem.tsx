@@ -46,7 +46,7 @@ export default function KitchenDisplaySystem({
   }
 
   const activeRestaurantOrders = useMemo(() => {
-    let filtered = orders.filter(o => o.restaurantId === restaurant?.id && o.released !== true);
+    let filtered = orders.filter(o => o.restaurantId === restaurant?.id && o.released !== true && !o.id.toLowerCase().includes('rest') && o.id !== restaurant?.id);
     if (restaurant?.hideHistoryOlderThanOneDay) {
       const oneDayAgo = new Date().getTime() - (24 * 60 * 60 * 1000);
       filtered = filtered.filter(o => {
@@ -211,7 +211,7 @@ export default function KitchenDisplaySystem({
       )}
 
       {/* Main KDS Columns layout */}
-      <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-5">
+      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
 
         {/* COL 1: NEW ORDERS */}
         <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col min-h-[500px]">
@@ -290,16 +290,16 @@ export default function KitchenDisplaySystem({
           <div className="flex justify-between items-center border-b border-slate-100 pb-2.5 mb-3">
             <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-              Completed Orders
+              Completed
             </h3>
             <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
-              {activeRestaurantOrders.filter(o => o.status === 'completed' || o.status === 'rejected').length}
+              {activeRestaurantOrders.filter(o => o.status === 'completed').length}
             </span>
           </div>
 
           <div className="flex-1 space-y-3 overflow-y-auto max-h-[640px] pr-0.5 scrollbar-none">
             {activeRestaurantOrders
-              .filter(o => o.status === 'completed' || o.status === 'rejected')
+              .filter(o => o.status === 'completed')
               .map(o => (
                 <div
                   key={o.id}
@@ -310,9 +310,7 @@ export default function KitchenDisplaySystem({
                       <h4 className="font-extrabold text-slate-800">Table #{o.tableNumber}</h4>
                       <p className="text-[9px] text-slate-400 font-mono mt-0.5">Order: {o.id.split('-')[1]}</p>
                     </div>
-                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase border ${o.status === 'completed' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
-                      'bg-rose-100 text-rose-700 border-rose-200'
-                      }`}>
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase border bg-emerald-100 text-emerald-700 border-emerald-200">
                       {o.status}
                     </span>
                   </div>
@@ -326,13 +324,74 @@ export default function KitchenDisplaySystem({
                   </ul>
 
                   <p className="text-[9px] text-slate-400 border-t border-slate-100 pt-1 text-right font-mono">
-                    Total unbilled: ₹{o.totalAmount.toFixed(2)}
+                    Total: ₹{o.totalAmount.toFixed(2)}
                   </p>
                 </div>
               ))}
 
-            {activeRestaurantOrders.filter(o => o.status === 'completed' || o.status === 'rejected').length === 0 && (
+            {activeRestaurantOrders.filter(o => o.status === 'completed').length === 0 && (
               <p className="text-xs text-slate-500 font-bold text-center py-12">No orders completed yet.</p>
+            )}
+          </div>
+        </div>
+
+        {/* COL 4: CANCELLED ORDERS */}
+        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm flex flex-col min-h-[500px]">
+          <div className="flex justify-between items-center border-b border-slate-100 pb-2.5 mb-3">
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+              Cancelled
+            </h3>
+            <span className="text-[10px] font-mono font-bold bg-rose-50 text-rose-600 px-2 py-0.5 rounded-full border border-rose-200">
+              {activeRestaurantOrders.filter(o => o.status === 'rejected').length}
+            </span>
+          </div>
+
+          <div className="flex-1 space-y-3 overflow-y-auto max-h-[640px] pr-0.5 scrollbar-none">
+            {activeRestaurantOrders
+              .filter(o => o.status === 'rejected')
+              .map(o => (
+                <div
+                  key={o.id}
+                  className="bg-rose-50/40 p-3 rounded-xl border border-rose-200 space-y-2 opacity-75 hover:opacity-100 transition duration-150 text-xs shadow-sm"
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h4 className="font-extrabold text-slate-800">Table #{o.tableNumber}</h4>
+                      <p className="text-[9px] text-slate-400 font-mono mt-0.5">Order: {o.id.split('-')[1]}</p>
+                      <p className="text-[9px] text-rose-500 font-bold mt-0.5">
+                        {o.userName} • {new Date(o.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase border bg-rose-100 text-rose-700 border-rose-200">
+                      cancelled
+                    </span>
+                  </div>
+
+                  <ul className="space-y-1 text-slate-500 border-t border-rose-100 pt-2 text-[10.5px]">
+                    {o.items.map((it, idx) => (
+                      <li key={idx} className="flex items-center gap-1">
+                        <span className="font-extrabold text-rose-400">{it.quantity}x</span>
+                        <span className="line-through">{it.name}</span>
+                      </li>
+                    ))}
+                    {o.items.length === 0 && (
+                      <li className="text-rose-400 italic font-semibold">All items removed</li>
+                    )}
+                  </ul>
+
+                  <p className="text-[9px] text-rose-400 border-t border-rose-100 pt-1 text-right font-mono">
+                    Voided: ₹{o.totalAmount.toFixed(2)}
+                  </p>
+                </div>
+              ))}
+
+            {activeRestaurantOrders.filter(o => o.status === 'rejected').length === 0 && (
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center border border-dashed border-rose-200 rounded-xl">
+                <X className="text-rose-200 mb-2" size={32} />
+                <p className="text-xs font-bold text-slate-400">No cancelled orders.</p>
+                <p className="text-[10px] text-slate-400 mt-1">Cancelled tickets will appear here.</p>
+              </div>
             )}
           </div>
         </div>

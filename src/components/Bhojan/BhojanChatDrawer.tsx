@@ -48,7 +48,8 @@ export default function BhojanChatDrawer({
 
     const userMsg = aiInputMessage.trim();
     setAiInputMessage('');
-    setAiChatHistory(prev => [...prev, { role: 'user', text: userMsg }]);
+    const updatedHistory = [...aiChatHistory, { role: 'user', text: userMsg }];
+    setAiChatHistory(updatedHistory);
     setIsAiTyping(true);
 
     try {
@@ -58,34 +59,46 @@ export default function BhojanChatDrawer({
         price: m.price,
         category: m.category,
         available: m.isAvailable,
+        isVeg: (m as any).isVeg,
         limitedPromo: m.isLimitedTimeOffer ? m.offerDetails : null
       }));
+
+      // Build history in OpenAI format (exclude last user message since it's sent as userPrompt)
+      const conversationHistory = updatedHistory.slice(0, -1).map(m => ({
+        role: m.role === 'user' ? 'user' : 'assistant',
+        content: m.text
+      }));
+
+      const systemInstruction = `You are "Bhojan" (भोजन) — the warm, witty Virtual Khansama & Digital Waiter for "${restaurantName}".
+You are having an ongoing CONVERSATION with a dine-in guest. Table #${tableNumber}, Guest: ${customerName || 'Ji'}.
+
+WAITER PERSONALITY:
+- Warm Indian hospitality, use "Ji", "Sahib/Madam" naturally but sparingly.
+- Build rapport — ask follow-up questions to understand their preferences (spice level, veg/non-veg, occasion, appetite).
+- Actively guide them: if they say they're hungry, ask what they're in the mood for. If they say veg, recommend top 2-3 veg items with WHY.
+- Keep responses SHORT — max 5-6 lines. Nobody reads long texts at a restaurant.
+- Be conversational, not encyclopedic.
+
+RECOMMENDATION RULES:
+- Always recommend from the ACTUAL live menu below — never hallucinate items.
+- Always mention Veg 🟢 or Non-Veg 🔴.
+- Suggest natural pairings (e.g., Butter Naan goes perfectly with our Paneer Makhani).
+- If asked about best sellers or chef's choice, highlight top-rated items.
+- Always include price so they can decide easily.
+
+BUZZER TRIGGERS (append at end only if explicitly requested):
+[BUZZER: Waiter] | [BUZZER: Water] | [BUZZER: Clean Plates] | [BUZZER: General]
+
+LIVE MENU:
+${JSON.stringify(liveMenuContext)}`;
 
       const res = await fetch("/api/gemini/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userPrompt: userMsg,
-          systemInstruction: `You are "Bhojan" (भोजन) — the warm, witty, and deeply knowledgeable Virtual Khansama & Digital Concierge for "${restaurantName}".
-Your personality: Think of a favorite uncle who also happens to be a Michelin-star chef — warm, playful, endlessly helpful.
-Client seating: Table #${tableNumber}, Guest Name: ${customerName || "Ji"}.
-
-COMMUNICATION STYLE:
-- Limit your answers strictly to a maximum of 5 to 6 lines. Keep it extremely brief, readable, and professional. Nobody wants to read long texts.
-- Speak with extreme warmth & Indian hospitality (use "Ji", "Sahib/Madam" gracefully).
-- Always recommend from the ACTUAL menu below.
-
-BUZZER TRIGGERS:
-- If the user explicitly requests waiter service, water, clean plates, or standard assistance, you must trigger the request by appending [BUZZER: Waiter], [BUZZER: Water], [BUZZER: Clean Plates], or [BUZZER: General] at the very end of your response.
-
-LIVE MENU:
-${JSON.stringify(liveMenuContext)}
-
-RULES:
-- Always highlight Veg 🟢 vs Non-Veg 🔴 
-- Suggest pairings (e.g., Butter Naan + Paneer Makhani)
-- Ask about spice tolerance if recommending
-- Never make up items not on the menu`
+          systemInstruction,
+          conversationHistory
         })
       });
 
@@ -115,23 +128,33 @@ RULES:
   };
 
   const handleQuickPrompt = (prompt: string) => {
-    setAiInputMessage(prompt);
-    setAiChatHistory(prev => [...prev, { role: 'user', text: prompt }]);
+    setAiInputMessage('');
+    const updatedHistory = [...aiChatHistory, { role: 'user', text: prompt }];
+    setAiChatHistory(updatedHistory);
     setIsAiTyping(true);
 
     const liveMenuContext = menus.map(m => ({
       name: m.name, description: m.description, price: m.price,
       category: m.category, available: m.isAvailable,
+      isVeg: (m as any).isVeg,
       limitedPromo: m.isLimitedTimeOffer ? m.offerDetails : null
     }));
+
+    const conversationHistory = updatedHistory.slice(0, -1).map(m => ({
+      role: m.role === 'user' ? 'user' : 'assistant',
+      content: m.text
+    }));
+
+    const systemInstruction = `You are "Bhojan" (भोजन) — the warm, witty Virtual Khansama & Digital Waiter for "${restaurantName}".
+Table #${tableNumber}, Guest: ${customerName || 'Ji'}. Build a friendly conversation — keep replies to 5-6 lines max.
+Always recommend from ACTUAL menu. Mention veg 🟢/non-veg 🔴 and price. Suggest pairings.
+If user wants assistance/water/service, append [BUZZER: Waiter] or [BUZZER: Water] or [BUZZER: Clean Plates] or [BUZZER: General] at the very end.
+LIVE MENU: ${JSON.stringify(liveMenuContext)}`;
 
     fetch("/api/gemini/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userPrompt: prompt,
-        systemInstruction: `You are "Bhojan" (भोजन) — Virtual Khansama for "${restaurantName}". Table #${tableNumber}, Guest: ${customerName || "Ji"}. Be warm, recommend from ACTUAL menu: ${JSON.stringify(liveMenuContext)}. Highlight veg/non-veg. Limit your response strictly to 5-6 lines maximum. If user wants assistance or water/service, append [BUZZER: Waiter] or [BUZZER: Water] or [BUZZER: Clean Plates] or [BUZZER: General] at the very end.`
-      })
+      body: JSON.stringify({ userPrompt: prompt, systemInstruction, conversationHistory })
     })
       .then(r => r.json())
       .then(data => {
@@ -149,7 +172,6 @@ RULES:
       })
       .finally(() => {
         setIsAiTyping(false);
-        setAiInputMessage('');
       });
   };
 

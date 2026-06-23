@@ -40,6 +40,11 @@
   100% { transform: translateY(-0.5rem) scale(0.95); opacity: 0; }
 }
 
+@keyframes slideDownModal {
+  0% { transform: translateY(-100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
 .animate-toast-enter {
   animation: toast-enter 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -84,44 +89,20 @@
 }
 
 @media print {
-  /* Hide everything except our print element */
   body {
     background: white !important;
     color: black !important;
   }
-  
-  #kitchen-display-system-root,
-  main,
-  header,
-  footer,
-  aside,
-  nav,
-  button,
-  .print\:hidden {
+  #root {
     display: none !important;
-    visibility: hidden !important;
   }
-
-  body * {
-    visibility: hidden;
-  }
-
-  #print-qr-flyer-area,
-  #print-qr-flyer-area * {
-    visibility: visible !important;
-  }
-
   #print-qr-flyer-area {
     display: flex !important;
-    visibility: visible !important;
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    right: 0 !important;
-    margin: 0 auto !important;
+    position: relative !important;
+    width: 100% !important;
+    background: transparent !important;
     border: none !important;
     box-shadow: none !important;
-    background: transparent !important;
   }
 }
 

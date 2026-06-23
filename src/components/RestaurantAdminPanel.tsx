@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ClipboardList, ChefHat, CheckCircle,
   AlertTriangle, DollarSign, QrCode, Plus, Edit, Trash2, Search,
-  Wand2, FileText, X, Sparkles, RefreshCw,
+  Wand2, FileText, X, Sparkles, RefreshCw, Printer, Download,
   AlertOctagon, ArrowLeftRight, Bell, Camera, Check, Loader2, Utensils,
   LayoutGrid, History, BarChart3, Clock
 } from 'lucide-react';
@@ -29,6 +30,7 @@ interface AdminProps {
   buzzers: Buzzer[];
   activeTab?: 'orders' | 'floor' | 'menu' | 'tables' | 'history' | 'analytics';
   setActiveTab?: (tab: 'orders' | 'floor' | 'menu' | 'tables' | 'history' | 'analytics') => void;
+  pendingCancellations?: any[];
 }
 
 export default function RestaurantAdminPanel({
@@ -46,7 +48,8 @@ export default function RestaurantAdminPanel({
   triggerAppAlert,
   buzzers,
   activeTab: propActiveTab,
-  setActiveTab: propSetActiveTab
+  setActiveTab: propSetActiveTab,
+  pendingCancellations
 }: AdminProps) {
   if (restaurant?.disableAdminPortal) {
     return (
@@ -71,6 +74,30 @@ export default function RestaurantAdminPanel({
   }
 
   const [localActiveTab, setLocalActiveTab] = useState<'orders' | 'menu' | 'tables' | 'floor' | 'history' | 'analytics'>('orders');
+  const [submittingOrderIds, setSubmittingOrderIds] = useState<Record<string, boolean>>({});
+  const [isSettlingTable, setIsSettlingTable] = useState(false);
+  const [showCancelWarningConfirm, setShowCancelWarningConfirm] = useState(false);
+  const [cancelCountdown, setCancelCountdown] = useState(10);
+  const [cancelTimerId, setCancelTimerId] = useState<any>(null);
+
+  const handleUpdateStatusSecure = async (orderId: string, nextStatus: any, released?: boolean) => {
+    if (submittingOrderIds[orderId]) return;
+    if (pendingCancellations?.some((pc: any) => pc.orderId === orderId)) return;
+    
+    setSubmittingOrderIds(prev => ({ ...prev, [orderId]: true }));
+    try {
+      await onUpdateOrderStatus(orderId, nextStatus, released);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSubmittingOrderIds(prev => {
+        const next = { ...prev };
+        delete next[orderId];
+        return next;
+      });
+    }
+  };
+
   const activeTab = propActiveTab || localActiveTab;
   const setActiveTab = propSetActiveTab || setLocalActiveTab;
   const [menuSearchQuery, setMenuSearchQuery] = useState('');
@@ -107,6 +134,127 @@ export default function RestaurantAdminPanel({
   const [aiReportOutput, setAiReportOutput] = useState('');
   const [aiDailyBriefing, setAiDailyBriefing] = useState('');
   const [isGeneratingBriefing, setIsGeneratingBriefing] = useState(false);
+
+  // Seating print & download states
+  const [printMode, setPrintMode] = useState<'single' | 'all' | 'custom' | null>(null);
+  const [printTargetTable, setPrintTargetTable] = useState<number>(1);
+  const [qrActionModal, setQrActionModal] = useState<'print' | 'download' | null>(null);
+  const [customTablesInput, setCustomTablesInput] = useState<string>('');
+
+  const downloadIndividualPNG = async (tableNum: number) => {
+    const flyerEl = document.getElementById('flyer-preview-container');
+    if (!flyerEl) {
+      triggerAppAlert("Download Error", "Flyer preview element not found.", "error");
+      return;
+    }
+    try {
+      const canvas = await html2canvas(flyerEl, {
+        scale: 3, // Premium quality
+        backgroundColor: '#020617', // slate-950 color
+        useCORS: true,
+      });
+      const link = document.createElement('a');
+      link.download = `${restaurant.name.toLowerCase().replace(/\s+/g, '-')}-table-${tableNum}-flyer.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      triggerAppAlert("Success", `Flyer for Table #${tableNum} downloaded.`, "success");
+    } catch (err) {
+      console.error(err);
+      triggerAppAlert("Error", "Failed to generate flyer image.", "error");
+    }
+  };
+
+  const downloadAllPNGs = async () => {
+    triggerAppAlert("Bulk Download Started", "Preparing PNG flyers for all tables sequentially. Please do not close this window.", "info");
+    const total = restaurant.totalTables || 8;
+    const originalTable = selectedQRTable;
+    
+    for (let t = 1; t <= total; t++) {
+      setSelectedQRTable(t);
+      // Wait for React and the QR code image to fully load/render
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      
+      const flyerEl = document.getElementById('flyer-preview-container');
+      if (flyerEl) {
+        try {
+          const canvas = await html2canvas(flyerEl, {
+            scale: 2.5,
+            backgroundColor: '#020617',
+            useCORS: true,
+          });
+          const link = document.createElement('a');
+          link.download = `${restaurant.name.toLowerCase().replace(/\s+/g, '-')}-table-${t}-flyer.png`;
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+        } catch (err) {
+          console.error(`Failed to download table ${t}`, err);
+        }
+      }
+    }
+    
+    // Restore the original table selection
+    setSelectedQRTable(originalTable);
+    triggerAppAlert("Completed", "All table flyers generated and downloaded successfully.", "success");
+  };
+
+  const getSelectedTablesToProcess = (): number[] => {
+    if (printMode === 'all') {
+      return Array.from({ length: restaurant.totalTables || 8 }, (_, idx) => idx + 1);
+    }
+    if (printMode === 'custom') {
+      const parsed = customTablesInput
+        .split(',')
+        .map(s => parseInt(s.trim()))
+        .filter(n => !isNaN(n) && n >= 1 && n <= (restaurant.totalTables || 8));
+      return parsed.length > 0 ? parsed : [1];
+    }
+    return [printTargetTable];
+  };
+
+  const downloadCustomPNGs = async () => {
+    const tablesToDownload = getSelectedTablesToProcess();
+    triggerAppAlert("Bulk Download Started", `Preparing PNG flyers for tables: ${tablesToDownload.join(', ')} sequentially. Please do not close this window.`, "info");
+    const originalTable = selectedQRTable;
+    
+    for (const t of tablesToDownload) {
+      setSelectedQRTable(t);
+      // Wait for React and the QR code image to fully load/render
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      
+      const flyerEl = document.getElementById('flyer-preview-container');
+      if (flyerEl) {
+        try {
+          const canvas = await html2canvas(flyerEl, {
+            scale: 2.5,
+            backgroundColor: '#020617',
+            useCORS: true,
+          });
+          const link = document.createElement('a');
+          link.download = `${restaurant.name.toLowerCase().replace(/\s+/g, '-')}-table-${t}-flyer.png`;
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+        } catch (err) {
+          console.error(`Failed to download table ${t}`, err);
+        }
+      }
+    }
+    
+    // Restore the original table selection
+    setSelectedQRTable(originalTable);
+    triggerAppAlert("Completed", "Custom table flyers generated and downloaded successfully.", "success");
+  };
+
+  const toTitleCaseName = (str: string): string => {
+    if (!str) return '';
+    return str
+      .trim()
+      .split(/\s+/)
+      .map(word => {
+        if (!word) return '';
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      })
+      .join(' ');
+  };
 
   // Menu Modal states
   const [isMenuModalOpen, setIsMenuModalOpen] = useState(false);
@@ -145,7 +293,7 @@ export default function RestaurantAdminPanel({
   }, [restaurant]);
 
   const tenantOrders = useMemo(() => {
-    let filtered = orders.filter(o => o.restaurantId === restaurant?.id);
+    let filtered = orders.filter(o => o.restaurantId === restaurant?.id && !o.id.toLowerCase().includes('rest') && o.id !== restaurant?.id);
     if (restaurant?.hideHistoryOlderThanOneDay) {
       const oneDayAgo = new Date().getTime() - (24 * 60 * 60 * 1000);
       filtered = filtered.filter(o => {
@@ -251,13 +399,44 @@ export default function RestaurantAdminPanel({
     }
   };
 
-  const stats = useMemo(() => {
-    const pending = tenantOrders.filter(o => o.status === 'pending').length;
-    const accepted = tenantOrders.filter(o => o.status === 'accepted').length;
-    const completed = tenantOrders.filter(o => o.status === 'completed').length;
-    const revenue = tenantOrders.filter(o => o.status !== 'rejected').reduce((sum, o) => sum + o.totalAmount, 0);
-    return { pending, accepted, completed, revenue };
-  }, [tenantOrders]);
+  const consolidatedHistory = useMemo(() => {
+    if (filteredHistoryOrders.length === 0) return [];
+
+    const groups: Record<string, { 
+      phone: string, 
+      date: string, 
+      items: Record<string, number>, 
+      total: number, 
+      lastCheckout: string,
+      userName: string 
+    }> = {};
+
+    filteredHistoryOrders.forEach(o => {
+      const date = o.createdAt ? o.createdAt.split('T')[0] : 'Unknown';
+      const key = `${o.userPhone}_${date}`;
+      
+      if (!groups[key]) {
+        groups[key] = { 
+          phone: o.userPhone || 'Unknown', 
+          date, 
+          items: {}, 
+          total: 0, 
+          lastCheckout: o.createdAt || '',
+          userName: o.userName || 'Guest'
+        };
+      }
+      
+      o.items.forEach(it => {
+        groups[key].items[it.name] = (groups[key].items[it.name] || 0) + it.quantity;
+      });
+      groups[key].total += o.totalAmount;
+      if (new Date(o.createdAt).getTime() > new Date(groups[key].lastCheckout).getTime()) {
+        groups[key].lastCheckout = o.createdAt;
+      }
+    });
+
+    return Object.values(groups).sort((a, b) => new Date(b.lastCheckout).getTime() - new Date(a.lastCheckout).getTime());
+  }, [filteredHistoryOrders]);
 
   const currentRestaurantMenus = useMemo(() => {
     return menus.filter(m => m.restaurantId === restaurant?.id);
@@ -566,8 +745,8 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
     const itemToSave: MenuItem = {
       id: editingItem ? editingItem.id : "menu-" + Math.floor(100 + Math.random() * 900) + "-" + Date.now().toString().slice(-4),
       restaurantId: restaurant.id,
-      name: menuForm.name,
-      description: menuForm.description,
+      name: toTitleCaseName(menuForm.name),
+      description: toTitleCaseName(menuForm.description),
       price: priceNum,
       category: menuForm.category,
       isAvailable: menuForm.isAvailable,
@@ -588,12 +767,12 @@ Produce a premium operations audit summary. Provide 3 direct business recommenda
     setIsGeneratingBriefing(true);
     setAiDailyBriefing('');
     try {
-      const totalOrdersCount = orders.length;
-      const completedOrdersCount = orders.filter(o => o.status === 'completed').length;
-      const totalRevenue = orders.filter(o => o.status === 'completed').reduce((sum, o) => sum + o.totalAmount, 0);
+      const totalOrdersCount = tenantOrders.length;
+      const completedOrdersCount = tenantOrders.filter(o => o.status === 'completed').length;
+      const totalRevenue = tenantOrders.filter(o => o.status === 'completed').reduce((sum, o) => sum + o.totalAmount, 0);
 
       const itemCounts: Record<string, number> = {};
-      orders.filter(o => o.status === 'completed').forEach(o => {
+      tenantOrders.filter(o => o.status === 'completed').forEach(o => {
         o.items.forEach(it => {
           itemCounts[it.name] = (itemCounts[it.name] || 0) + it.quantity;
         });
@@ -734,25 +913,65 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
     });
   }, [tenantOrders, restaurant]);
 
-  const handleReleaseTable = (tableNum: number) => {
+  const handleSettleAndReleaseInitiation = (tableNum: number) => {
     const tableData = floorTableData.find(t => t.tableNum === tableNum);
     if (!tableData || !tableData.isOccupied) return;
     setReleasingTableNum(tableNum);
+  };
+
+  const triggerCancelSettleWarning = (tableNum: number) => {
+    const tableData = floorTableData.find(t => t.tableNum === tableNum);
+    if (!tableData) return;
+    const hasActiveCooking = tableData.activeOrders.some(o => o.status === 'pending' || o.status === 'accepted');
+    if (hasActiveCooking) {
+      setShowCancelWarningConfirm(true);
+      setCancelCountdown(10);
+      const tid = setInterval(() => {
+        setCancelCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(tid);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      setCancelTimerId(tid);
+    } else {
+      handleCancelAndRelease(tableNum);
+    }
   };
 
   const handlePrepareAndRelease = async (tableNum: number) => {
     const tableData = floorTableData.find(t => t.tableNum === tableNum);
     if (!tableData || !tableData.isOccupied) return;
 
+    setIsSettlingTable(true);
     try {
       const updatePromises = tableData.activeOrders.map(order =>
         onUpdateOrderStatus(order.id, 'completed', true)
       );
       await Promise.all(updatePromises);
+
+      // Clear occupants from supabase dine_in_users table
+      await supabase
+        .from('dine_in_users')
+        .delete()
+        .eq('restaurant_id', restaurant.id)
+        .eq('table_number', tableNum);
+
+      // Clear buzzers for that table
+      await supabase
+        .from('buzzers')
+        .delete()
+        .eq('restaurant_id', restaurant.id)
+        .eq('table_number', tableNum);
+
       setReleasingTableNum(null);
       triggerAppAlert("Table Settled & Released", `Table #${tableNum} has been completely prepared, settled, and released.`, "success");
     } catch (err) {
       triggerAppAlert("Release Error", "Could not update all orders.", "error");
+    } finally {
+      setIsSettlingTable(false);
     }
   };
 
@@ -760,26 +979,56 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
     const tableData = floorTableData.find(t => t.tableNum === tableNum);
     if (!tableData || !tableData.isOccupied) return;
 
+    setIsSettlingTable(true);
     try {
-      const updatePromises = tableData.activeOrders.map(order =>
-        onUpdateOrderStatus(order.id, 'rejected', true)
-      );
+      const updatePromises = tableData.activeOrders.map(order => {
+        const targetStatus = order.status === 'completed' ? 'completed' : 'rejected';
+        return onUpdateOrderStatus(order.id, targetStatus, true);
+      });
       await Promise.all(updatePromises);
+
+      // Clear occupants from supabase dine_in_users table
+      await supabase
+        .from('dine_in_users')
+        .delete()
+        .eq('restaurant_id', restaurant.id)
+        .eq('table_number', tableNum);
+
+      // Clear buzzers for that table
+      await supabase
+        .from('buzzers')
+        .delete()
+        .eq('restaurant_id', restaurant.id)
+        .eq('table_number', tableNum);
+
+      if (cancelTimerId) {
+        clearInterval(cancelTimerId);
+        setCancelTimerId(null);
+      }
+      setShowCancelWarningConfirm(false);
       setReleasingTableNum(null);
-      triggerAppAlert("Table Settled & Cancelled", `Table #${tableNum} active orders cancelled, and table released.`, "success");
+      triggerAppAlert("Table Settled & Released", `Table #${tableNum} active orders processed and table released.`, "success");
     } catch (err) {
-      triggerAppAlert("Release Error", "Could not cancel orders.", "error");
+      triggerAppAlert("Release Error", "Could not settle orders.", "error");
+    } finally {
+      setIsSettlingTable(false);
     }
   };
 
   return (
     <BhojanProvider portalMode="admin">
+      {isSettlingTable && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-[100] flex flex-col items-center justify-center space-y-4">
+          <div className="w-12 h-12 border-4 border-indigo-650 border-t-transparent rounded-full animate-spin" />
+          <p className="text-white text-xs font-black tracking-widest uppercase animate-pulse">Settling transaction and clearing table...</p>
+        </div>
+      )}
     <div className="flex-1 max-w-full w-full mx-auto px-4 sm:px-8 lg:px-12 py-6 space-y-6 text-slate-800">
 
       {/* PRINT-ONLY STYLES - hide all admin chrome during print */}
       <style>{`
         @media print {
-          body * { visibility: hidden !important; }
+          body { visibility: hidden !important; }
           #print-qr-flyer-area, #print-qr-flyer-area * { visibility: visible !important; }
           #print-qr-flyer-area {
             position: fixed !important;
@@ -910,9 +1159,10 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                               <button
                                 type="button"
                                 onClick={() => {
-                                  onUpdateOrderStatus(o.id, 'accepted');
+                                  handleUpdateStatusSecure(o.id, 'accepted');
                                 }}
-                                className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 text-center py-2 rounded-xl font-black text-[9.5px] uppercase tracking-wider transition shadow-sm hover:shadow cursor-pointer"
+                                disabled={submittingOrderIds[o.id] || pendingCancellations?.some((pc: any) => pc.orderId === o.id)}
+                                className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 text-center py-2 rounded-xl font-black text-[9.5px] uppercase tracking-wider transition shadow-sm hover:shadow cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 Bypass Hold & Release
                               </button>
@@ -929,14 +1179,16 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                             {o.status === 'pending' && (
                               <>
                                 <button
-                                  onClick={() => onUpdateOrderStatus(o.id, 'rejected')}
-                                  className="w-1/2 bg-white hover:bg-rose-50 border border-slate-250 hover:border-rose-300 text-rose-500 px-2 py-1 text-[10px] font-black rounded-xl transition"
+                                  onClick={() => handleUpdateStatusSecure(o.id, 'rejected')}
+                                  disabled={submittingOrderIds[o.id] || pendingCancellations?.some((pc: any) => pc.orderId === o.id)}
+                                  className="w-1/2 bg-white hover:bg-rose-50 border border-slate-250 hover:border-rose-300 text-rose-500 px-2 py-1 text-[10px] font-black rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   Reject
                                 </button>
                                 <button
-                                  onClick={() => onUpdateOrderStatus(o.id, 'accepted')}
-                                  className="w-1/2 bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 text-[10px] font-black rounded-xl transition"
+                                  onClick={() => handleUpdateStatusSecure(o.id, 'accepted')}
+                                  disabled={submittingOrderIds[o.id] || pendingCancellations?.some((pc: any) => pc.orderId === o.id)}
+                                  className="w-1/2 bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 text-[10px] font-black rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   Accept
                                 </button>
@@ -946,18 +1198,30 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                             {o.status === 'accepted' && (
                               <div className="flex gap-1 w-full">
                                 <button
-                                  onClick={() => onUpdateOrderStatus(o.id, 'rejected')}
-                                  className="w-1/2 bg-white hover:bg-rose-50 border border-slate-250 text-rose-500 text-rose-500 px-2 py-1 text-[10px] font-black rounded-xl transition cursor-pointer"
+                                  onClick={() => handleUpdateStatusSecure(o.id, 'rejected')}
+                                  disabled={submittingOrderIds[o.id] || pendingCancellations?.some((pc: any) => pc.orderId === o.id)}
+                                  className="w-1/2 bg-white hover:bg-rose-50 border border-slate-250 text-rose-500 px-2 py-1 text-[10px] font-black rounded-xl transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   Cancel order
                                 </button>
                                 <button
-                                  onClick={() => onUpdateOrderStatus(o.id, 'completed')}
-                                  className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 text-[10px] font-black rounded-xl transition shadow-sm cursor-pointer"
+                                  onClick={() => handleUpdateStatusSecure(o.id, 'completed')}
+                                  disabled={submittingOrderIds[o.id] || pendingCancellations?.some((pc: any) => pc.orderId === o.id)}
+                                  className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 text-[10px] font-black rounded-xl transition shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   Deliver Table
                                 </button>
                               </div>
+                            )}
+
+                            {(o.status === 'completed' || o.status === 'rejected') && (
+                              <button
+                                onClick={() => handleUpdateStatusSecure(o.id, 'accepted', false)}
+                                disabled={submittingOrderIds[o.id] || pendingCancellations?.some((pc: any) => pc.orderId === o.id)}
+                                className="w-full bg-slate-100 hover:bg-slate-200 border border-slate-250 text-slate-800 px-2 py-1 text-[10px] font-black rounded-xl transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                Revert to preparing
+                              </button>
                             )}
                           </div>
                         </div>
@@ -1056,7 +1320,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                                     <div className={`w-1 h-1 rounded-full ${item.isVeg ? 'bg-emerald-600' : 'bg-rose-600'}`}></div>
                                   </div>
                                 )}
-                                <p className="font-extrabold text-slate-900 leading-snug truncate">{item.name}</p>
+                                <p className="font-extrabold text-slate-900 leading-snug truncate">{toTitleCaseName(item.name)}</p>
                               </div>
                               <p className="text-slate-400 text-[10px] leading-relaxed line-clamp-1">{item.description}</p>
                             </div>
@@ -1389,78 +1653,55 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
 
                         <div className="flex flex-wrap items-center gap-2 pt-3">
                           <button
-                            onClick={() => window.print()}
+                            onClick={() => setQrActionModal('print')}
                             className="bg-white hover:bg-slate-100 text-slate-950 font-black px-3 py-2 rounded-xl text-[10px] transition shadow-lg flex items-center gap-1.5 cursor-pointer flex-1 min-w-[130px] justify-center"
                           >
                             🖨 Print Desk-Tent
                           </button>
                           <button
-                            onClick={async () => {
-                              const flyerEl = document.getElementById('print-qr-flyer-area');
-                              if (!flyerEl) return;
-                              try {
-                                const canvas = await html2canvas(flyerEl, {
-                                  scale: 2,
-                                  backgroundColor: null,
-                                  useCORS: true,
-                                });
-                                const link = document.createElement('a');
-                                link.download = `${restaurant.name.toLowerCase().replace(/\s+/g, '-')}-table-${selectedQRTable}-flyer.png`;
-                                link.href = canvas.toDataURL('image/png');
-                                link.click();
-                              } catch (err) {
-                                const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=0f172a&data=${encodeURIComponent(`${window.location.origin}/r/${restaurant.id}/t/${selectedQRTable}`)}`;
-                                const link = document.createElement('a');
-                                link.href = qrUrl;
-                                link.download = `${restaurant.name.toLowerCase().replace(/\s+/g, '-')}-table-${selectedQRTable}-qr.png`;
-                                link.click();
-                              }
-                            }}
+                            onClick={() => setQrActionModal('download')}
                             className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-extrabold px-3 py-2 rounded-xl text-[10px] transition cursor-pointer flex-1 min-w-[130px] justify-center flex items-center gap-1.5"
                           >
                             ↓ Download PNG
-                          </button>
-                          <button
-                            onClick={() => setIsBulkPrintOpen(true)}
-                            className="bg-emerald-700 hover:bg-emerald-600 text-white border border-emerald-600 font-extrabold px-3 py-2 rounded-xl text-[10px] transition cursor-pointer flex-1 min-w-[100px] justify-center flex items-center gap-1.5"
-                          >
-                            ☰ Print All
                           </button>
                         </div>
                       </div>
 
                       {/* Visual flyer container reflecting select design template */}
-                      <div className="w-64 bg-slate-950 border border-slate-800 text-white border rounded-2xl p-4 flex flex-col items-center text-center shadow-2xl shrink-0 transition-all duration-300">
+                      <div id="flyer-preview-container" className="w-[360px] bg-slate-950 border border-slate-800 text-white rounded-3xl p-8 flex flex-col items-center text-center shadow-2xl shrink-0 transition-all duration-300 relative">
+                        {/* Accent Line */}
+                        <div className="absolute top-0 inset-x-0 h-2.5 rounded-t-3xl bg-indigo-600" />
+                        
                         {/* Flyer Header Logo mockup */}
-                        <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest opacity-80 border-b border-white/20 pb-2 w-full justify-center">
-                          <Utensils size={10} />
-                          {restaurant.name}
+                        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest opacity-80 border-b border-white/20 pb-3 w-full justify-center pt-2">
+                          <Utensils size={12} className="text-indigo-400" />
+                          <span>{restaurant.name}</span>
                         </div>
 
-                        <div className="my-4">
+                        <div className="my-6 space-y-2">
                           <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-0.5">Please Scan</div>
-                          <h5 className="text-base font-extrabold tracking-tight">ORDER DIRECTLY</h5>
-                          <p className="text-[8px] text-slate-400 max-w-[150px] mx-auto leading-tight mt-1">
+                          <h5 className="text-lg font-black tracking-tight text-white uppercase">ORDER DIRECTLY</h5>
+                          <p className="text-[10px] text-slate-400 max-w-[200px] mx-auto leading-relaxed">
                             View menu, request floor assistance, & self-checkout instantly
                           </p>
                         </div>
 
                         {/* QR Code Container */}
-                        <div className="bg-white p-2.5 rounded-xl shadow-lg flex flex-col items-center">
+                        <div className="bg-white p-4 rounded-2xl shadow-lg flex flex-col items-center border border-slate-200">
                           <img
                             src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&color=0f172a&data=${encodeURIComponent(`${window.location.origin}/r/${restaurant.id}/t/${selectedQRTable}`)}`}
                             alt={`QR code for Table ${selectedQRTable}`}
                             referrerPolicy="no-referrer"
-                            className="w-28 h-28 object-contain"
+                            className="w-36 h-36 object-contain"
                           />
-                          <span className="text-[7.5px] font-black tracking-widest uppercase text-slate-900 mt-1.5 bg-slate-100 px-2 py-0.5 rounded font-mono">
-                            SCAN ME
+                          <span className="text-[9px] font-black tracking-widest uppercase text-slate-900 mt-2 bg-slate-100 px-3 py-1 rounded-full border border-slate-200 font-mono">
+                            ✦ SCAN ME ✦
                           </span>
                         </div>
 
-                        <div className="mt-4 pt-2 border-t border-white/10 w-full">
-                          <div className="text-[10px] font-bold text-slate-400">YOUR TABLE</div>
-                          <div className="text-xl font-black tracking-widest font-mono text-white mt-0.5">
+                        <div className="mt-8 pt-4 border-t border-white/10 w-full">
+                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">YOUR TABLE</div>
+                          <div className="text-2xl font-black tracking-widest font-mono text-white mt-1">
                             TABLE #{selectedQRTable}
                           </div>
                         </div>
@@ -1468,52 +1709,55 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                     </div>
                   </div>
                   {/* ALWAYS RENDERED FOR DIRECT PRINT - INVISIBLE ON SCREEN, VISIBLE ON PRINT */}
-                  <div id="print-qr-flyer-area" className="hidden print:flex flex-col items-center justify-center min-h-screen bg-white">
-                    <div className="w-full max-w-sm border-2 rounded-3xl p-8 flex flex-col items-center text-center shadow-none relative bg-slate-950 border-slate-800 text-white">
-                      {/* Visual top accent ribbon */}
-                      <div className="absolute top-0 inset-x-0 h-2.5 rounded-t-3xl bg-indigo-600"></div>
+                  <div id="print-qr-flyer-area" className="hidden print:block bg-white min-h-screen w-full">
+                    {getSelectedTablesToProcess().map((tnum) => (
+                      <div 
+                        key={tnum} 
+                        className="w-[380px] min-h-[500px] border border-slate-800 rounded-3xl p-8 flex flex-col items-center text-center relative bg-slate-950 text-white mx-auto my-12"
+                        style={{ pageBreakAfter: 'always', breakAfter: 'page' }}
+                      >
+                        {/* Visual top accent ribbon */}
+                        <div className="absolute top-0 inset-x-0 h-2.5 bg-indigo-600 rounded-t-3xl"></div>
 
-                      {/* Restaurant Mark */}
-                      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest opacity-90 border-b border-white/20 pb-3 w-full justify-center pt-2">
-                        <Utensils size={14} className="text-indigo-400" />
-                        <span>{restaurant.name}</span>
-                      </div>
-
-                      {/* Subheadings */}
-                      <div className="my-6 space-y-2">
-                        <div className="text-xs font-black tracking-widest uppercase text-indigo-400">
-                          ORDER & PAY DIRECTLY
+                        {/* Restaurant Mark */}
+                        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest opacity-90 border-b border-white/20 pb-3 w-full justify-center pt-2">
+                          <Utensils size={14} className="text-indigo-400" />
+                          <span>{restaurant.name}</span>
                         </div>
-                        <h2 className="text-xl font-extrabold tracking-tight">SKIP THE WAIT</h2>
-                        <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-                          View high-definition food photos, split the bill dynamically on UPI, call the server directly, and book food to the kitchen instantly.
-                        </p>
-                      </div>
 
-                      {/* QR Core Code */}
-                      <div className="bg-white p-4 rounded-2xl shadow-2xl flex flex-col items-center border-4 border-slate-200">
-                        <img
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=0f172a&data=${encodeURIComponent(`${window.location.origin}/r/${restaurant.id}/t/${selectedQRTable}`)}`}
-                          alt={`Table QR code`}
-                          referrerPolicy="no-referrer"
-                          className="w-44 h-44 object-contain"
-                        />
-                        <div className="text-[10px] font-black tracking-widest uppercase text-slate-900 mt-2 bg-slate-100 px-3 py-1 rounded-full border border-slate-200 font-mono">
-                          ✦ SCAN SCREEN TO SEAT ✦
+                        {/* Subheadings */}
+                        <div className="my-6 space-y-2">
+                          <div className="text-xs font-black tracking-widest uppercase text-indigo-400">
+                            ORDER & PAY DIRECTLY
+                          </div>
+                          <h2 className="text-xl font-extrabold tracking-tight">SKIP THE WAIT</h2>
+                          <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
+                            View menu, request waiter, & self-checkout instantly
+                          </p>
+                        </div>
+
+                        {/* QR Core Code */}
+                        <div className="bg-white p-4 rounded-2xl shadow-2xl flex flex-col items-center border border-slate-200">
+                          <img
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=0f172a&data=${encodeURIComponent(`${window.location.origin}/r/${restaurant.id}/t/${tnum}`)}`}
+                            alt={`Table ${tnum} QR`}
+                            referrerPolicy="no-referrer"
+                            className="w-40 h-40 object-contain"
+                          />
+                          <div className="text-[10px] font-black tracking-widest uppercase text-slate-900 mt-2 bg-slate-100 px-3 py-1 rounded-full border border-slate-200 font-mono">
+                            ✦ SCAN ME ✦
+                          </div>
+                        </div>
+
+                        {/* Seat Indicator footer card */}
+                        <div className="mt-8 pt-4 border-t border-white/10 w-full space-y-1">
+                          <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Table Address</div>
+                          <div className="text-2xl font-black tracking-widest font-mono text-white">
+                            TABLE #{tnum}
+                          </div>
                         </div>
                       </div>
-
-                      {/* Seat Indicator footer card */}
-                      <div className="mt-8 pt-4 border-t border-white/10 w-full space-y-1">
-                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Table Address</div>
-                        <div className="text-2xl font-black tracking-widest font-mono text-white">
-                          TABLE #{selectedQRTable}
-                        </div>
-                        <p className="text-[8.5px] text-slate-500 font-mono select-all">
-                          {window.location.origin}/r/{restaurant.id}/t/{selectedQRTable}
-                        </p>
-                      </div>
-                    </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -1594,6 +1838,112 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
             </div>
           )}
 
+          {/* CUSTOM PRINT/DOWNLOAD SELECTOR MODAL */}
+          {qrActionModal && (
+            <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-3xl w-full max-w-md p-6 border border-slate-200 shadow-2xl space-y-6">
+                <div className="text-center space-y-2">
+                  <div className="w-12 h-12 bg-indigo-50 border border-indigo-100 rounded-full flex items-center justify-center mx-auto text-indigo-600">
+                    {qrActionModal === 'print' ? <Printer size={20} className="text-indigo-600" /> : <Download size={20} className="text-indigo-600" />}
+                  </div>
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    {qrActionModal === 'print' ? 'Print Seat Flyers' : 'Download Seat Flyers'}
+                  </h3>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Select if you would like to {qrActionModal === 'print' ? 'print' : 'download'} the standing card for Table #{selectedQRTable} or all tables at once.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <button
+                      onClick={async () => {
+                        if (qrActionModal === 'print') {
+                          setPrintMode('single');
+                          setPrintTargetTable(selectedQRTable);
+                          setQrActionModal(null);
+                          setTimeout(() => {
+                            window.print();
+                          }, 250);
+                        } else {
+                          setQrActionModal(null);
+                          await downloadIndividualPNG(selectedQRTable);
+                        }
+                      }}
+                      className="w-full bg-slate-900 hover:bg-slate-800 text-white font-extrabold py-3 px-4 rounded-2xl text-xs uppercase tracking-wider transition cursor-pointer flex items-center justify-between"
+                    >
+                      <span>Current Table (Table #{selectedQRTable})</span>
+                      <span className="text-[10px] opacity-75 font-mono">1 copy</span>
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        if (qrActionModal === 'print') {
+                          setPrintMode('all');
+                          setQrActionModal(null);
+                          setTimeout(() => {
+                            window.print();
+                          }, 250);
+                        } else {
+                          setQrActionModal(null);
+                          await downloadAllPNGs();
+                        }
+                      }}
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold py-3 px-4 rounded-2xl text-xs uppercase tracking-wider transition cursor-pointer flex items-center justify-between"
+                    >
+                      <span>All Tables (1 to {restaurant.totalTables || 8})</span>
+                      <span className="text-[10px] opacity-75 font-mono">{restaurant.totalTables || 8} copies</span>
+                    </button>
+                  </div>
+
+                  <div className="border-t border-slate-100 pt-4 space-y-2.5">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block text-left font-sans">
+                      Or Custom Tables (comma separated)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 4,8,1"
+                      value={customTablesInput}
+                      onChange={(e) => setCustomTablesInput(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                    />
+                    <button
+                      onClick={async () => {
+                        if (!customTablesInput.trim()) {
+                          triggerAppAlert("Warning", "Please enter at least one table number.", "error");
+                          return;
+                        }
+                        if (qrActionModal === 'print') {
+                          setPrintMode('custom');
+                          setQrActionModal(null);
+                          setTimeout(() => {
+                            window.print();
+                          }, 250);
+                        } else {
+                          setQrActionModal(null);
+                          await downloadCustomPNGs();
+                        }
+                      }}
+                      className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-black py-3 px-4 rounded-2xl text-xs uppercase tracking-wider transition cursor-pointer flex items-center justify-between"
+                    >
+                      <span>Process Custom Selection</span>
+                      <span className="text-[10px] opacity-75 font-mono">Custom</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex justify-end">
+                  <button
+                    onClick={() => setQrActionModal(null)}
+                    className="text-xs font-bold text-slate-500 hover:bg-slate-50 px-4 py-2 rounded-xl transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* TAB: LIVE FLOOR SEATING MONITOR */}
           {activeTab === 'floor' && (
             <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-6 shadow-sm">
@@ -1639,7 +1989,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                             return (
                               <div
                                 key={t.tableNum}
-                                className={`p-3 rounded-2xl border flex flex-col justify-between h-[145px] transition-all duration-300 relative ${t.floorState === 'empty' ? 'bg-slate-50 border-slate-200 opacity-60' :
+                                className={`p-3 rounded-2xl border flex flex-col justify-between h-[185px] transition-all duration-300 relative ${t.floorState === 'empty' ? 'bg-slate-50 border-slate-200 opacity-60' :
                                   t.floorState === 'pending' ? 'bg-yellow-50 border-yellow-300 shadow-sm shadow-yellow-100' :
                                     t.floorState === 'preparing' ? 'bg-blue-50 border-blue-300 shadow-sm shadow-blue-105' :
                                       'bg-emerald-50 border-emerald-200 shadow-sm shadow-emerald-100'
@@ -1657,15 +2007,34 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                                   <h4 className="text-sm font-black text-slate-900 mt-0.5">Seat #{t.tableNum}</h4>
                                 </div>
 
-                                <div className="space-y-1.5 z-10 text-[9px]">
+                                <div className="space-y-1.5 z-10 text-[9px] flex-1 flex flex-col justify-end mt-2">
                                   {t.isOccupied ? (
-                                    <div className="space-y-1">
+                                    <div className="space-y-1 w-full">
                                       <div className="flex justify-between items-center text-slate-800 leading-tight">
                                         <span className="font-extrabold truncate max-w-[70px]">👤 {t.occupantName}</span>
                                         <span className="text-[8px] text-indigo-600 font-bold font-mono">⏱ {liveDurationStr.split(' ')[0] || "0m"}</span>
                                       </div>
-                                      <div className="flex justify-between items-center text-[8.5px] text-slate-505">
-                                        <span>{t.ordersCount}t</span>
+                                      
+                                      {/* Order tickets list with status */}
+                                      <div className="space-y-1 my-1 max-h-[50px] overflow-y-auto pr-0.5 scrollbar-thin">
+                                        {t.activeOrders.map(ord => (
+                                          <div key={ord.id} className="flex justify-between items-center text-[7.5px] border-b border-black/5 pb-0.5">
+                                            <span className="font-mono text-slate-500">#{ord.id.split('-')[1]}</span>
+                                            <span className={`px-1 rounded-full font-black uppercase text-[6.5px] ${
+                                              ord.status === 'pending' 
+                                                ? 'bg-yellow-105 text-yellow-800' 
+                                                : ord.status === 'accepted' 
+                                                  ? 'bg-blue-105 text-blue-800' 
+                                                  : 'bg-emerald-100 text-emerald-800'
+                                            }`}>
+                                              {ord.status === 'pending' ? 'Pending' : ord.status === 'accepted' ? 'Preparing' : 'Delivered'}
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+
+                                      <div className="flex justify-between items-center text-[8.5px] text-slate-500 pt-0.5">
+                                        <span>{t.ordersCount} tickets</span>
                                         <span className="font-black text-slate-900">₹{t.billTotal.toFixed(0)}</span>
                                       </div>
                                       <button
@@ -1677,7 +2046,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                                       </button>
                                     </div>
                                   ) : (
-                                    <div className="text-slate-400 font-black text-[9px] tracking-wider uppercase">
+                                    <div className="text-slate-400 font-black text-[9px] tracking-wider uppercase text-center pb-2">
                                       VACANT
                                     </div>
                                   )}
@@ -1708,7 +2077,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                       return (
                         <div
                           key={t.tableNum}
-                          className={`p-3 rounded-2xl border flex flex-col justify-between h-[145px] transition-all duration-300 relative ${t.floorState === 'empty' ? 'bg-slate-50 border-slate-200 opacity-60' :
+                          className={`p-3 rounded-2xl border flex flex-col justify-between h-[185px] transition-all duration-300 relative ${t.floorState === 'empty' ? 'bg-slate-50 border-slate-200 opacity-60' :
                             t.floorState === 'pending' ? 'bg-yellow-50 border-yellow-300 shadow-sm shadow-yellow-100' :
                               t.floorState === 'preparing' ? 'bg-blue-50 border-blue-300 shadow-sm shadow-blue-105' :
                                 'bg-emerald-50 border-emerald-200 shadow-sm shadow-emerald-100'
@@ -1726,15 +2095,34 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                             <h4 className="text-sm font-black text-slate-900 mt-0.5">Seat #{t.tableNum}</h4>
                           </div>
 
-                          <div className="space-y-1.5 z-10 text-[9px]">
+                          <div className="space-y-1.5 z-10 text-[9px] flex-1 flex flex-col justify-end mt-2">
                             {t.isOccupied ? (
-                              <div className="space-y-1">
+                              <div className="space-y-1 w-full">
                                 <div className="flex justify-between items-center text-slate-800 leading-tight">
                                   <span className="font-extrabold truncate max-w-[70px]">👤 {t.occupantName}</span>
                                   <span className="text-[8px] text-indigo-600 font-bold font-mono">⏱ {liveDurationStr.split(' ')[0] || "0m"}</span>
                                 </div>
-                                <div className="flex justify-between items-center text-[8.5px] text-slate-505">
-                                  <span>{t.ordersCount}t</span>
+
+                                {/* Order tickets list with status */}
+                                <div className="space-y-1 my-1 max-h-[50px] overflow-y-auto pr-0.5 scrollbar-thin">
+                                  {t.activeOrders.map(ord => (
+                                    <div key={ord.id} className="flex justify-between items-center text-[7.5px] border-b border-black/5 pb-0.5">
+                                      <span className="font-mono text-slate-500">#{ord.id.split('-')[1]}</span>
+                                      <span className={`px-1 rounded-full font-black uppercase text-[6.5px] ${
+                                        ord.status === 'pending' 
+                                          ? 'bg-yellow-105 text-yellow-800' 
+                                          : ord.status === 'accepted' 
+                                            ? 'bg-blue-105 text-blue-800' 
+                                            : 'bg-emerald-100 text-emerald-800'
+                                      }`}>
+                                        {ord.status === 'pending' ? 'Pending' : ord.status === 'accepted' ? 'Preparing' : 'Delivered'}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                <div className="flex justify-between items-center text-[8.5px] text-slate-500 pt-0.5">
+                                  <span>{t.ordersCount} tickets</span>
                                   <span className="font-black text-slate-900">₹{t.billTotal.toFixed(0)}</span>
                                 </div>
                                 <button
@@ -1746,7 +2134,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                                 </button>
                               </div>
                             ) : (
-                              <div className="text-slate-400 font-black text-[9px] tracking-wider uppercase">
+                              <div className="text-slate-400 font-black text-[9px] tracking-wider uppercase text-center pb-2">
                                 VACANT
                               </div>
                             )}
@@ -2720,14 +3108,43 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
 
                 </div>
 
-                <div className="pt-2 border-t border-slate-100 flex justify-between items-center">
-                  <span className="font-extrabold text-slate-700">Is Pure Vegetarian (Veg)?</span>
-                  <input
-                    type="checkbox"
-                    checked={menuForm.isVeg}
-                    onChange={(e) => setMenuForm({ ...menuForm, isVeg: e.target.checked })}
-                    className="w-4 h-4 text-emerald-600 rounded"
-                  />
+                <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
+                  <div>
+                    <span className="font-extrabold text-slate-700 block">Food Preference Type</span>
+                    <span className="text-[10px] text-slate-400">Classify diet type for digital menus</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMenuForm({ ...menuForm, isVeg: !menuForm.isVeg })}
+                    className={`relative w-28 h-9 rounded-xl p-1 transition-colors duration-300 flex items-center justify-between cursor-pointer shadow-inner border select-none ${
+                      menuForm.isVeg 
+                        ? 'bg-emerald-50 border-emerald-200' 
+                        : 'bg-rose-50 border-rose-200'
+                    }`}
+                  >
+                    {/* Sliding Pill */}
+                    <div 
+                      className={`absolute top-1 bottom-1 w-[52px] rounded-lg transition-all duration-300 shadow-sm ${
+                        menuForm.isVeg 
+                          ? 'left-1 bg-emerald-600' 
+                          : 'left-[60px] bg-rose-600'
+                      }`}
+                    />
+                    
+                    {/* Veg Text */}
+                    <span className={`text-[9px] font-black uppercase tracking-wider z-10 w-1/2 text-center transition-colors duration-300 ${
+                      menuForm.isVeg ? 'text-white' : 'text-emerald-700 opacity-60'
+                    }`}>
+                      VEG
+                    </span>
+
+                    {/* Non-Veg Text */}
+                    <span className={`text-[9px] font-black uppercase tracking-wider z-10 w-1/2 text-center transition-colors duration-300 ${
+                      !menuForm.isVeg ? 'text-white' : 'text-rose-700 opacity-60'
+                    }`}>
+                      NON-VEG
+                    </span>
+                  </button>
                 </div>
 
 
@@ -2890,7 +3307,7 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
 
               <button
                 type="button"
-                onClick={() => handleCancelAndRelease(releasingTableNum)}
+                onClick={() => triggerCancelSettleWarning(releasingTableNum)}
                 className="w-full bg-rose-600 hover:bg-rose-700 text-white font-extrabold py-3.5 px-4 rounded-2xl text-[11px] uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-2 shadow-xs"
               >
                 <X size={15} />
@@ -2903,6 +3320,38 @@ Keep the tone energetic, clear, and highly professional. Avoid placeholders. Mak
                 className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold py-2.5 px-4 rounded-2xl text-[10px] uppercase tracking-wider transition cursor-pointer text-center"
               >
                 Keep Table Seated
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCancelWarningConfirm && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[110] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl p-6 border-2 border-rose-200 space-y-4 text-center">
+            <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto animate-bounce">
+              <AlertTriangle size={24} />
+            </div}
+            <h4 className="text-lg font-black text-slate-900">Settle Warning</h4>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              There are active orders in progress for Table #{releasingTableNum} that will be cancelled. <br/>Are you absolutely sure you want to proceed?
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => {
+                  if (cancelTimerId) clearInterval(cancelTimerId);
+                  setShowCancelWarningConfirm(false);
+                }}
+                className="flex-1 py-2.5 bg-slate-100 text-slate-600 font-bold rounded-xl text-xs uppercase tracking-wider transition cursor-pointer"
+              >
+                Go Back
+              </button
+              <button
+                disabled={cancelCountdown > 0}
+                onClick={() => handleCancelAndRelease(releasingTableNum)}
+                className={`flex-1 py-2.5 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition cursor-pointer shadow-sm ${cancelCountdown > 0 ? 'bg-rose-300 cursor-not-allowed' : 'bg-rose-600 hover:bg-rose-700'}`}
+              >
+                Yes, Cancel & Settle {cancelCountdown > 0 ? `(${cancelCountdown}s)` : ''}
               </button>
             </div>
           </div>

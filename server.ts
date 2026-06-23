@@ -732,8 +732,20 @@ async function seedDatabaseIfEmpty() {
           if (err2) console.error('Seed error staff_credentials chef:', err2);
         }
       }
+      function toTitleCaseName(str: string): string {
+        if (!str) return '';
+        return str
+          .trim()
+          .split(/\s+/)
+          .map(word => {
+            if (!word) return '';
+            return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+          })
+          .join(' ');
+      }
       for (const m of INITIAL_MENUS) {
-        const { error } = await db.from('menu_items').upsert(toSnake(m), { onConflict: 'id' });
+        const itemToSeed = { ...m, name: toTitleCaseName(m.name) };
+        const { error } = await db.from('menu_items').upsert(toSnake(itemToSeed), { onConflict: 'id' });
         if (error) console.error('Seed error menu_items:', error);
       }
       for (const o of INITIAL_ORDERS) {
@@ -760,12 +772,14 @@ async function seedDatabaseIfEmpty() {
 const DEEPSEEK_API_BASE = "https://api.deepseek.com/v1";
 const DEEPSEEK_MODEL = "deepseek-chat";
 
-async function callDeepSeek(prompt: string, systemInstruction: string): Promise<string> {
+async function callDeepSeek(prompt: string, systemInstruction: string, conversationHistory?: {role:string,content:string}[]): Promise<string> {
   const key = process.env.DEEPSEEK_API_KEY;
   if (!key) {
     console.warn("WARNING: DEEPSEEK_API_KEY is not defined. AI functions will run with mock outputs.");
     return "";
   }
+
+  const historyMessages = (conversationHistory || []).map(m => ({ role: m.role, content: m.content }));
 
   const response = await fetch(`${DEEPSEEK_API_BASE}/chat/completions`, {
     method: "POST",
@@ -777,6 +791,7 @@ async function callDeepSeek(prompt: string, systemInstruction: string): Promise<
       model: DEEPSEEK_MODEL,
       messages: [
         { role: "system", content: systemInstruction },
+        ...historyMessages,
         { role: "user", content: prompt }
       ],
       max_tokens: 1024,
@@ -798,12 +813,14 @@ async function callDeepSeek(prompt: string, systemInstruction: string): Promise<
 const OPENROUTER_API_BASE = "https://openrouter.ai/api/v1";
 const OPENROUTER_MODEL = "google/gemini-2.5-flash";
 
-async function callOpenRouter(prompt: string, systemInstruction: string): Promise<string> {
+async function callOpenRouter(prompt: string, systemInstruction: string, conversationHistory?: {role:string,content:string}[]): Promise<string> {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) {
     console.warn("WARNING: OPENROUTER_API_KEY is not defined.");
     return "";
   }
+
+  const historyMessages = (conversationHistory || []).map(m => ({ role: m.role, content: m.content }));
 
   const response = await fetch(`${OPENROUTER_API_BASE}/chat/completions`, {
     method: "POST",
@@ -817,6 +834,7 @@ async function callOpenRouter(prompt: string, systemInstruction: string): Promis
       model: OPENROUTER_MODEL,
       messages: [
         { role: "system", content: systemInstruction },
+        ...historyMessages,
         { role: "user", content: prompt }
       ],
       max_tokens: 1024,
@@ -834,7 +852,7 @@ async function callOpenRouter(prompt: string, systemInstruction: string): Promis
 }
 
 // Unified AI client calling function with fallback
-async function callAI(prompt: string, systemInstruction: string): Promise<string> {
+async function callAI(prompt: string, systemInstruction: string, conversationHistory?: {role:string,content:string}[]): Promise<string> {
   const openRouterKey = process.env.OPENROUTER_API_KEY;
   const deepSeekKey = process.env.DEEPSEEK_API_KEY;
 
@@ -847,12 +865,12 @@ async function callAI(prompt: string, systemInstruction: string): Promise<string
     {
       name: "OpenRouter",
       key: openRouterKey,
-      fn: () => callOpenRouter(prompt, systemInstruction)
+      fn: () => callOpenRouter(prompt, systemInstruction, conversationHistory)
     },
     {
       name: "DeepSeek",
       key: deepSeekKey,
-      fn: () => callDeepSeek(prompt, systemInstruction)
+      fn: () => callDeepSeek(prompt, systemInstruction, conversationHistory)
     }
   ];
 
@@ -2023,7 +2041,7 @@ export async function configureApp(isNetlify = false) {
   // === DEEPSEEK AI SECURE BACKEND CONTROLLER ===
 
   app.post("/api/gemini/chat", async (req, res) => {
-    const { userPrompt, systemInstruction } = req.body;
+    const { userPrompt, systemInstruction, conversationHistory } = req.body;
     if (!userPrompt) {
       return res.status(400).json({ error: "userPrompt parameter is required." });
     }
@@ -2036,7 +2054,7 @@ export async function configureApp(isNetlify = false) {
         });
       }
 
-      const result = await callAI(userPrompt, systemInstruction || "You are a professional hospitality digital dining guide.");
+      const result = await callAI(userPrompt, systemInstruction || "You are a professional hospitality digital dining guide.", conversationHistory || []);
       res.json({ text: result });
     } catch (err: any) {
       console.error("AI API Error in server.ts:", err);

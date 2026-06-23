@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Building2, Utensils, ChefHat, Store, ShoppingBag, RefreshCw,
-  Sliders, CheckCircle, AlertOctagon, Info, X,
+  Sliders, CheckCircle, AlertOctagon, Info, X, Undo2,
   ClipboardList, LayoutGrid, QrCode, History, BarChart3
 } from 'lucide-react';
 import { Restaurant, MenuItem, Order, DineInUser, Buzzer, FloorDef } from './types';
@@ -33,6 +33,31 @@ export default function App() {
     message: string;
     type: 'success' | 'error' | 'info';
   }[]>([]);
+
+  // ── 15-second Undo Cancellation System ──
+  interface PendingCancellation {
+    id: string;
+    type: 'order' | 'dish';
+    orderId: string;
+    itemIdx?: number; // only for dish cancellations
+    originalOrder: Order; // snapshot before cancel
+    expiresAt: number; // Date.now() + 15000
+    timerId: ReturnType<typeof setTimeout>;
+    committed: boolean;
+    label: string; // human-readable description
+  }
+
+  const [pendingCancellations, setPendingCancellations] = useState<PendingCancellation[]>([]);
+  const pendingCancellationsRef = useRef<PendingCancellation[]>([]);
+  useEffect(() => { pendingCancellationsRef.current = pendingCancellations; }, [pendingCancellations]);
+
+  // Countdown ticker for undo toasts (re-renders once/sec)
+  const [undoTicker, setUndoTicker] = useState(0);
+  useEffect(() => {
+    if (pendingCancellations.length === 0) return;
+    const iv = setInterval(() => setUndoTicker(t => t + 1), 1000);
+    return () => clearInterval(iv);
+  }, [pendingCancellations.length]);
 
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [menus, setMenus] = useState<MenuItem[]>([]);
@@ -131,9 +156,12 @@ export default function App() {
     }
   }, [isPortalRoute, isAuthenticated, activeMode, currentPath]);
 
-  const navigateTo = (newPath: string) => {
-    window.history.pushState(null, '', newPath);
-    setCurrentPath(newPath);
+  const handleLogoClick = () => {
+    if (activeMode === 'restadmin') {
+      setAdminActiveTab('orders');
+    } else {
+      navigateTo('/portal');
+    }
   };
 
   const handleLoginSuccess = (mode: 'restadmin' | 'kitchen' | 'superadmin') => {
@@ -401,45 +429,134 @@ export default function App() {
     }
   };
 
-  const handleCancelSpecificDish = async (orderId: string, itemIdx: number) => {
+  // Direct (no undo) cancel dish — used internally after grace period
+  const commitCancelSpecificDish = async (orderId: string, itemIdx: number, snapshotOrder: Order) => {
     try {
-      const targetOrder = orders.find(o => o.id === orderId);
-      if (targetOrder) {
-        const remainingItems = targetOrder.items.filter((_, idx) => idx !== itemIdx);
-
-        let nextStatus = targetOrder.status;
-        let newTotal = 0;
-
-        if (remainingItems.length === 0) {
-          nextStatus = 'rejected' as const;
-          newTotal = 0;
-        } else {
-          // Re-calculate total amount excluding discounts accordingly
-          newTotal = remainingItems.reduce((acc, chunk) => {
-            return acc + (chunk.price * chunk.quantity);
-          }, 0);
-        }
-
-        const updatedOrder = {
-          ...targetOrder,
-          items: remainingItems,
-          status: nextStatus,
-          totalAmount: newTotal
-        };
-
-        const res = await fetch("/api/orders", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(updatedOrder)
-        });
-        const data = await res.json();
-        if (data && data.orders) {
-          setOrders(data.orders);
-        }
+      const remainingItems = snapshotOrder.items.filter((_, idx) => idx !== itemIdx);
+      let nextStatus = snapshotOrder.status as any;
+      let newTotal = 0;
+      if (remainingItems.length === 0) {
+        nextStatus = 'rejected';
+        newTotal = 0;
+      } else {
+        newTotal = remainingItems.reduce((acc, chunk) => acc + (chunk.price * chunk.quantity), 0);
       }
+      const updatedOrder = { ...snapshotOrder, items: remainingItems, status: nextStatus, totalAmount: newTotal };
+      const res = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updatedOrder) });
+      const data = await res.json();
+      if (data && data.orders) setOrders(data.orders);
     } catch (e) {
       triggerAppAlert("Override Failure", "Could not remove specific item on the server.", "error");
     }
+  };
+
+  // Direct (no undo) cancel entire order — used internally after grace period
+  const commitCancelOrder = async (orderId: string, released?: boolean) => {
+    try {
+      const targetOrder = orders.find(o => o.id === orderId);
+      if (targetOrder) {
+        const updatedOrder = {
+          ...targetOrder,
+          status: 'rejected',
+          released: released ?? targetOrder.released
+        };
+        const res = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updatedOrder) });
+        const data = await res.json();
+        if (data && data.orders) setOrders(data.orders);
+      }
+    } catch (e) {
+      triggerAppAlert("Error", "Could not submit cancellation to network.", "error");
+    }
+  };
+
+  // ── Undo-aware cancel handler for ENTIRE order ──
+  const handleCancelOrderWithUndo = useCallback((orderId: string, released?: boolean) => {
+    const targetOrder = orders.find(o => o.id === orderId);
+    if (!targetOrder) return;
+
+    // If someone is trying to set status to 'rejected', route through undo
+    const cancelId = 'cancel-' + orderId + '-' + Date.now();
+    const snapshot = { ...targetOrder, items: [...targetOrder.items] };
+    const dishLabel = targetOrder.items.map(i => i.name).join(', ');
+
+    const timerId = setTimeout(() => {
+      // Grace period expired — commit the cancellation
+      commitCancelOrder(orderId, released);
+      setPendingCancellations(prev => prev.map(pc => pc.id === cancelId ? { ...pc, committed: true } : pc));
+      // Auto-remove undo toast after committed
+      setTimeout(() => {
+        setPendingCancellations(prev => prev.filter(pc => pc.id !== cancelId));
+      }, 2000);
+    }, 15000);
+
+    const pc: PendingCancellation = {
+      id: cancelId,
+      type: 'order',
+      orderId,
+      originalOrder: snapshot,
+      expiresAt: Date.now() + 15000,
+      timerId,
+      committed: false,
+      label: `Order #${orderId.split('-')[1]} — Table #${targetOrder.tableNumber} (${dishLabel})`
+    };
+
+    setPendingCancellations(prev => [...prev, pc]);
+  }, [orders]);
+
+  // ── Undo-aware cancel handler for SPECIFIC DISH ──
+  const handleCancelDishWithUndo = useCallback((orderId: string, itemIdx: number) => {
+    const targetOrder = orders.find(o => o.id === orderId);
+    if (!targetOrder || !targetOrder.items[itemIdx]) return;
+
+    const cancelId = 'cancel-dish-' + orderId + '-' + itemIdx + '-' + Date.now();
+    const snapshot = { ...targetOrder, items: [...targetOrder.items] };
+    const dishName = targetOrder.items[itemIdx].name;
+
+    const timerId = setTimeout(() => {
+      // Grace period expired — commit the dish removal
+      commitCancelSpecificDish(orderId, itemIdx, snapshot);
+      setPendingCancellations(prev => prev.map(pc => pc.id === cancelId ? { ...pc, committed: true } : pc));
+      setTimeout(() => {
+        setPendingCancellations(prev => prev.filter(pc => pc.id !== cancelId));
+      }, 2000);
+    }, 15000);
+
+    const pc: PendingCancellation = {
+      id: cancelId,
+      type: 'dish',
+      orderId,
+      itemIdx,
+      originalOrder: snapshot,
+      expiresAt: Date.now() + 15000,
+      timerId,
+      committed: false,
+      label: `"${dishName}" from Order #${orderId.split('-')[1]}`
+    };
+
+    setPendingCancellations(prev => [...prev, pc]);
+    triggerAppAlert("Cancellation Pending", `"${dishName}" will be cancelled in 15 seconds. You can undo from the notification below.`, "info");
+  }, [orders]);
+
+  // ── Undo handler ──
+  const handleUndoCancellation = useCallback((cancelId: string) => {
+    const pc = pendingCancellationsRef.current.find(p => p.id === cancelId);
+    if (!pc || pc.committed) return;
+    clearTimeout(pc.timerId);
+    setPendingCancellations(prev => prev.filter(p => p.id !== cancelId));
+    triggerAppAlert("Cancellation Reverted", `Undo successful — ${pc.label} has been restored.`, "success");
+  }, []);
+
+  // ── Wrapper that routes reject through undo, passes everything else through directly ──
+  const handleUpdateOrderStatusWithUndo = useCallback((orderId: string, nextStatus: any, released?: boolean) => {
+    if (nextStatus === 'rejected') {
+      handleCancelOrderWithUndo(orderId, released);
+    } else {
+      handleUpdateOrderStatus(orderId, nextStatus, released);
+    }
+  }, [handleCancelOrderWithUndo, orders]);
+
+  const handleCancelSpecificDish = async (orderId: string, itemIdx: number) => {
+    handleCancelDishWithUndo(orderId, itemIdx);
   };
 
   const handleModifyRestaurantTablesGlobal = async (tenantId: string, nextTables: number, floors?: FloorDef[]) => {
@@ -818,13 +935,14 @@ export default function App() {
                   onMenuItemSave={handleMenuItemSave}
                   onMenuItemDelete={handleMenuItemDelete}
                   orders={orders}
-                  onUpdateOrderStatus={handleUpdateOrderStatus}
+                  onUpdateOrderStatus={handleUpdateOrderStatusWithUndo}
                   onCancelSpecificDish={handleCancelSpecificDish}
                   onTableUpdate={(count, floors) => handleModifyRestaurantTablesGlobal(activeRestaurantObj.id, count, floors)}
                   triggerAppAlert={triggerAppAlert}
                   buzzers={buzzers}
                   activeTab={adminActiveTab}
                   setActiveTab={setAdminActiveTab}
+                  pendingCancellations={pendingCancellations}
                 />
               )}
 
@@ -832,7 +950,7 @@ export default function App() {
                 <KitchenDisplaySystem
                   restaurant={activeRestaurantObj}
                   orders={orders}
-                  onUpdateOrderStatus={handleUpdateOrderStatus}
+                  onUpdateOrderStatus={handleUpdateOrderStatusWithUndo}
                   onCancelSpecificDish={handleCancelSpecificDish}
                   ticker={0}
                   buzzers={buzzers}
@@ -919,6 +1037,62 @@ export default function App() {
 
       {/* Toast Notifications System */}
       <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+        {/* Undo Cancellation Toasts */}
+        {pendingCancellations.map(pc => {
+          const remaining = Math.max(0, Math.ceil((pc.expiresAt - Date.now()) / 1000));
+          const progress = Math.min(100, ((15 - remaining) / 15) * 100);
+          return (
+            <div
+              key={pc.id}
+              className={`pointer-events-auto flex flex-col gap-2 p-4 rounded-2xl shadow-2xl border transition-all duration-300 ${
+                pc.committed
+                  ? 'bg-rose-50 border-rose-200'
+                  : 'bg-amber-50 border-amber-300 ring-2 ring-amber-400/30'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5">
+                  {pc.committed ? (
+                    <AlertOctagon size={18} className="text-rose-500" />
+                  ) : (
+                    <Undo2 size={18} className="text-amber-600 animate-pulse" />
+                  )}
+                </div>
+                <div className="flex-1 space-y-0.5 min-w-0">
+                  <h5 className="text-xs font-black text-slate-950 leading-tight">
+                    {pc.committed ? 'Cancelled & Notified' : 'Cancellation Pending'}
+                  </h5>
+                  <p className="text-[10.5px] text-slate-600 font-semibold leading-relaxed truncate">
+                    {pc.label}
+                  </p>
+                  {!pc.committed && (
+                    <p className="text-[10px] font-mono font-black text-amber-700">
+                      Auto-confirms in {remaining}s
+                    </p>
+                  )}
+                </div>
+                {!pc.committed && (
+                  <button
+                    onClick={() => handleUndoCancellation(pc.id)}
+                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-black uppercase tracking-wider rounded-xl transition cursor-pointer shrink-0 flex items-center gap-1"
+                  >
+                    <Undo2 size={11} />
+                    Undo
+                  </button>
+                )}
+              </div>
+              {!pc.committed && (
+                <div className="w-full bg-amber-200 rounded-full h-1 overflow-hidden">
+                  <div
+                    className="h-full bg-amber-600 rounded-full transition-all duration-1000 ease-linear"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+
         {toasts.map(toast => (
           <div
             key={toast.id}

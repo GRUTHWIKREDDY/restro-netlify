@@ -99,6 +99,7 @@ export default function DineInCustomerUI({
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'default' | 'priceAsc' | 'priceDesc'>('default');
+  const [onlyVeg, setOnlyVeg] = useState(false);
 
   const [cart, setCart] = useState<{ [menuId: string]: number }>({});
   const [cartNotes, setCartNotes] = useState<{ [menuId: string]: string }>({});
@@ -126,6 +127,27 @@ export default function DineInCustomerUI({
     document.documentElement.classList.remove('dark');
   }, []);
 
+  const [hasBeenSeenInUsers, setHasBeenSeenInUsers] = useState(false);
+
+  useEffect(() => {
+    if (!customerSession) {
+      setHasBeenSeenInUsers(false);
+      return;
+    }
+    const isPresent = users.some(
+      u => u.phone === customerSession.phone &&
+           u.restaurantId === restaurant.id &&
+           u.tableNumber === tableNumber
+    );
+    if (isPresent) {
+      setHasBeenSeenInUsers(true);
+    } else if (hasBeenSeenInUsers) {
+      // They were previously seen, but now they are deleted/released by admin! They must exit!
+      setCustomerSession(null);
+      triggerAppAlert("Dining Finished", "Your dining session has been settled and closed by the restaurant. Thank you!", "info");
+    }
+  }, [users, customerSession, restaurant.id, tableNumber]);
+
   useEffect(() => {
     if (!customerSession) return;
     const sessionOrders = orders.filter(
@@ -137,7 +159,7 @@ export default function DineInCustomerUI({
       const activeSessionOrders = sessionOrders.filter(o => o.released !== true);
       if (activeSessionOrders.length === 0) {
         setCustomerSession(null);
-        triggerAppAlert("Dining Finished", "The restaurant has closed your session.", "info");
+        triggerAppAlert("Dining Finished", "The restaurant has released your table. Thank you for dining with us!", "info");
       }
     }
   }, [orders, restaurant.id, tableNumber, customerSession, setCustomerSession]);
@@ -449,8 +471,22 @@ Explicitly check and highlight veg vs non-veg. Answer strictly in a brief style 
     ]);
   }, [restaurant]);
 
+  const toTitleCaseName = (str: string): string => {
+    if (!str) return '';
+    return str
+      .trim()
+      .split(/\s+/)
+      .map(word => {
+        if (!word) return '';
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      })
+      .join(' ');
+  };
+
   const restaurantMenus = useMemo(() => {
-    return menus.filter(m => m.restaurantId === restaurant?.id);
+    return menus
+      .filter(m => m.restaurantId === restaurant?.id)
+      .map(m => ({ ...m, name: toTitleCaseName(m.name) }));
   }, [menus, restaurant]);
 
   const categories = useMemo(() => {
@@ -1202,6 +1238,8 @@ ${JSON.stringify(liveMenuContext)}
                           <input
                             key={index}
                             type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
                             maxLength={1}
                             value={enteredDiningCode[index] || ''}
                             onChange={(e) => {
@@ -1264,10 +1302,23 @@ ${JSON.stringify(liveMenuContext)}
                    {/* Dynamic Welcome Block */}
               <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-slate-100 rounded-2xl p-5 border border-slate-800 shadow-md relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/10 rounded-full blur-xl pointer-events-none"></div>
-                <div className="relative z-10 space-y-1">
-                  <span className="text-[9px] font-mono tracking-widest uppercase text-indigo-400 font-bold block mb-1">LIVE AT TABLE {tableNumber}</span>
-                  <p className="text-sm font-extrabold uppercase tracking-wider text-white">Enjoy dining, {customerSession.name}!</p>
-                  <p className="text-[11px] text-slate-300 leading-relaxed pt-0.5">
+                <div className="relative z-10 space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div className="space-y-1">
+                      <span className="text-[9px] font-mono tracking-widest uppercase text-indigo-400 font-bold block mb-1">LIVE AT TABLE {tableNumber}</span>
+                      <p className="text-sm font-extrabold uppercase tracking-wider text-white">Enjoy dining, {customerSession.name}!</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setCustomerSession(null);
+                        triggerAppAlert("Logged Out", "You have successfully exited the table session.", "info");
+                      }}
+                      className="bg-red-600 hover:bg-red-700 text-white font-bold text-[9px] uppercase tracking-wider px-2.5 py-1.5 rounded-lg border border-red-500 shadow-sm transition active:scale-[0.98] cursor-pointer shrink-0"
+                    >
+                      Exit Session
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed pt-1.5 border-t border-white/10">
                     Tap the ✨ gold button on the header to ask our Gemini AI Maitre D' for customized culinary pairings & ingredient origins.
                   </p>
                 </div>
@@ -1331,6 +1382,18 @@ ${JSON.stringify(liveMenuContext)}
                       className="w-full bg-white border border-slate-200/80 rounded-full py-2.5 pl-10 pr-4 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 transition text-slate-800 shadow-xs"
                     />
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setOnlyVeg(!onlyVeg)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-wider transition-all duration-300 cursor-pointer shrink-0 ${
+                      onlyVeg 
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-800' 
+                        : 'bg-rose-50 border-rose-300 text-rose-800'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${onlyVeg ? 'bg-emerald-600 animate-pulse' : 'bg-rose-600'}`} />
+                    {onlyVeg ? 'Veg Only' : 'All Foods'}
+                  </button>
                   <select 
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as any)}
@@ -1412,6 +1475,10 @@ ${JSON.stringify(liveMenuContext)}
               <div className="space-y-3" data-testid="menu-listings">
                 {restaurantMenus
                   .filter(m => m.isAvailable !== false)
+                  .filter(m => {
+                    if (onlyVeg && m.isVeg === false) return false;
+                    return true;
+                  })
                   .filter(m => {
                     if (selectedCategory === 'All') return true;
                     if (selectedCategory === 'Favourites') {
@@ -1847,8 +1914,8 @@ ${JSON.stringify(liveMenuContext)}
 
         {/* CART DRAWER SLIDE SCREEN */}
         {isCartOpen && (
-          <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex flex-col justify-end border-none">
-            <div className="bg-white rounded-t-lg max-h-[85%] p-5 space-y-4 flex flex-col justify-between border-t border-slate-200">
+          <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex flex-col justify-start border-none">
+            <div className="bg-white rounded-b-2xl max-h-[90%] p-5 space-y-4 flex flex-col justify-between border-b border-slate-200 shadow-2xl" style={{animation:'slideDownModal 0.3s cubic-bezier(0.34,1.56,0.64,1) both'}}>
               
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-1.5 font-bold text-slate-900 text-xs uppercase tracking-wider">
@@ -2150,9 +2217,10 @@ ${JSON.stringify(liveMenuContext)}
 
         {/* Bill Summary Drawer */}
         {isBillSummaryOpen && (
-          <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm z-50 flex flex-col justify-end">
+          <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm z-50 flex flex-col justify-start">
             <div 
-              className="bg-white rounded-t-[28px] w-full max-h-[80%] shadow-2xl border-t border-slate-200 flex flex-col overflow-hidden animate-slide-up"
+              className="bg-white rounded-b-[28px] w-full max-h-[90%] shadow-2xl border-b border-slate-200 flex flex-col overflow-hidden"
+              style={{animation:'slideDownModal 0.3s cubic-bezier(0.34,1.56,0.64,1) both'}}
             >
               {/* Header */}
               <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100 shrink-0">
@@ -2278,15 +2346,20 @@ ${JSON.stringify(liveMenuContext)}
         )}
 
         {/* Real-Time Table Status & Order Tracker (Floating Capsule & Slide-up Drawer) */}
-        {customerSession && activePrepOrders.length > 0 && (
+        {customerSession && (
           <button
             onClick={() => setIsPrepTrackerOpen(true)}
-            className="absolute bottom-4 left-4 right-4 bg-indigo-950 text-white rounded-full py-3.5 px-5 shadow-xl border border-indigo-800 hover:bg-indigo-900 transition flex items-center justify-between z-30 cursor-pointer animate-pulse"
+            className="absolute bottom-4 left-4 right-4 bg-indigo-950 text-white rounded-full py-3.5 px-5 shadow-xl border border-indigo-800 hover:bg-indigo-900 transition flex items-center justify-between z-30 cursor-pointer"
           >
             <div className="flex items-center gap-2">
-              <span className="text-indigo-400 animate-spin-slow">🍳</span>
-              <span className="text-[10px] font-black tracking-widest uppercase text-slate-100">
-                Prep Tracker: {activePrepItemsCount} Item{activePrepItemsCount !== 1 ? 's' : ''} cooking...
+              <span className={activePrepItemsCount > 0 ? "text-indigo-400 animate-spin-slow" : "text-emerald-400 font-bold"}>
+                {activePrepItemsCount > 0 ? "🍳" : "✓"}
+              </span>
+              <span className="text-[10px] font-black tracking-widest uppercase text-slate-100 font-sans">
+                {activePrepItemsCount > 0 
+                  ? `Prep Tracker: ${activePrepItemsCount} Item${activePrepItemsCount !== 1 ? 's' : ''} cooking...`
+                  : `Order Tracker: ${customerOrders.length} Order${customerOrders.length !== 1 ? 's' : ''} placed`
+                }
               </span>
             </div>
             <ChevronRight size={14} className="text-indigo-400" />
@@ -2314,7 +2387,7 @@ ${JSON.stringify(liveMenuContext)}
               </div>
 
               <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 scrollbar-none">
-                {activePrepOrders.map((order, idx) => (
+                {customerOrders.map((order, idx) => (
                   <div key={order.id} className="bg-slate-50 rounded-2xl border border-slate-150 p-4 space-y-3">
                     <div className="flex justify-between items-center pb-2 border-b border-slate-200/60">
                       <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
@@ -2336,46 +2409,53 @@ ${JSON.stringify(liveMenuContext)}
                       ))}
                     </div>
 
-                    <div className="pt-4 pb-2">
-                      <div className="relative flex items-center justify-between">
-                        <div className="absolute left-3 right-3 top-1/2 -translate-y-1/2 h-0.5 bg-slate-200 z-0">
-                          <div 
-                            className="h-full bg-indigo-600 transition-all duration-550" 
-                            style={{ width: order.status === 'pending' ? '0%' : '50%' }}
-                          />
-                        </div>
-
-                        {[
-                          { label: "Sent", statusKey: "pending" },
-                          { label: "Cooking", statusKey: "accepted" },
-                          { label: "Served", statusKey: "completed" }
-                        ].map((step, stepIdx) => {
-                          const isActive = 
-                            (step.statusKey === 'pending' && (order.status === 'pending' || order.status === 'accepted' || order.status === 'completed')) ||
-                            (step.statusKey === 'accepted' && (order.status === 'accepted' || order.status === 'completed')) ||
-                            (step.statusKey === 'completed' && order.status === 'completed');
-                          
-                          const isCurrent = order.status === step.statusKey;
-
-                          return (
-                            <div key={stepIdx} className="relative z-10 flex flex-col items-center">
-                              <div 
-                                className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${
-                                  isActive 
-                                    ? 'bg-indigo-600 text-white shadow-sm ring-4 ring-indigo-150' 
-                                    : 'bg-slate-100 text-slate-400 border border-slate-200'
-                                }`}
-                              >
-                                {stepIdx + 1}
-                              </div>
-                              <span className={`text-[9px] font-black uppercase mt-1 tracking-wider ${isActive ? 'text-indigo-650 font-extrabold' : 'text-slate-400'}`}>
-                                {step.label}
-                              </span>
-                            </div>
-                          );
-                        })}
+                    {order.status === 'rejected' ? (
+                      <div className="bg-rose-50 border border-rose-100 rounded-xl p-2.5 text-center text-xs font-black text-rose-600 flex items-center justify-center gap-1.5 mt-2">
+                        <X size={14} className="text-rose-500" />
+                        <span>This order was cancelled / rejected.</span>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="pt-4 pb-2">
+                        <div className="relative flex items-center justify-between">
+                          <div className="absolute left-3 right-3 top-1/2 -translate-y-1/2 h-0.5 bg-slate-200 z-0">
+                            <div 
+                              className="h-full bg-indigo-600 transition-all duration-550" 
+                              style={{ width: order.status === 'pending' ? '0%' : (order.status === 'accepted' ? '50%' : '100%') }}
+                            />
+                          </div>
+
+                          {[
+                            { label: "Sent", statusKey: "pending" },
+                            { label: "Cooking", statusKey: "accepted" },
+                            { label: "Served", statusKey: "completed" }
+                          ].map((step, stepIdx) => {
+                            const isActive = 
+                              (step.statusKey === 'pending' && (order.status === 'pending' || order.status === 'accepted' || order.status === 'completed')) ||
+                              (step.statusKey === 'accepted' && (order.status === 'accepted' || order.status === 'completed')) ||
+                              (step.statusKey === 'completed' && order.status === 'completed');
+                            
+                            const isCurrent = order.status === step.statusKey;
+
+                            return (
+                              <div key={stepIdx} className="relative z-10 flex flex-col items-center">
+                                <div 
+                                  className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black transition-all ${
+                                    isActive 
+                                      ? 'bg-indigo-600 text-white shadow-sm ring-4 ring-indigo-150' 
+                                      : 'bg-slate-100 text-slate-400 border border-slate-200'
+                                  }`}
+                                >
+                                  {stepIdx + 1}
+                                </div>
+                                <span className={`text-[9px] font-black uppercase mt-1 tracking-wider ${isActive ? 'text-indigo-650 font-extrabold' : 'text-slate-400'}`}>
+                                  {step.label}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
