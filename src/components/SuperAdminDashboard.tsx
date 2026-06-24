@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { 
-  Building2, Plus, Search, Sparkles, BrainCircuit, Bot, X, 
-  TrendingUp, QrCode, ClipboardList, AlertOctagon, CheckCircle, 
+import {
+  Building2, Plus, Search, Sparkles, BrainCircuit, Bot, X,
+  TrendingUp, QrCode, ClipboardList, AlertOctagon, CheckCircle,
   Trash2, RefreshCw, Sliders, Lock, Unlock, Settings2, FileText
 } from 'lucide-react';
 import { Restaurant, MenuItem, Order } from '../types';
@@ -196,7 +196,7 @@ export default function SuperAdminDashboard({
 
   const globalDailyHistorySummaries = useMemo(() => {
     const summaries: Record<string, { count: number; revenue: number; orders: Order[] }> = {};
-    
+
     orders.forEach(o => {
       const rawDate = o.createdAt ? o.createdAt.split('T')[0] : 'Unknown Date';
       if (!summaries[rawDate]) {
@@ -378,13 +378,13 @@ export default function SuperAdminDashboard({
     setManageDisableAdmin(!!tenant.disableAdminPortal);
     setManageDisableKds(!!tenant.disableKdsPortal);
     setManageEnableSlaWarning(!!tenant.enableSlaWarning);
-    
+
     // Set default credentials
     setManageAdminEmail(`${tenant.id}@admin.it`);
     setManageAdminPassword("••••••••");
     setManageChefEmail(`${tenant.id}@chef.it`);
     setManageChefPassword("••••••••");
-    
+
     setManageModalTab('capabilities');
     setIsManageTenantOpen(true);
 
@@ -477,8 +477,8 @@ export default function SuperAdminDashboard({
       }
 
       triggerAppAlert(
-        "Restaurant Updated Successfully", 
-        `Administrative policies, capabilities, portal lockdowns, and credentials have been updated live for ${selectedManageTenant.name}.`, 
+        "Restaurant Updated Successfully",
+        `Administrative policies, capabilities, portal lockdowns, and credentials have been updated live for ${selectedManageTenant.name}.`,
         "success"
       );
       setIsManageTenantOpen(false);
@@ -803,7 +803,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
       const completedOrders = orders.filter(
         o => o.restaurantId === id && (o.status === 'completed' || o.status === 'rejected')
       );
-      
+
       let clearedCount = 0;
       for (const order of completedOrders) {
         try {
@@ -816,8 +816,8 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
 
       if (clearedCount > 0) {
         triggerAppAlert(
-          "Hold Adjusted & Tickets Cleared", 
-          `Restaurant lock status updated successfully and cleared ${clearedCount} concluded/full-fill tickets.`, 
+          "Hold Adjusted & Tickets Cleared",
+          `Restaurant lock status updated successfully and cleared ${clearedCount} concluded/full-fill tickets.`,
           "success"
         );
       } else {
@@ -864,7 +864,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
 
   return (
     <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6 text-slate-800">
-      
+
       {/* Title block */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-5 rounded-3xl border border-slate-205 shadow-sm">
         <div>
@@ -877,7 +877,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
             </span>
           </div>
 
-          <h2 className="text-xl font-bold tracking-tight text-slate-900 mt-1">SaaS Super-Admin Dashboard</h2>
+          <h2 className="text-xl font-bold tracking-tight text-slate-900 mt-1">Super-Admin Dashboard</h2>
           <p className="text-xs text-slate-500 mt-0.5">Provision subscriber brands, enforce administrator locks, scale dynamic seating nodes, or override active floor order states.</p>
         </div>
 
@@ -895,7 +895,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
             ) : (
               <>
                 <BrainCircuit size={14} className="text-indigo-600" />
-                <span>AI Strategic Diagnostics</span>
+                <span>AI Business Report</span>
               </>
             )}
           </button>
@@ -910,17 +910,17 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
         </div>
       </div>      {/* Global Interactive Bento Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        
+
         <button
           onClick={() => setOverlayTab('tenants')}
           className="bg-white p-4 rounded-3xl border border-slate-200 text-left hover:border-indigo-550 hover:shadow-md transition active:scale-[0.99] group flex justify-between items-center"
         >
           <div>
-            <span className="text-[10px] uppercase font-black text-slate-400 block group-hover:text-indigo-650">Operational Brands</span>
+            <span className="text-[10px] uppercase font-black text-slate-400 block group-hover:text-indigo-650">Active Restaurants</span>
             <h3 className="text-xl font-black text-slate-905 mt-1">
               {globalAnalytics.activeBrands} / {globalAnalytics.totalBrands} Live
             </h3>
-            <p className="text-[9px] text-emerald-580 font-bold mt-1">Provisions & Holds →</p>
+            <p className="text-[9px] text-emerald-580 font-bold mt-1">Restaurant Controls →</p>
           </div>
           <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
             <Building2 size={18} />
@@ -934,7 +934,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
           <div>
             <span className="text-[10px] uppercase font-black text-slate-400 block group-hover:text-rose-600">Total Seating Maps</span>
             <h3 className="text-xl font-black text-slate-905 mt-1">{globalAnalytics.totalTables} Nodes</h3>
-            <p className="text-[9px] text-rose-500 font-bold mt-1">Scale globally →</p>
+            <p className="text-[9px] text-rose-500 font-bold mt-1">Manage Tables →</p>
           </div>
           <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center">
             <QrCode size={18} />
@@ -951,7 +951,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               <span className="text-xs font-bold text-slate-500 block">Today: <span className="font-black text-slate-800">{todayFinancials.ordersCount}</span></span>
               <span className="text-sm font-black text-slate-905 block">All-Time: {allTimeFinancials.ordersCount}</span>
             </div>
-            <p className="text-[9px] text-yellow-600 font-bold mt-1">View receipts audit →</p>
+            <p className="text-[9px] text-yellow-600 font-bold mt-1">View Details →</p>
           </div>
           <div className="w-10 h-10 rounded-2xl bg-yellow-50 text-yellow-600 flex items-center justify-center">
             <ClipboardList size={18} />
@@ -963,12 +963,12 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
           className="bg-white p-4 rounded-3xl border border-slate-205 text-left hover:border-emerald-555 hover:shadow-md transition active:scale-[0.99] group flex justify-between items-center"
         >
           <div>
-            <span className="text-[10px] uppercase font-black text-slate-400 block group-hover:text-emerald-300">Global Gross Revenue</span>
+            <span className="text-[10px] uppercase font-black text-slate-400 block group-hover:text-emerald-300">Total Revenue</span>
             <div className="mt-1">
               <span className="text-[11px] font-bold text-emerald-600 block">Today: <span className="font-extrabold">₹{todayFinancials.finalGrossRevenue.toFixed(0)}</span></span>
               <span className="text-sm font-black text-emerald-700 block">All-Time: ₹{allTimeFinancials.finalGrossRevenue.toFixed(0)}</span>
             </div>
-            <p className="text-[9px] text-emerald-600 font-bold mt-1">Consolidated ledger →</p>
+            <p className="text-[9px] text-emerald-600 font-bold mt-1">Full Report →</p>
           </div>
           <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
             <TrendingUp size={18} />
@@ -980,12 +980,12 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
           className="bg-white p-4 rounded-3xl border border-slate-205 text-left hover:border-indigo-600 hover:shadow-md transition active:scale-[0.99] group flex justify-between items-center"
         >
           <div>
-            <span className="text-[10px] uppercase font-black text-slate-400 block group-hover:text-indigo-600">Ecosystem Histories</span>
+            <span className="text-[10px] uppercase font-black text-slate-400 block group-hover:text-indigo-600">Order History</span>
             <div className="mt-1">
-              <span className="text-xs font-bold text-slate-500 block">Day-by-Day audit</span>
+              <span className="text-xs font-bold text-slate-500 block">Day-by-Day Log</span>
               <span className="text-sm font-black text-indigo-700 block">{globalDailyHistorySummaries.length} active dates</span>
             </div>
-            <p className="text-[9px] text-indigo-650 font-bold mt-1">Check full histories →</p>
+            <p className="text-[9px] text-indigo-650 font-bold mt-1">View All →</p>
           </div>
           <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
             <ClipboardList size={18} />
@@ -997,12 +997,12 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
           className="bg-white p-4 rounded-3xl border border-slate-205 text-left hover:border-violet-500 hover:shadow-md transition active:scale-[0.99] group flex justify-between items-center"
         >
           <div>
-            <span className="text-[10px] uppercase font-black text-slate-400 block group-hover:text-violet-600">📊 Analytics Suite</span>
+            <span className="text-[10px] uppercase font-black text-slate-400 block group-hover:text-violet-600">📊 Reports</span>
             <div className="mt-1">
-              <span className="text-xs font-bold text-slate-500 block">Cross-tenant KPIs</span>
+              <span className="text-xs font-bold text-slate-500 block">All Restaurant Stats</span>
               <span className="text-sm font-black text-violet-700 block">{globalAnalytics.totalOrders} orders tracked</span>
             </div>
-            <p className="text-[9px] text-violet-600 font-bold mt-1">View analytics dashboard →</p>
+            <p className="text-[9px] text-violet-600 font-bold mt-1">View Reports →</p>
           </div>
           <div className="w-10 h-10 rounded-2xl bg-violet-50 text-violet-600 flex items-center justify-center">
             <TrendingUp size={18} />
@@ -1015,14 +1015,14 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
       <div className="bg-white rounded-3xl border border-slate-200 p-6 space-y-4 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-150">
           <div>
-            <h3 className="text-base font-bold text-slate-900">Tenant Brand Registries</h3>
+            <h3 className="text-base font-bold text-slate-900">Restaurant List</h3>
             <p className="text-xs text-slate-500">Global control overrides allow rapid access into single kitchen and admin dashboards.</p>
           </div>
 
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-405" size={14} />
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Search subscriber list..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -1035,13 +1035,13 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-slate-100 text-slate-400 font-black uppercase text-[10px] tracking-wider">
-                <th className="py-3 px-2">Gourmet Tenant Name</th>
-                <th className="py-3 px-2">Local Node ID</th>
-                <th className="py-3 px-2">Table Nodes</th>
-                <th className="py-3 px-2">Menu catalog</th>
-                <th className="py-3 px-2">Net Collects</th>
-                <th className="py-3 px-2">SaaS Holds</th>
-                <th className="py-3 px-2 text-right">Dashboard Override</th>
+                <th className="py-3 px-2">Restaurant Name</th>
+                <th className="py-3 px-2">Restaurant ID</th>
+                <th className="py-3 px-2">Tables</th>
+                <th className="py-3 px-2">Menu Items</th>
+                <th className="py-3 px-2">Revenue</th>
+                <th className="py-3 px-2">Status</th>
+                <th className="py-3 px-2 text-right">Admin Access</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-800">
@@ -1055,10 +1055,10 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   return (
                     <tr key={tenant.id} className="hover:bg-slate-55 transition-all">
                       <td className="py-3 px-2 flex items-center gap-3">
-                        <img 
-                          src={tenant.logoUrl} 
-                          alt={tenant.name} 
-                          className="w-9 h-9 rounded-xl object-cover border border-slate-100 animate-pulse-slow-once" 
+                        <img
+                          src={tenant.logoUrl}
+                          alt={tenant.name}
+                          className="w-9 h-9 rounded-xl object-cover border border-slate-100 animate-pulse-slow-once"
                         />
                         <div>
                           <p className="font-extrabold text-slate-900 leading-none">{tenant.name}</p>
@@ -1073,7 +1073,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                             )}
                             <span className="text-[10px] text-indigo-700 font-bold bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded leading-none flex items-center gap-1.5">
                               <span>Waiter PIN: {tenant.verificationPin || "1234"}</span>
-                              <button 
+                              <button
                                 onClick={() => handleRotateVerificationPin(tenant.id)}
                                 title="Rotate Waiter PIN"
                                 className="text-indigo-400 hover:text-indigo-950 transition p-0.5"
@@ -1094,10 +1094,9 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                       <td className="py-3 px-2">
                         <button
                           onClick={() => handleToggleSuperAdminHold(tenant.id)}
-                          className={`px-3 py-1 text-[9px] font-black uppercase rounded-full border transition ${
-                            tenant.lockedBySuperAdmin ? 'bg-rose-100 border-rose-300 text-rose-800 hover:bg-rose-200' :
+                          className={`px-3 py-1 text-[9px] font-black uppercase rounded-full border transition ${tenant.lockedBySuperAdmin ? 'bg-rose-100 border-rose-300 text-rose-800 hover:bg-rose-200' :
                             'bg-slate-50 border-slate-205 text-slate-550 hover:bg-slate-100'
-                          }`}
+                            }`}
                         >
                           {tenant.lockedBySuperAdmin ? "SUSPENDED (HOLD)" : "STATUS CLEAR"}
                         </button>
@@ -1154,7 +1153,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   <Building2 size={20} />
                 </div>
                 <div>
-                  <h4 className="text-base font-black text-slate-900">Platform Brand holds & Lockout Controllers</h4>
+                  <h4 className="text-base font-black text-slate-900">Restaurant Access Controls</h4>
                   <p className="text-[11px] text-slate-550 leading-none mt-1">Override merchant capabilities instantly. Administrative Holds propagate warnings across KDS and PWA menus.</p>
                 </div>
               </div>
@@ -1165,8 +1164,8 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
 
             <div className="my-3 relative flex-shrink-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder="Search tenant registers by system ID or Brand name..."
                 value={overlaySearch}
                 onChange={(e) => setOverlaySearch(e.target.value)}
@@ -1210,10 +1209,9 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                         </button>
                         <button
                           onClick={() => handleToggleSuperAdminHold(r.id)}
-                          className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase border transition ${
-                            r.lockedBySuperAdmin ? 'bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100' :
+                          className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase border transition ${r.lockedBySuperAdmin ? 'bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100' :
                             'bg-slate-50 border-slate-205 text-slate-550 hover:bg-slate-100'
-                          }`}
+                            }`}
                         >
                           {r.lockedBySuperAdmin ? "Release administrative lock" : "Enforce administrative hold"}
                         </button>
@@ -1248,7 +1246,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   <QrCode size={20} />
                 </div>
                 <div>
-                  <h4 className="text-base font-black text-slate-900">Dynamic table seating nodes</h4>
+                  <h4 className="text-base font-black text-slate-900">Table Settings</h4>
                   <p className="text-[11px] text-slate-500 mt-1 leading-none">Scale designated virtual seating capacities directly on-channel. Live flyer QR structures auto-align.</p>
                 </div>
               </div>
@@ -1259,8 +1257,8 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
 
             <div className="my-3 relative flex-shrink-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder="Search table scales by Restaurant Name..."
                 value={overlaySearch}
                 onChange={(e) => setOverlaySearch(e.target.value)}
@@ -1291,14 +1289,14 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                         </div>
 
                         <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200 shadow-inner">
-                          <button 
+                          <button
                             onClick={() => onModifyRestaurantTablesGlobal(r.id, r.totalTables - 1)}
                             className="w-6 h-6 bg-slate-100 hover:bg-slate-200 rounded flex items-center justify-center font-black"
                           >
                             -
                           </button>
                           <span className="w-6 text-center text-xs font-black">{r.totalTables}</span>
-                          <button 
+                          <button
                             onClick={() => onModifyRestaurantTablesGlobal(r.id, r.totalTables + 1)}
                             className="w-6 h-6 bg-slate-100 hover:bg-slate-200 rounded flex items-center justify-center font-black"
                           >
@@ -1335,7 +1333,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   <ClipboardList size={20} />
                 </div>
                 <div>
-                  <h4 className="text-base font-black text-slate-900">Live Cross-Network Logs Feed</h4>
+                  <h4 className="text-base font-black text-slate-900">Live Order Feed</h4>
                   <p className="text-[11px] text-slate-500 mt-1 leading-none">Chronological timeline of orders placed across standard ecosystem endpoints. Control state overrides are supported here.</p>
                 </div>
               </div>
@@ -1347,8 +1345,8 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 my-3 flex-shrink-0">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-405" size={14} />
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   placeholder="Search feeds by Brand name, Diner phone, Order ID, or location..."
                   value={overlaySearch}
                   onChange={(e) => setOverlaySearch(e.target.value)}
@@ -1378,12 +1376,12 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               <table className="w-full text-left border-collapse text-xs">
                 <thead className="bg-slate-50 sticky top-0 border-b border-slate-120 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
                   <tr>
-                    <th className="py-2.5 px-3">Brand Node</th>
+                    <th className="py-2.5 px-3">Restaurant</th>
                     <th className="py-2.5 px-3">Seating</th>
-                    <th className="py-2.5 px-3">Diner profile</th>
-                    <th className="py-2.5 px-3">Entrees</th>
+                    <th className="py-2.5 px-3">Customer</th>
+                    <th className="py-2.5 px-3">Items Ordered</th>
                     <th className="py-2.5 px-3">Total Amount</th>
-                    <th className="py-2.5 px-3">Fulfillment Status</th>
+                    <th className="py-2.5 px-3">Status</th>
                     <th className="py-2.5 px-3 text-right">Admin overrides</th>
                   </tr>
                 </thead>
@@ -1420,12 +1418,11 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                           </td>
                           <td className="py-3 px-3 font-black text-slate-950">₹{ord.totalAmount.toFixed(2)}</td>
                           <td className="py-3 px-3">
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                              ord.status === 'completed' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' :
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${ord.status === 'completed' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' :
                               ord.status === 'accepted' ? 'bg-blue-50 text-blue-600 border border-blue-200' :
-                              ord.status === 'pending' ? 'bg-yellow-50 text-yellow-605 border border-yellow-250' :
-                              'bg-rose-50 text-rose-500 border border-rose-250'
-                            }`}>
+                                ord.status === 'pending' ? 'bg-yellow-50 text-yellow-605 border border-yellow-250' :
+                                  'bg-rose-50 text-rose-500 border border-rose-250'
+                              }`}>
                               {ord.status}
                             </span>
                           </td>
@@ -1467,7 +1464,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   <TrendingUp size={20} />
                 </div>
                 <div>
-                  <h4 className="text-base font-black text-slate-900">Consolidated Ecosystem Net Revenue auditor</h4>
+                  <h4 className="text-base font-black text-slate-900">Total Revenue Report</h4>
                   <p className="text-[11px] text-slate-500 mt-1 leading-none">Highlights the base menu values, applied promo savings, and actual final collected funds across all system nodes.</p>
                 </div>
               </div>
@@ -1479,8 +1476,8 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 my-3 flex-shrink-0">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   placeholder="Search financials by Order ID or restaurant..."
                   value={overlaySearch}
                   onChange={(e) => setOverlaySearch(e.target.value)}
@@ -1514,17 +1511,17 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                 <p className="text-base font-black text-slate-950 mt-1">
                   ₹{accountingTimeFilter === 'today' ? todayFinancials.originalSubtotal.toFixed(2) : allTimeFinancials.originalSubtotal.toFixed(2)}
                 </p>
-                <span className="text-[9px] text-slate-450 block mt-0.5">Base prices across nodes</span>
+                <span className="text-[9px] text-slate-450 block mt-0.5">Menu Price Total</span>
               </div>
-              
+
               <div className="bg-rose-50 p-4 border rounded-2xl border-rose-100 shadow-sm relative overflow-hidden">
                 <span className="text-[10px] uppercase tracking-wider font-extrabold text-rose-500 block">
-                  {accountingTimeFilter === 'today' ? "Today Promo Exclusions" : "All-Time Promo Exclusions"}
+                  {accountingTimeFilter === 'today' ? "Today Discounts" : "All-Time Discounts"}
                 </span>
                 <p className="text-base font-black text-rose-600 mt-1">
                   - ₹{accountingTimeFilter === 'today' ? todayFinancials.promoDeductions.toFixed(2) : allTimeFinancials.promoDeductions.toFixed(2)}
                 </p>
-                <span className="text-[9px] text-rose-455 block mt-0.5">Deducted LTO values</span>
+                <span className="text-[9px] text-rose-455 block mt-0.5">Discounts</span>
               </div>
 
               <div className="bg-emerald-50 p-4 border rounded-2xl border-emerald-110 shadow-sm relative overflow-hidden">
@@ -1534,7 +1531,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                 <p className="text-base font-black text-emerald-700 mt-1">
                   ₹{accountingTimeFilter === 'today' ? todayFinancials.finalGrossRevenue.toFixed(2) : allTimeFinancials.finalGrossRevenue.toFixed(2)}
                 </p>
-                <span className="text-[9px] text-emerald-600 font-bold block mt-0.5">Actual collected funds</span>
+                <span className="text-[9px] text-emerald-600 font-bold block mt-0.5">Amount Received</span>
               </div>
             </div>
 
@@ -1545,9 +1542,9 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                     <th className="py-2.5 px-3">Order ID</th>
                     <th className="py-2.5 px-3">Brand Name</th>
                     <th className="py-2.5 px-3">Diner Name</th>
-                    <th className="py-2.5 px-3">Menu Base Price</th>
-                    <th className="py-2.5 px-3">LTO Exclusion deducted</th>
-                    <th className="py-2.5 px-3 border-r border-slate-100">Net Funds Earned</th>
+                    <th className="py-2.5 px-3">Item Price</th>
+                    <th className="py-2.5 px-3">Discount Applied</th>
+                    <th className="py-2.5 px-3 border-r border-slate-100">Amount Received</th>
                     <th className="py-2.5 px-3 text-right">Status</th>
                   </tr>
                 </thead>
@@ -1608,7 +1605,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   <ClipboardList size={20} />
                 </div>
                 <div>
-                  <h4 className="text-base font-black text-slate-900">Ecosystem Order History logs</h4>
+                  <h4 className="text-base font-black text-slate-900">Full Order History</h4>
                   <p className="text-[11px] text-slate-500 mt-1 leading-none font-sans">Day-by-day complete chronological receipts and operations auditor across the entire multi-tenant kCodeIT standard suite.</p>
                 </div>
               </div>
@@ -1646,19 +1643,18 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 my-4 flex-1 min-h-0 overflow-hidden">
                 {/* Left Side: Daily history summaries */}
                 <div className="md:col-span-1 space-y-2.5 overflow-y-auto pr-1 flex-shrink-0 h-full">
-                  <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider block mb-1 font-mono">Ecosystem Business Days</span>
-                  
+                  <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider block mb-1 font-mono">Business Days</span>
+
                   {/* Show All Available Dates toggle */}
                   <button
                     type="button"
                     onClick={() => {
                       setShowAllHistoryDates(true);
                     }}
-                    className={`w-full text-left p-3.5 rounded-2xl border transition-all duration-200 flex justify-between items-center cursor-pointer mb-2 ${
-                      showAllHistoryDates
-                        ? 'bg-slate-900 border-slate-900 text-white shadow-md'
-                        : 'bg-indigo-50 border-indigo-100 text-indigo-900 hover:bg-indigo-100/50'
-                    }`}
+                    className={`w-full text-left p-3.5 rounded-2xl border transition-all duration-200 flex justify-between items-center cursor-pointer mb-2 ${showAllHistoryDates
+                      ? 'bg-slate-900 border-slate-900 text-white shadow-md'
+                      : 'bg-indigo-50 border-indigo-100 text-indigo-900 hover:bg-indigo-100/50'
+                      }`}
                   >
                     <div>
                       <p className="text-xs font-black uppercase tracking-wide">
@@ -1679,11 +1675,10 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                         setSelectedHistoryDate(day.dateStr);
                         setShowAllHistoryDates(false);
                       }}
-                      className={`w-full text-left p-3.5 rounded-2xl border transition-all duration-200 flex justify-between items-center cursor-pointer ${
-                        (!showAllHistoryDates && selectedHistoryDate === day.dateStr)
-                          ? 'bg-indigo-600 border-indigo-650 text-white shadow-md shadow-indigo-500/20'
-                          : 'bg-slate-50 border-slate-200 text-slate-805 hover:bg-slate-100 hover:border-slate-350'
-                      }`}
+                      className={`w-full text-left p-3.5 rounded-2xl border transition-all duration-200 flex justify-between items-center cursor-pointer ${(!showAllHistoryDates && selectedHistoryDate === day.dateStr)
+                        ? 'bg-indigo-600 border-indigo-650 text-white shadow-md shadow-indigo-500/20'
+                        : 'bg-slate-50 border-slate-200 text-slate-805 hover:bg-slate-100 hover:border-slate-350'
+                        }`}
                     >
                       <div>
                         <p className="text-xs font-black uppercase tracking-wide">
@@ -1704,11 +1699,11 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
 
                 {/* Right Side: Detailed orders list with rich filters */}
                 <div className="md:col-span-2 flex flex-col h-full min-h-0 space-y-3">
-                  
+
                   {/* Central Config Filter Panel */}
                   <div className="bg-slate-50 p-4 border border-slate-200 rounded-3xl space-y-3 flex-shrink-0">
-                    <span className="text-[9px] uppercase font-black text-slate-400 tracking-wider block font-mono">Unified Advanced Filter</span>
-                    
+                    <span className="text-[9px] uppercase font-black text-slate-400 tracking-wider block font-mono">Advanced Filter</span>
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {/* Search Bar matching Brand Name, Guest, Phone, Dish or Order ID */}
                       <div className="relative">
@@ -1740,39 +1735,39 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-                      {/* Kitchen State Filter */}
+                      {/* Order Status Filter */}
                       <div className="flex flex-col space-y-1">
-                        <label className="text-[9px] text-slate-400 font-black uppercase font-mono">Kitchen State</label>
+                        <label className="text-[9px] text-slate-400 font-black uppercase font-mono">Order Status</label>
                         <select
                           value={historyStatusFilter}
                           onChange={(e) => setHistoryStatusFilter(e.target.value as any)}
                           className="bg-white border border-slate-202 rounded-xl p-2 text-xs font-semibold focus:outline-none text-slate-800"
                         >
-                          <option value="all">All Kitchen States</option>
-                          <option value="pending">Pending Only</option>
-                          <option value="accepted">Accepted / Cooking</option>
-                          <option value="completed">Completed Only</option>
-                          <option value="rejected">Rejected Only</option>
+                          <option value="all">All Order Statuss</option>
+                          <option value="pending">Waiting Only</option>
+                          <option value="accepted">In Progress</option>
+                          <option value="completed">Completed</option>
+                          <option value="rejected">Cancelled</option>
                         </select>
                       </div>
 
                       {/* Cash Release State */}
                       <div className="flex flex-col space-y-1">
-                        <label className="text-[9px] text-slate-400 font-black uppercase font-mono">Billed State</label>
+                        <label className="text-[9px] text-slate-400 font-black uppercase font-mono">Payment Status</label>
                         <select
                           value={historyReleaseFilter}
                           onChange={(e) => setHistoryReleaseFilter(e.target.value as any)}
                           className="bg-white border border-slate-202 rounded-xl p-2 text-xs font-semibold focus:outline-none text-slate-800"
                         >
-                          <option value="all">All States (Active + Released)</option>
-                          <option value="active">Active Dining Bills Only</option>
-                          <option value="cleared">Cleared / Released Only</option>
+                          <option value="all">All Orders</option>
+                          <option value="active">Active Orders Only</option>
+                          <option value="cleared">Completed Only</option>
                         </select>
                       </div>
 
                       {/* Bill Size Slider Range */}
                       <div className="flex flex-col space-y-1">
-                        <label className="text-[9px] text-slate-400 font-black uppercase font-mono">Bill Range (INR)</label>
+                        <label className="text-[9px] text-slate-400 font-black uppercase font-mono">Order Amount Range</label>
                         <div className="flex items-center gap-1">
                           <input
                             type="number"
@@ -1831,19 +1826,17 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                                 </span>
                               </div>
                               <div className="flex items-center gap-1.5">
-                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                                  ord.status === 'completed' ? 'bg-emerald-50 text-emerald-600 border border-emerald-110' :
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${ord.status === 'completed' ? 'bg-emerald-50 text-emerald-600 border border-emerald-110' :
                                   ord.status === 'accepted' ? 'bg-blue-50 text-blue-600 border border-blue-110' :
-                                  ord.status === 'pending' ? 'bg-yellow-50 text-yellow-605 border border-yellow-115' :
-                                  'bg-rose-50 text-rose-550 border border-rose-115'
-                                }`}>
+                                    ord.status === 'pending' ? 'bg-yellow-50 text-yellow-605 border border-yellow-115' :
+                                      'bg-rose-50 text-rose-550 border border-rose-115'
+                                  }`}>
                                   {ord.status}
                                 </span>
-                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                                  ord.released === true 
-                                    ? 'bg-slate-100 text-slate-505 border border-slate-205' 
-                                    : 'bg-orange-50 text-orange-600 border border-orange-205'
-                                }`}>
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${ord.released === true
+                                  ? 'bg-slate-100 text-slate-505 border border-slate-205'
+                                  : 'bg-orange-50 text-orange-600 border border-orange-205'
+                                  }`}>
                                   {ord.released === true ? 'Cleared' : 'Active'}
                                 </span>
                               </div>
@@ -1873,7 +1866,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                                   ))}
                                 </div>
                                 <div className="pt-1.5 mt-1.5 border-t border-dashed border-slate-205 flex justify-between font-black text-slate-900">
-                                  <span>Ecosystem Net:</span>
+                                  <span>Total:</span>
                                   <span>₹{ord.totalAmount.toFixed(2)}</span>
                                 </div>
                               </div>
@@ -1937,7 +1930,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
             <div className="sticky top-0 bg-white z-10 flex items-center justify-between p-4 border-b border-slate-200 rounded-t-3xl">
               <div>
                 <h3 className="text-sm font-black text-slate-900">📊 SaaS Analytics Suite</h3>
-                <p className="text-[10px] text-slate-500 mt-0.5">Cross-tenant KPIs and performance metrics</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">All Restaurant Stats and performance metrics</p>
               </div>
               <button onClick={() => setOverlayTab(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-3 py-2 rounded-xl text-xs transition">
                 Close
@@ -1955,7 +1948,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl p-6 border border-slate-100 space-y-4">
             <div className="flex justify-between items-center border-b pb-3 border-slate-150">
-              <h4 className="text-sm font-black text-slate-900">Register new SaaS subscriber</h4>
+              <h4 className="text-sm font-black text-slate-900">Add New Restaurant</h4>
               <button onClick={() => setIsAddTenantOpen(false)} className="p-1 text-slate-400 hover:text-slate-650">
                 <X size={18} />
               </button>
@@ -1963,9 +1956,9 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
 
             <form onSubmit={handleCreateTenant} className="space-y-3 text-xs text-slate-800">
               <div>
-                <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Brand Name *</label>
-                <input 
-                  type="text" 
+                <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Restaurant Name *</label>
+                <input
+                  type="text"
                   required
                   placeholder="e.g. Bella Italia Bistro"
                   value={tenantName}
@@ -1976,8 +1969,8 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
 
               <div>
                 <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Logo URL (Optional)</label>
-                <input 
-                  type="url" 
+                <input
+                  type="url"
                   placeholder="e.g. https://images.unsplash.com/..."
                   value={tenantLogo}
                   onChange={(e) => setTenantLogo(e.target.value)}
@@ -1986,9 +1979,9 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               </div>
 
               <div>
-                <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Allocated Tables Node Quantity</label>
-                <input 
-                  type="number" 
+                <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Number of Tables</label>
+                <input
+                  type="number"
                   min="1"
                   max="50"
                   required
@@ -2001,8 +1994,8 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Latitude *</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     required
                     placeholder="e.g. 28.5672"
                     value={tenantLatitude}
@@ -2012,8 +2005,8 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                 </div>
                 <div>
                   <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Longitude *</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     required
                     placeholder="e.g. 77.2025"
                     value={tenantLongitude}
@@ -2024,9 +2017,9 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               </div>
 
               <div>
-                <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Waiter 4-Digit Verification PIN *</label>
-                <input 
-                  type="text" 
+                <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Table PIN *</label>
+                <input
+                  type="text"
                   maxLength={4}
                   required
                   placeholder="e.g. 1234"
@@ -2040,7 +2033,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Admin Email</label>
-                  <input 
+                  <input
                     type="email"
                     required
                     placeholder="e.g. admin@bistro.com"
@@ -2050,8 +2043,8 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Admin Portal Pass</label>
-                  <input 
+                  <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Admin Password</label>
+                  <input
                     type="password"
                     required
                     placeholder="e.g. password"
@@ -2061,8 +2054,8 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Chef Email</label>
-                  <input 
+                  <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Kitchen Email</label>
+                  <input
                     type="email"
                     required
                     placeholder="e.g. chef@bistro.com"
@@ -2072,8 +2065,8 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Chef KMS Pass</label>
-                  <input 
+                  <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Kitchen Password</label>
+                  <input
                     type="password"
                     required
                     placeholder="e.g. password"
@@ -2085,14 +2078,14 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               </div>
 
               <div className="pt-4 border-t border-slate-150 flex gap-2">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={() => setIsAddTenantOpen(false)}
                   className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-705 font-bold py-2 rounded-xl transition"
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   type="submit"
                   disabled={isOnboarding}
                   className={`w-1/2 font-bold py-2 rounded-xl shadow transition ${isOnboarding ? 'bg-slate-350 text-slate-500 cursor-not-allowed' : 'bg-indigo-600 hover:bg-slate-700 text-white'}`}
@@ -2111,12 +2104,12 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
           <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl border border-emerald-100 overflow-hidden">
             <div className="bg-emerald-600 p-4 text-white text-center">
               <CheckCircle size={28} className="mx-auto mb-1" />
-              <h3 className="text-sm font-black uppercase tracking-wider">Tenant Onboarded Successfully</h3>
+              <h3 className="text-sm font-black uppercase tracking-wider">Restaurant Added Successfully</h3>
               <p className="text-[10px] text-emerald-200 mt-0.5">{(tenantConfirmation as any).name} is now live</p>
             </div>
             <div className="p-4 space-y-4 text-xs">
               <div>
-                <label className="block font-black text-slate-500 uppercase tracking-wider mb-1.5 text-[9px]">Customer Public URL</label>
+                <label className="block font-black text-slate-500 uppercase tracking-wider mb-1.5 text-[9px]">Restaurant URL</label>
                 <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-2.5 flex items-center justify-between gap-2">
                   <code className="text-[10px] font-mono text-indigo-700 truncate select-all">{(tenantConfirmation as any).url}</code>
                   <button
@@ -2169,7 +2162,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl p-6 border border-slate-100 space-y-4">
             <div className="flex justify-between items-center border-b pb-3 border-slate-150">
               <div>
-                <h4 className="text-sm font-black text-slate-900">Edit Tenant Brand Registry</h4>
+                <h4 className="text-sm font-black text-slate-900">Edit Restaurant</h4>
                 <p className="text-[10px] text-slate-400 font-mono">Modifying Node: {editTenantId}</p>
               </div>
               <button onClick={() => setIsEditTenantOpen(false)} className="p-1 text-slate-400 hover:text-slate-650">
@@ -2179,9 +2172,9 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
 
             <form onSubmit={handleSaveEditTenant} className="space-y-3 text-xs text-slate-800">
               <div>
-                <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Brand Name *</label>
-                <input 
-                  type="text" 
+                <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Restaurant Name *</label>
+                <input
+                  type="text"
                   required
                   placeholder="e.g. Bella Italia Bistro"
                   value={editTenantName}
@@ -2192,8 +2185,8 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
 
               <div>
                 <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Logo URL (Optional)</label>
-                <input 
-                  type="url" 
+                <input
+                  type="url"
                   placeholder="e.g. https://images.unsplash.com/..."
                   value={editTenantLogo}
                   onChange={(e) => setEditTenantLogo(e.target.value)}
@@ -2202,9 +2195,9 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               </div>
 
               <div>
-                <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Allocated Tables Node Quantity</label>
-                <input 
-                  type="number" 
+                <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Number of Tables</label>
+                <input
+                  type="number"
                   min="1"
                   max="50"
                   required
@@ -2217,8 +2210,8 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Latitude *</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     required
                     placeholder="e.g. 28.5672"
                     value={editTenantLatitude}
@@ -2228,8 +2221,8 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                 </div>
                 <div>
                   <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Longitude *</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     required
                     placeholder="e.g. 77.2025"
                     value={editTenantLongitude}
@@ -2240,9 +2233,9 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               </div>
 
               <div>
-                <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Waiter 4-Digit Verification PIN *</label>
-                <input 
-                  type="text" 
+                <label className="block font-bold text-slate-450 mb-1 uppercase tracking-wide">Table PIN *</label>
+                <input
+                  type="text"
                   maxLength={4}
                   required
                   placeholder="e.g. 1234"
@@ -2250,18 +2243,18 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   onChange={(e) => setEditTenantVerificationPin(e.target.value.replace(/\D/g, ''))}
                   className="w-full bg-slate-50 border border-slate-205 py-2 px-3 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-501 font-bold text-center tracking-widest text-indigo-700 font-mono"
                 />
-                <p className="text-[10px] text-slate-400 mt-1">Verification code to let diners check in at standard login.</p>
+                <p className="text-[10px] text-slate-400 mt-1">PIN for customers to verify their table.</p>
               </div>
 
               <div className="pt-4 border-t border-slate-150 flex gap-2">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={() => setIsEditTenantOpen(false)}
                   className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-705 font-bold py-2 rounded-xl transition"
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   type="submit"
                   className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl shadow transition"
                 >
@@ -2277,7 +2270,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
       {isManageTenantOpen && selectedManageTenant && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-6 border border-slate-100 space-y-5 animate-in fade-in zoom-in duration-200">
-            
+
             {/* Header section */}
             <div className="flex justify-between items-center border-b pb-3 border-slate-150">
               <div className="flex items-center gap-2.5">
@@ -2285,7 +2278,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   <Sliders size={18} />
                 </div>
                 <div>
-                  <h4 className="text-sm font-black text-slate-900 leading-tight">Administrative SLA & Access Control</h4>
+                  <h4 className="text-sm font-black text-slate-900 leading-tight">Restaurant Settings & Access</h4>
                   <p className="text-[10px] text-slate-400 font-mono mt-0.5">Configuring: <span className="font-extrabold text-slate-705">{selectedManageTenant.name}</span> • ID: {selectedManageTenant.id}</p>
                 </div>
               </div>
@@ -2299,22 +2292,20 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               <button
                 type="button"
                 onClick={() => setManageModalTab('capabilities')}
-                className={`flex-1 py-2 text-center text-xs font-black uppercase tracking-wider border-b-2 transition ${
-                  manageModalTab === 'capabilities' 
-                    ? 'border-indigo-600 text-indigo-650' 
-                    : 'border-transparent text-slate-400 hover:text-slate-600'
-                }`}
+                className={`flex-1 py-2 text-center text-xs font-black uppercase tracking-wider border-b-2 transition ${manageModalTab === 'capabilities'
+                  ? 'border-indigo-600 text-indigo-650'
+                  : 'border-transparent text-slate-400 hover:text-slate-600'
+                  }`}
               >
                 ⚙️ Capabilities
               </button>
               <button
                 type="button"
                 onClick={() => setManageModalTab('analytics')}
-                className={`flex-1 py-2 text-center text-xs font-black uppercase tracking-wider border-b-2 transition ${
-                  manageModalTab === 'analytics' 
-                    ? 'border-indigo-600 text-indigo-650' 
-                    : 'border-transparent text-slate-400 hover:text-slate-600'
-                }`}
+                className={`flex-1 py-2 text-center text-xs font-black uppercase tracking-wider border-b-2 transition ${manageModalTab === 'analytics'
+                  ? 'border-indigo-600 text-indigo-650'
+                  : 'border-transparent text-slate-400 hover:text-slate-600'
+                  }`}
               >
                 📊 Tenant Analytics
               </button>
@@ -2325,27 +2316,25 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1">
                 {/* BRAND ACCOUNT STATUS */}
                 <div className="space-y-2">
-                  <h5 className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Account Subscription Status</h5>
+                  <h5 className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Account Status</h5>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => setManageStatus("active")}
-                      className={`py-3 px-4 rounded-2xl border text-center font-extrabold uppercase text-[10px] tracking-wider transition ${
-                        manageStatus === 'active' 
-                          ? 'bg-emerald-50 border-emerald-300 text-emerald-705 font-black shadow-xs ring-2 ring-emerald-500/10' 
-                          : 'bg-white border-slate-205 text-slate-500 hover:bg-slate-50 hover:text-slate-700'
-                      }`}
+                      className={`py-3 px-4 rounded-2xl border text-center font-extrabold uppercase text-[10px] tracking-wider transition ${manageStatus === 'active'
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-705 font-black shadow-xs ring-2 ring-emerald-500/10'
+                        : 'bg-white border-slate-205 text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                        }`}
                     >
                       ● Onboarded & Active
                     </button>
                     <button
                       type="button"
                       onClick={() => setManageStatus("inactive")}
-                      className={`py-3 px-4 rounded-2xl border text-center font-extrabold uppercase text-[10px] tracking-wider transition ${
-                        manageStatus === 'inactive' 
-                          ? 'bg-rose-50 border-rose-300 text-rose-705 font-black shadow-xs ring-2 ring-rose-500/10' 
-                          : 'bg-white border-slate-205 text-slate-500 hover:bg-slate-50 hover:text-slate-700'
-                      }`}
+                      className={`py-3 px-4 rounded-2xl border text-center font-extrabold uppercase text-[10px] tracking-wider transition ${manageStatus === 'inactive'
+                        ? 'bg-rose-50 border-rose-300 text-rose-705 font-black shadow-xs ring-2 ring-rose-500/10'
+                        : 'bg-white border-slate-205 text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                        }`}
                     >
                       ■ Suspended / Hold
                     </button>
@@ -2358,10 +2347,10 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   <h5 className="text-[10px] uppercase font-black text-slate-500 tracking-wider flex items-center gap-1">🛡️ Admin Portal Capabilities</h5>
                   <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-2xl">
                     <div className="pr-4 space-y-0.5 text-left">
-                      <span className="text-xs font-bold text-slate-800">Disable Admin Portal Access</span>
-                      <span className="text-[10px] text-slate-450 leading-tight block">Restricts access to the merchant administration console.</span>
+                      <span className="text-xs font-bold text-slate-800">Block Admin Login</span>
+                      <span className="text-[10px] text-slate-450 leading-tight block">Restricts access to the restaurant settings.</span>
                     </div>
-                    <button 
+                    <button
                       type="button"
                       onClick={() => setManageDisableAdmin(!manageDisableAdmin)}
                       className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 shrink-0 ${manageDisableAdmin ? 'bg-indigo-650 justify-end font-normal' : 'bg-slate-300 justify-start font-normal'}`}
@@ -2372,7 +2361,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <div>
                       <label className="block font-bold text-slate-450 mb-0.5 uppercase tracking-wide text-[9px]">Admin Email</label>
-                      <input 
+                      <input
                         type="email"
                         required
                         value={manageAdminEmail}
@@ -2382,7 +2371,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                     </div>
                     <div>
                       <label className="block font-bold text-slate-450 mb-0.5 uppercase tracking-wide text-[9px]">Admin Password</label>
-                      <input 
+                      <input
                         type="text"
                         required
                         value={manageAdminPassword}
@@ -2398,10 +2387,10 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   <h5 className="text-[10px] uppercase font-black text-slate-500 tracking-wider flex items-center gap-1">👨‍🍳 Chef & KDS Terminal</h5>
                   <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-2xl">
                     <div className="pr-4 space-y-0.5 text-left">
-                      <span className="text-xs font-bold text-slate-800">Disable Chef KDS Monitor</span>
-                      <span className="text-[10px] text-slate-450 leading-tight block">Suspends the Kitchen Display System monitor terminal.</span>
+                      <span className="text-xs font-bold text-slate-800">Block Kitchen View</span>
+                      <span className="text-[10px] text-slate-450 leading-tight block">Hides the kitchen order screen.</span>
                     </div>
-                    <button 
+                    <button
                       type="button"
                       onClick={() => setManageDisableKds(!manageDisableKds)}
                       className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 shrink-0 ${manageDisableKds ? 'bg-indigo-650 justify-end font-normal' : 'bg-slate-300 justify-start font-normal'}`}
@@ -2411,10 +2400,10 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   </div>
                   <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-2xl">
                     <div className="pr-4 space-y-0.5 text-left">
-                      <span className="text-xs font-bold text-slate-800">Chef KDS SLA Breach Warnings</span>
+                      <span className="text-xs font-bold text-slate-800">Kitchen Delay Alerts</span>
                       <span className="text-[10px] text-slate-450 leading-tight block">Enforce standard visual alerts and red breach triggers for ticket delays.</span>
                     </div>
-                    <button 
+                    <button
                       type="button"
                       onClick={() => setManageEnableSlaWarning(!manageEnableSlaWarning)}
                       className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 shrink-0 ${manageEnableSlaWarning ? 'bg-indigo-650 justify-end font-normal' : 'bg-slate-300 justify-start font-normal'}`}
@@ -2424,8 +2413,8 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   </div>
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <div>
-                      <label className="block font-bold text-slate-450 mb-0.5 uppercase tracking-wide text-[9px]">Chef Email</label>
-                      <input 
+                      <label className="block font-bold text-slate-450 mb-0.5 uppercase tracking-wide text-[9px]">Kitchen Email</label>
+                      <input
                         type="email"
                         required
                         value={manageChefEmail}
@@ -2435,7 +2424,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                     </div>
                     <div>
                       <label className="block font-bold text-slate-450 mb-0.5 uppercase tracking-wide text-[9px]">Chef Password</label>
-                      <input 
+                      <input
                         type="text"
                         required
                         value={manageChefPassword}
@@ -2452,10 +2441,10 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   {/* Lock All Items */}
                   <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-2xl">
                     <div className="pr-4 space-y-0.5">
-                      <span className="text-xs font-bold text-slate-800">Recipe Catalog Lockdown</span>
+                      <span className="text-xs font-bold text-slate-800">Lock Menu Editing</span>
                       <span className="text-[10px] text-slate-455 leading-tight block">Forces Read-Only access, disabling interactive client checkouts.</span>
                     </div>
-                    <button 
+                    <button
                       type="button"
                       onClick={() => setManageLockAllItems(!manageLockAllItems)}
                       className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 shrink-0 ${manageLockAllItems ? 'bg-indigo-650 justify-end font-normal' : 'bg-slate-300 justify-start font-normal'}`}
@@ -2466,10 +2455,10 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   {/* Block QR scaling */}
                   <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-2xl">
                     <div className="pr-4 space-y-0.5">
-                      <span className="text-xs font-bold text-slate-800">Block QR Seating Allocations</span>
-                      <span className="text-[10px] text-slate-455 leading-tight block">Restricts table setup adjustments or URL re-configurations.</span>
+                      <span className="text-xs font-bold text-slate-800">Block QR Table Access</span>
+                      <span className="text-[10px] text-slate-455 leading-tight block">Prevents changing table or QR settings.</span>
                     </div>
-                    <button 
+                    <button
                       type="button"
                       onClick={() => setManageDisableQr(!manageDisableQr)}
                       className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 shrink-0 ${manageDisableQr ? 'bg-indigo-650 justify-end font-normal' : 'bg-slate-300 justify-start font-normal'}`}
@@ -2480,10 +2469,10 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   {/* Hide older history */}
                   <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-2xl">
                     <div className="pr-4 space-y-0.5">
-                      <span className="text-xs font-bold text-slate-800">Limit Dashboard Archive to 24 Hours</span>
+                      <span className="text-xs font-bold text-slate-800">Show Only Last 24 Hours</span>
                       <span className="text-[10px] text-slate-455 leading-tight block">Filters other historic data logs so the merchant and chefs only have active and recent visibility.</span>
                     </div>
-                    <button 
+                    <button
                       type="button"
                       onClick={() => setManageHideHistory(!manageHideHistory)}
                       className={`w-10 h-5.5 flex items-center rounded-full p-0.5 transition-colors duration-200 shrink-0 ${manageHideHistory ? 'bg-indigo-650 justify-end font-normal' : 'bg-slate-300 justify-start font-normal'}`}
@@ -2498,25 +2487,25 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1">
                 <div className="grid grid-cols-2 gap-3 text-center">
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                    <span className="text-[9px] uppercase tracking-wider text-slate-450 font-bold block">Gross Sales</span>
+                    <span className="text-[9px] uppercase tracking-wider text-slate-450 font-bold block">Total Sales</span>
                     <span className="text-base font-black text-slate-905 mt-1 block">₹{tenantGrossSales.toFixed(2)}</span>
                   </div>
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                    <span className="text-[9px] uppercase tracking-wider text-slate-450 font-bold block">Orders Count</span>
+                    <span className="text-[9px] uppercase tracking-wider text-slate-450 font-bold block">Total Orders</span>
                     <span className="text-base font-black text-slate-905 mt-1 block">{tenantOrderCount}</span>
                   </div>
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                    <span className="text-[9px] uppercase tracking-wider text-slate-450 font-bold block">Avg Ticket</span>
+                    <span className="text-[9px] uppercase tracking-wider text-slate-450 font-bold block">Average Order Value</span>
                     <span className="text-base font-black text-slate-905 mt-1 block">₹{tenantAverageTicket.toFixed(2)}</span>
                   </div>
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                    <span className="text-[9px] uppercase tracking-wider text-slate-450 font-bold block">Scorecard Rating</span>
+                    <span className="text-[9px] uppercase tracking-wider text-slate-450 font-bold block">Average Rating</span>
                     <span className="text-base font-black text-yellow-605 mt-1 block">★ {tenantAverageRating.toFixed(1)} / 5</span>
                   </div>
                 </div>
 
                 <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100 text-xs text-indigo-900 leading-relaxed text-left">
-                  <h6 className="font-extrabold text-indigo-950 flex items-center gap-1.5 mb-1">📈 Tenant Operational Insights</h6>
+                  <h6 className="font-extrabold text-indigo-950 flex items-center gap-1.5 mb-1">📈 Restaurant Performance</h6>
                   <p className="text-[10.5px]">This scorecard combines order volume, gross receipts, and average ratings across active recipe cards to measure customer satisfaction and floor efficiency in real-time.</p>
                 </div>
               </div>
@@ -2530,14 +2519,14 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
 
             {/* Footer action buttons */}
             <div className="pt-3 border-t border-slate-150 flex gap-2">
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => setIsManageTenantOpen(false)}
                 className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl transition text-xs cursor-pointer"
               >
                 Cancel / Dismiss
               </button>
-              <button 
+              <button
                 type="button"
                 onClick={handleSaveCapabilities}
                 className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl shadow transition text-xs flex items-center justify-center gap-1 cursor-pointer"
@@ -2560,12 +2549,12 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                   <FileText size={20} />
                 </div>
                 <div>
-                  <h4 className="text-base font-black text-slate-900">Tenant Gross Sales Audit</h4>
+                  <h4 className="text-base font-black text-slate-900">Tenant Total Sales Audit</h4>
                   <p className="text-[11px] text-slate-500 leading-normal">Operational audit ledger for {selectedLedgerTenant.name}. Highlights base subtotals, promotional exclusions, and actual received cash.</p>
                 </div>
               </div>
-              <button 
-                onClick={() => setIsLedgerOpen(false)} 
+              <button
+                onClick={() => setIsLedgerOpen(false)}
                 className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition"
               >
                 <X size={18} />
@@ -2574,15 +2563,15 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 my-4">
               <div className="bg-slate-50 p-4 border border-slate-200 rounded-2xl">
-                <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block">Total Base Subtotal</span>
+                <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 block">Total Total Price</span>
                 <p className="text-base font-black text-slate-900 mt-1">₹{selectedTenantLedgerBreakdown.baseSubtotal.toFixed(2)}</p>
               </div>
               <div className="bg-rose-50 p-4 border border-rose-100 rounded-2xl">
-                <span className="text-[10px] uppercase tracking-wider font-extrabold text-rose-500 block">Excluded LTO Offers</span>
+                <span className="text-[10px] uppercase tracking-wider font-extrabold text-rose-500 block">Discounts</span>
                 <p className="text-base font-black text-rose-600 mt-1">-₹{selectedTenantLedgerBreakdown.deductions.toFixed(2)}</p>
               </div>
               <div className="bg-emerald-50 p-4 border border-emerald-100 rounded-2xl">
-                <span className="text-[10px] uppercase tracking-wider font-extrabold text-emerald-600 block">Net Settle Received</span>
+                <span className="text-[10px] uppercase tracking-wider font-extrabold text-emerald-600 block">Amount Received</span>
                 <p className="text-base font-black text-emerald-700 mt-1">₹{selectedTenantLedgerBreakdown.finalNet.toFixed(2)}</p>
               </div>
             </div>
@@ -2591,28 +2580,28 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               <div className="text-[10px] font-bold text-slate-500 mb-1">Hold Him Home - SaaS Operational Ledger Filter</div>
               <div className="flex gap-2">
                 <Search className="text-slate-400 mt-2 ml-2" size={14} />
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   placeholder="Search ledger entries..."
                   value={ledgerSearch}
                   onChange={(e) => setLedgerSearch(e.target.value)}
                   className="flex-1 bg-slate-50 border border-slate-200 rounded-xl py-2 pl-7 pr-4 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-sky-500 text-slate-800"
                 />
-                <input 
-                  type="date" 
+                <input
+                  type="date"
                   value={ledgerFromDate}
                   onChange={(e) => setLedgerFromDate(e.target.value)}
                   className="bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 text-xs font-semibold text-slate-800"
                 />
-                <input 
-                  type="date" 
+                <input
+                  type="date"
                   value={ledgerToDate}
                   onChange={(e) => setLedgerToDate(e.target.value)}
                   className="bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 text-xs font-semibold text-slate-800"
                 />
-                <button 
-                 onClick={() => { setLedgerFromDate(''); setLedgerToDate(''); setLedgerSearch(''); }}
-                 className="bg-slate-900 text-white rounded-xl px-3 py-1 text-xs font-bold"
+                <button
+                  onClick={() => { setLedgerFromDate(''); setLedgerToDate(''); setLedgerSearch(''); }}
+                  className="bg-slate-900 text-white rounded-xl px-3 py-1 text-xs font-bold"
                 >Clear</button>
               </div>
             </div>
@@ -2621,13 +2610,13 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
               <table className="w-full text-left border-collapse text-xs text-slate-700">
                 <thead className="bg-slate-50 font-bold uppercase tracking-wider text-[10px] text-slate-500 sticky top-0 border-b border-slate-150">
                   <tr>
-                    <th className="py-2.5 px-3">Ticket ID</th>
+                    <th className="py-2.5 px-3">Order ID</th>
                     <th className="py-2.5 px-3">Seat</th>
-                    <th className="py-2.5 px-3">Customer Profile</th>
-                    <th className="py-2.5 px-3">Base Price</th>
-                    <th className="py-2.5 px-3">Promo Exclusion</th>
-                    <th className="py-2.5 px-3 border-r border-slate-100">Received Cost</th>
-                    <th className="py-2.5 px-3 text-right">Fulfillment</th>
+                    <th className="py-2.5 px-3">Customer</th>
+                    <th className="py-2.5 px-3">Price</th>
+                    <th className="py-2.5 px-3">Discount</th>
+                    <th className="py-2.5 px-3 border-r border-slate-100">Amount</th>
+                    <th className="py-2.5 px-3 text-right">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -2647,10 +2636,9 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                         </td>
                         <td className="py-2.5 px-3 font-black text-emerald-600 border-r border-slate-100">₹{ord.totalAmount.toFixed(2)}</td>
                         <td className="py-2.5 px-3 text-right">
-                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${
-                            ord.status === 'completed' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
+                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${ord.status === 'completed' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
                             'bg-slate-50 text-slate-500 border-slate-200'
-                          }`}>
+                            }`}>
                             {ord.status}
                           </span>
                         </td>
@@ -2667,7 +2655,7 @@ You are the Platform SaaS growth advisor for kCodeIT Multi-Tenant Digital Menu S
                 </tbody>
               </table>
             </div>
-            
+
           </div>
         </div>
       )}
